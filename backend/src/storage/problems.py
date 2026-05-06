@@ -11,6 +11,7 @@ def _to_domain(row: ProblemRow) -> Problem:
         statement=row.statement,
         category=row.category,
         level=row.level,  # type: ignore[arg-type]
+        points=row.points,
         reference_code=row.reference_code,
         intent_rubric=IntentRubric.model_validate(row.intent_rubric),
         test_cases=[
@@ -47,6 +48,7 @@ def create_problem(session: Session, problem: Problem, *, status: str = "draft")
         statement=problem.statement,
         category=problem.category,
         level=problem.level,
+        points=problem.points,
         reference_code=problem.reference_code,
         intent_rubric=problem.intent_rubric.model_dump(),
         status=status,

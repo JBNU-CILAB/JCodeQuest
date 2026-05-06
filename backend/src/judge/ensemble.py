@@ -57,8 +57,5 @@ async def vote(
 ) -> EnsembleResult:
     votes = [await _ask(s, problem, code, test_results, base_url) for s in JUDGES]
     top, n = Counter(v.verdict for v in votes).most_common(1)[0]
-    if n == len(votes):
-        return EnsembleResult(final_verdict=top, mode="unanimous", votes=votes)
-    if n >= 2:
-        return EnsembleResult(final_verdict=top, mode="majority", votes=votes)
-    return EnsembleResult(final_verdict="DISPUTED", mode="split", votes=votes)
+    mode = "unanimous" if n == len(votes) else "majority"
+    return EnsembleResult(final_verdict=top, mode=mode, votes=votes)

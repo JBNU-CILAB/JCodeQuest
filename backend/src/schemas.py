@@ -3,9 +3,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Verdict = Literal["AC", "WA", "SUS"]
+Verdict = Literal["AC", "SUS"]
 EnsembleVerdict = Literal["AC", "SUS"]
-EnsembleMode = Literal["unanimous", "majority", "split"]
+EnsembleMode = Literal["unanimous", "majority"]
+ExecStatus = Literal["OK", "TLE", "MLE", "RE"]
 
 
 class IntentRubric(BaseModel):
@@ -24,11 +25,23 @@ class TestCase(BaseModel):
     is_sample: bool = False
 
 
+class ExecResult(BaseModel):
+    status: ExecStatus
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int | None = None
+    elapsed_ms: int = 0
+    peak_memory_kb: int = 0
+
+
 class TestResult(BaseModel):
     ordinal: int
     passed: bool
+    status: ExecStatus = "OK"
     actual_stdout: str | None = None
     error: str | None = None
+    elapsed_ms: int = 0
+    peak_memory_kb: int = 0
 
 
 class Problem(BaseModel):
@@ -37,6 +50,9 @@ class Problem(BaseModel):
     statement: str
     category: str
     level: Literal["bronze", "silver", "gold"] = "bronze"
+    points: int = 100
+    time_limit_ms: int = 2000
+    memory_limit_mb: int = 256
     reference_code: str
     intent_rubric: IntentRubric
     test_cases: list[TestCase] = Field(default_factory=list)
@@ -70,9 +86,10 @@ class GradeRequest(BaseModel):
     user_id: int
     problem_id: int
     code: str
-    test_results: list[TestResult] = Field(default_factory=list)
 
 
 class GradeResponse(BaseModel):
     submission_id: int
     ensemble: EnsembleResult
+    test_results: list[TestResult]
+    points_awarded: int = 0
