@@ -1,0 +1,67 @@
+"""DB가 모듈 import 시점에 engine을 생성하므로, src를 import하기 전에
+JCQ_DB_URL을 임시 파일 경로로 박아둬야 테스트가 격리된다."""
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+# 1) 임시 DB 파일
+_db_fd, _db_path = tempfile.mkstemp(prefix="jcq_test_", suffix=".db")
+os.close(_db_fd)
+os.environ["JCQ_DB_URL"] = f"sqlite:///{_db_path}"
+
+# 2) backend/ 를 sys.path에 추가 — src.* 임포트용
+BACKEND = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND))
+
+import pytest  # noqa: E402
+
+from src.schemas import IntentRubric, Problem, TestCase  # noqa: E402
+from src.storage import init_db  # noqa: E402
+from src.storage.problems import create_problem  # noqa: E402
+from src.storage import get_session  # noqa: E402
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _bootstrap_db():
+    init_db()
+    yield
+    try:
+        os.unlink(_db_path)
+    except OSError:
+        pass
+
+
+@pytest.fixture
+def sample_problem() -> Problem:
+    """입력 n을 받아 2*n을 출력하는 단순 문제."""
+    return Problem(
+        id=0,  # placeholder; DB에서 새 id 부여
+        title="2배 출력",
+        statement="정수 n이 입력되면 2*n을 출력하라.",
+        category="basic",
+        level="bronze",
+        points=100,
+        time_limit_ms=1000,
+        memory_limit_mb=128,
+        reference_code="n = int(input())\nprint(n * 2)\n",
+        intent_rubric=IntentRubric(
+            expected_approach="입력을 정수로 파싱 후 2배",
+            expected_complexity="O(1)",
+            must_handle=["0", "음수"],
+            forbidden_patterns=["하드코딩"],
+            key_insight="단순 산술",
+            one_line_summary="n*2 출력",
+        ),
+        test_cases=[
+            TestCase(ordinal=1, stdin="3\n", expected_stdout="6", is_sample=True),
+            TestCase(ordinal=2, stdin="0\n", expected_stdout="0"),
+            TestCase(ordinal=3, stdin="-5\n", expected_stdout="-10"),
+        ],
+    )
+
+
+@pytest.fixture
+def seeded_problem_id(sample_problem: Problem) -> int:
+    with get_session() as s:
+        return create_problem(s, sample_problem, status="approved")

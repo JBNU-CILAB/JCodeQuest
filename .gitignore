@@ -1,2 +1,4 @@
 history.md
 sqlite.db
+/.venv
+__pycache__
