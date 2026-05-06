@@ -17,6 +17,8 @@ class ProblemRow(SQLModel, table=True):
     category: str
     level: str = "bronze"
     points: int = 100
+    time_limit_ms: int = 2000
+    memory_limit_mb: int = 256
     reference_code: str
     intent_rubric: dict = Field(sa_column=Column(JSON, nullable=False))
     status: str = Field(default="draft", index=True)  # draft | approved | retired
@@ -54,5 +56,8 @@ class SubmissionRow(SQLModel, table=True):
     final_verdict: str | None = None        # "AC" | "SUS"
     mode: str | None = None                 # "unanimous" | "majority"
     votes: list | None = Field(default=None, sa_column=Column(JSON))
+    test_results: list | None = Field(default=None, sa_column=Column(JSON))
+    max_elapsed_ms: int | None = None
+    peak_memory_kb: int | None = None
     points_awarded: int | None = None       # AC인 경우에만 채워짐
     created_at: datetime = Field(default_factory=_utcnow)

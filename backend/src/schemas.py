@@ -90,6 +90,7 @@ class GradeRequest(BaseModel):
 
 class GradeResponse(BaseModel):
     submission_id: int
-    ensemble: EnsembleResult
+    final_verdict: EnsembleVerdict
     test_results: list[TestResult]
+    ensemble: EnsembleResult | None = None  # 테스트 실패 시 LLM 미호출
     points_awarded: int = 0
