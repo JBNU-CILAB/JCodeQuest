@@ -53,6 +53,7 @@ class SubmissionRow(SQLModel, table=True):
     user_id: int = Field(index=True)
     problem_id: int = Field(foreign_key="problem.id", index=True)
     code: str
+    status: str = Field(default="queued", index=True)  # queued|running|done|failed
     final_verdict: str | None = None        # "AC" | "SUS"
     mode: str | None = None                 # "unanimous" | "majority"
     votes: list | None = Field(default=None, sa_column=Column(JSON))

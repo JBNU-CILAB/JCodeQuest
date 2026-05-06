@@ -82,15 +82,24 @@ class EnsembleResult(BaseModel):
     votes: list[JudgeVote]
 
 
+JobStatus = Literal["queued", "running", "done", "failed"]
+
+
 class GradeRequest(BaseModel):
     user_id: int
     problem_id: int
     code: str
 
 
-class GradeResponse(BaseModel):
+class GradeAcceptedResponse(BaseModel):
     submission_id: int
-    final_verdict: EnsembleVerdict
-    test_results: list[TestResult]
-    ensemble: EnsembleResult | None = None  # 테스트 실패 시 LLM 미호출
-    points_awarded: int = 0
+    status: JobStatus = "queued"
+
+
+class SubmissionStatusResponse(BaseModel):
+    submission_id: int
+    status: JobStatus
+    final_verdict: EnsembleVerdict | None = None
+    test_results: list[TestResult] | None = None
+    ensemble: EnsembleResult | None = None
+    points_awarded: int | None = None

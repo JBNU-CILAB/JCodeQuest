@@ -1,15 +1,25 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from .api.grading import router as grading_router
+from .judge.jobs import JobQueue
 from .storage import init_db
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
     init_db()
-    yield
+    queue = JobQueue(
+        concurrency=int(os.getenv("JCQ_QUEUE_CONCURRENCY", "1"))
+    )
+    await queue.start()
+    app.state.queue = queue
+    try:
+        yield
+    finally:
+        await queue.stop()
 
 
 app = FastAPI(title="JCodeQuest Backend", lifespan=lifespan)

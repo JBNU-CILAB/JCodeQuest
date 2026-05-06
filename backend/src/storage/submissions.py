@@ -51,6 +51,15 @@ def create_submission(
     return row.id
 
 
+def set_status(session: Session, submission_id: int, status: str) -> None:
+    row = session.get(SubmissionRow, submission_id)
+    if row is None:
+        return
+    row.status = status
+    session.add(row)
+    session.commit()
+
+
 def save_grading(
     session: Session,
     submission_id: int,
@@ -63,6 +72,7 @@ def save_grading(
     row = session.get(SubmissionRow, submission_id)
     if row is None:
         raise ValueError(f"submission {submission_id} not found")
+    row.status = "done"
     row.final_verdict = final_verdict
     row.mode = ensemble.mode if ensemble else None
     row.votes = [v.model_dump() for v in ensemble.votes] if ensemble else None
