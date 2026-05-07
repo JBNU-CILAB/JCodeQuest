@@ -1,10 +1,13 @@
-from collections import Counter
 from dataclasses import dataclass
 
 from langchain_ollama import ChatOllama
 
 from ..schemas import EnsembleResult, JudgeVote, Problem, TestResult
 from .prompts import judge_prompt
+
+# 2/3 이상 AC면 AC. 투표는 binary(AC|SUS)이고 판사 3명 → 분포는
+# 3-0 / 2-1 / 1-2 / 0-3 네 가지뿐이라 이 임계 하나로 mode까지 결정됨.
+AC_RATIO_THRESHOLD = 2 / 3
 
 
 @dataclass(frozen=True)
@@ -16,8 +19,8 @@ class JudgeSpec:
 
 JUDGES = [
     JudgeSpec("Melchior", "qwen2.5-coder:14b-instruct-q5_K_M", "엄격한 채점관"),
-    JudgeSpec("Balthasar", "deepseek-coder-v2:16b-lite-instruct", "코드 리뷰어"),
-    JudgeSpec("Casper", "llama3.1:8b-instruct-q5_K_M", "출제자 의도 분석가"),
+    JudgeSpec("Balthasar", "deepseek-coder-v2:lite", "코드 리뷰어"),
+    JudgeSpec("Casper", "llama3.1:8b", "출제자 의도 분석가"),
 ]
 
 
@@ -56,9 +59,8 @@ async def vote(
     base_url: str | None = None,
 ) -> EnsembleResult:
     votes = [await _ask(s, problem, code, test_results, base_url) for s in JUDGES]
-    top, n = Counter(v.verdict for v in votes).most_common(1)[0]
-    if n == len(votes):
-        return EnsembleResult(final_verdict=top, mode="unanimous", votes=votes)
-    if n >= 2:
-        return EnsembleResult(final_verdict=top, mode="majority", votes=votes)
-    return EnsembleResult(final_verdict="DISPUTED", mode="split", votes=votes)
+    n_ac = sum(1 for v in votes if v.verdict == "AC")
+    total = len(votes)
+    final = "AC" if n_ac / total >= AC_RATIO_THRESHOLD else "SUS"
+    mode = "unanimous" if n_ac in (0, total) else "majority"
+    return EnsembleResult(final_verdict=final, mode=mode, votes=votes)

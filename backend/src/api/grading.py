@@ -11,6 +11,7 @@ from ..schemas import (
 )
 from ..storage import get_session
 from ..storage.problems import get_problem
+from ..storage import submissions as subs_store
 from ..storage.submissions import (
     MAX_ATTEMPTS,
     attempt_status,
@@ -40,6 +41,17 @@ async def submit_grade(
         if astatus.attempts >= MAX_ATTEMPTS:
             raise HTTPException(
                 429, f"최대 제출 횟수({MAX_ATTEMPTS}회) 초과"
+            )
+
+        cooldown = astatus.cooldown_remaining_s()
+        if cooldown > 0:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"제출 간 최소 {subs_store.SUBMISSION_COOLDOWN_S:.0f}초 간격 — "
+                    f"{cooldown:.1f}초 후 다시 시도"
+                ),
+                headers={"Retry-After": str(int(cooldown) + 1)},
             )
 
         submission_id = create_submission(

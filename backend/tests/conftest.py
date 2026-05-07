@@ -32,6 +32,14 @@ def _bootstrap_db():
         pass
 
 
+@pytest.fixture(autouse=True)
+def _disable_cooldown(monkeypatch):
+    """기존 슈트는 빠른 연속 제출을 검사하므로 쿨다운 0으로 떨어뜨림.
+    쿨다운 자체를 검사하는 테스트는 자기 fixture에서 다시 켠다."""
+    import src.storage.submissions as subs  # noqa: PLC0415
+    monkeypatch.setattr(subs, "SUBMISSION_COOLDOWN_S", 0.0)
+
+
 @pytest.fixture
 def sample_problem() -> Problem:
     """입력 n을 받아 2*n을 출력하는 단순 문제."""

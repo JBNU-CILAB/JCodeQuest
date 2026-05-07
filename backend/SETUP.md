@@ -126,6 +126,27 @@ curl http://localhost:8000/health
 
 실 Ollama 통합 테스트는 별도 — `OLLAMA_BASE_URL` 띄워둔 채 `tests/test_pipeline.py`에서 monkeypatch 빼고 돌리면 됨.
 
+### 9.1 라이브 LLM 슈트 (`tests/live/`)
+
+3-judge ensemble을 실 Ollama에 직접 꽂아서 시나리오별 채점 결과 + 각 판사 의견을 디스크에 통째로 기록한다. 옵트인:
+
+```bash
+source env.sh                       # OLLAMA_BASE_URL 등 주입
+JCQ_RUN_LIVE_LLM=1 .venv/bin/pytest tests/live -v -s
+```
+
+플래그가 없거나 Ollama가 닫혀있으면 `tests/live/`는 통째로 skip. 기록물은 `tests/artifacts/`에:
+
+- `live_llm_<ts>.jsonl` — 시나리오별 raw 레코드 (테스트 실행 중 즉시 flush, 중간 죽어도 살아있음)
+- `live_llm_<ts>.md` — 사람이 읽는 요약 표 + 각 판사의 verdict / rationale 상세
+
+시나리오 셋:
+- AC 정석 (factorial 누적 곱) / 재귀 / trivial(n*2) — ensemble이 안정적으로 AC 합의하는지
+- SUS 하드코딩 (if/elif로 정답 매핑) — rubric의 forbidden_pattern을 LLM이 잡아내는지
+- WA / RE / TLE — 샌드박스 단계에서 SUS 확정, LLM 미호출 경로 검증
+
+LLM 응답은 비결정적이라 expected_verdict와 actual이 어긋나면 테스트는 fail 처리되지만, 그 자체가 분석 신호 — markdown에 `UNEXPECTED` 라벨로 따로 보임.
+
 ## 10. systemd 서비스 (옵션)
 
 ```ini

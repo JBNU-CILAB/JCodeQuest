@@ -2,3 +2,6 @@ history.md
 sqlite.db
 /.venv
 __pycache__
+env.sh
+backend/tests/artifacts/*
+!backend/tests/artifacts/.gitkeep
