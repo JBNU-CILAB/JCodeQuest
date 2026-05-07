@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from langchain_ollama import ChatOllama
 
-from ..schemas import EnsembleResult, JudgeVote, Problem, TestResult
+from ..schemas import EnsembleResult, JudgeVote, JudgeVotePartial, Problem, TestResult
 from .prompts import judge_prompt
 
 # 2/3 이상 AC면 AC. 투표는 binary(AC|SUS)이고 판사 3명 → 분포는
@@ -32,10 +32,10 @@ async def _ask(
     base_url: str | None,
 ) -> JudgeVote:
     llm = ChatOllama(model=spec.model, temperature=0, format="json", base_url=base_url)
-    chain = judge_prompt | llm.with_structured_output(JudgeVote, method="json_mode")
+    chain = judge_prompt | llm.with_structured_output(JudgeVotePartial, method="json_mode")
     r = problem.intent_rubric
     passed = sum(x.passed for x in results)
-    out: JudgeVote = await chain.ainvoke(
+    partial: JudgeVotePartial = await chain.ainvoke(
         {
             "persona": spec.persona,
             "title": problem.title,
@@ -49,7 +49,7 @@ async def _ask(
             "code": code,
         }
     )
-    return out.model_copy(update={"judge_id": spec.judge_id})
+    return JudgeVote(judge_id=spec.judge_id, **partial.model_dump())
 
 
 async def vote(

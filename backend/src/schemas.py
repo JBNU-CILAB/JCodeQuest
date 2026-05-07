@@ -68,12 +68,17 @@ class Submission(BaseModel):
     )
 
 
-class JudgeVote(BaseModel):
-    judge_id: str
+class JudgeVotePartial(BaseModel):
+    """LLM이 직접 채우는 필드만 담는 스키마. judge_id는 호출자가 주입."""
+
     verdict: Verdict
     intent_match: bool
     rationale: str
     confidence: float = Field(ge=0.0, le=1.0)
+
+
+class JudgeVote(JudgeVotePartial):
+    judge_id: str
 
 
 class EnsembleResult(BaseModel):
