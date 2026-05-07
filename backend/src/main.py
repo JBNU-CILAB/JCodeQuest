@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api.grading import router as grading_router
+from .api.tutor import router as tutor_router
 from .judge.jobs import JobQueue
 from .storage import init_db
 
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="JCodeQuest Backend", lifespan=lifespan)
 app.include_router(grading_router)
+app.include_router(tutor_router)
 
 
 @app.get("/health")

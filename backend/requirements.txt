@@ -4,3 +4,4 @@ pydantic>=2.9
 sqlmodel>=0.0.22
 langchain-core>=0.3
 langchain-ollama>=0.2
+openai>=1.50

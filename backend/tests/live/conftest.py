@@ -44,7 +44,11 @@ def _ollama_alive(url: str, timeout: float = 3.0) -> tuple[bool, str]:
 
 
 def pytest_collection_modifyitems(config, items):  # noqa: ARG001
-    """JCQ_RUN_LIVE_LLM이 꺼져있거나 Ollama가 죽었으면 live/* 전체 skip."""
+    """게이팅:
+    - JCQ_RUN_LIVE_LLM=1 아니면 live/* 전부 skip
+    - Ollama 죽으면 ensemble 슈트만 skip (튜터는 OpenAI라 무관)
+    - OPENAI_API_KEY 없으면 튜터 슈트만 skip
+    """
     if os.getenv("JCQ_RUN_LIVE_LLM", "").strip() not in ("1", "true", "yes"):
         skip = pytest.mark.skip(reason="JCQ_RUN_LIVE_LLM=1 필요")
         for item in items:
@@ -55,10 +59,18 @@ def pytest_collection_modifyitems(config, items):  # noqa: ARG001
     url = _ollama_url()
     alive, info = _ollama_alive(url)
     if not alive:
-        skip = pytest.mark.skip(reason=f"Ollama unreachable @ {url}: {info}")
+        skip_oll = pytest.mark.skip(reason=f"Ollama unreachable @ {url}: {info}")
         for item in items:
-            if "tests/live/" in str(item.fspath).replace("\\", "/"):
-                item.add_marker(skip)
+            path = str(item.fspath).replace("\\", "/")
+            # 튜터는 Ollama 안 씀 — 죽어 있어도 통과 가능
+            if "tests/live/" in path and "test_live_tutor" not in path:
+                item.add_marker(skip_oll)
+
+    if not os.getenv("OPENAI_API_KEY"):
+        skip_oai = pytest.mark.skip(reason="OPENAI_API_KEY 필요")
+        for item in items:
+            if "test_live_tutor" in str(item.fspath).replace("\\", "/"):
+                item.add_marker(skip_oai)
 
 
 # ────────────────────────── recorder ──────────────────────────
@@ -170,6 +182,121 @@ class LiveRunRecorder:
                 lines.append("**Ensemble** — skipped (sandbox 단계 실패로 LLM 미호출)\n")
 
         self.md_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+@dataclass
+class TutorScenarioRecord:
+    name: str
+    problem_title: str
+    verdict: str
+    code: str
+    votes: list[dict] | None
+    test_results: list[dict]
+    model: str
+    message: str
+    elapsed_s: float
+    notes: str = ""
+
+
+class LiveTutorRecorder:
+    def __init__(self, jsonl_path: Path, md_path: Path, model_label: str):
+        ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+        self.jsonl_path = jsonl_path
+        self.md_path = md_path
+        self.model_label = model_label
+        self._fp = jsonl_path.open("w", encoding="utf-8")
+        self._records: list[TutorScenarioRecord] = []
+
+    def write(self, rec: TutorScenarioRecord) -> None:
+        self._records.append(rec)
+        self._fp.write(
+            json.dumps(rec.__dict__, ensure_ascii=False, default=str) + "\n"
+        )
+        self._fp.flush()
+
+    def close(self) -> None:
+        self._fp.close()
+        self._render_markdown()
+
+    def _render_markdown(self) -> None:
+        lines: list[str] = []
+        ts = datetime.now().isoformat(timespec="seconds")
+        lines.append(f"# Live Tutor Run — {ts}\n")
+        lines.append(f"- Endpoint: `{self.model_label}`")
+        lines.append(f"- Records: {len(self._records)}\n")
+
+        lines.append("## Summary\n")
+        lines.append("| Scenario | Verdict | Tests | Elapsed | Length |")
+        lines.append("|---|---|---|---|---|")
+        for r in self._records:
+            tr_total = len(r.test_results)
+            tr_pass = sum(1 for t in r.test_results if t.get("passed"))
+            tests = f"{tr_pass}/{tr_total}" if tr_total else "-"
+            lines.append(
+                f"| {r.name} | {r.verdict} | {tests} | "
+                f"{r.elapsed_s:.1f}s | {len(r.message)}자 |"
+            )
+        lines.append("")
+
+        lines.append("## Details\n")
+        for r in self._records:
+            lines.append(f"### {r.name}")
+            if r.notes:
+                lines.append(f"_{r.notes}_\n")
+            lines.append(f"- **Problem**: {r.problem_title}")
+            lines.append(f"- **Verdict**: `{r.verdict}`")
+            lines.append(f"- **Model**: `{r.model}`\n")
+            lines.append("**Code**")
+            lines.append("```python")
+            lines.append(r.code.rstrip())
+            lines.append("```\n")
+            if r.votes:
+                lines.append("**Judge votes**")
+                for v in r.votes:
+                    lines.append(
+                        f"- {v.get('judge_id')}: `{v.get('verdict')}` "
+                        f"(intent_match={v.get('intent_match')}, "
+                        f"conf={v.get('confidence')}) — {v.get('rationale')}"
+                    )
+                lines.append("")
+            else:
+                lines.append("_No LLM votes (sandbox-fail path)_\n")
+            lines.append("**Test results**")
+            for t in r.test_results:
+                flag = "ok" if t.get("passed") else "fail"
+                extra = ""
+                if not t.get("passed"):
+                    if t.get("status") == "OK":
+                        extra = f" — actual={t.get('actual_stdout')!r}"
+                    elif t.get("status") in ("RE", "TLE", "MLE"):
+                        e = (t.get("error") or "").strip()[:120]
+                        extra = f" — {t.get('status')} {e}"
+                lines.append(
+                    f"- #{t.get('ordinal')} `{t.get('status')}` ({flag}){extra}"
+                )
+            lines.append("")
+            lines.append("**Tutor message**")
+            lines.append("> " + r.message.replace("\n", "\n> "))
+            lines.append("")
+
+        self.md_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+@pytest.fixture(scope="session")
+def tutor_recorder() -> LiveTutorRecorder:
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    label = (
+        f"{os.getenv('OPENAI_MODEL', 'gpt-4o-mini')} @ "
+        f"{os.getenv('OPENAI_BASE_URL', 'api.openai.com')}"
+    )
+    rec = LiveTutorRecorder(
+        jsonl_path=ARTIFACTS_DIR / f"live_tutor_{ts}.jsonl",
+        md_path=ARTIFACTS_DIR / f"live_tutor_{ts}.md",
+        model_label=label,
+    )
+    yield rec
+    rec.close()
+    print(f"\n[live-tutor] artifacts:\n  - {rec.jsonl_path}\n  - {rec.md_path}")
 
 
 @pytest.fixture(scope="session")

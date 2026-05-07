@@ -78,7 +78,7 @@ class JudgeVotePartial(BaseModel):
 
 
 class JudgeVote(JudgeVotePartial):
-    judge_id: str
+    judge_id: str # 어떤 모델이 채점했는지 자신의 ID Sign (Melchior, Balthasar, Casper)
 
 
 class EnsembleResult(BaseModel):
@@ -108,3 +108,8 @@ class SubmissionStatusResponse(BaseModel):
     test_results: list[TestResult] | None = None
     ensemble: EnsembleResult | None = None
     points_awarded: int | None = None
+
+
+class TutorResponse(BaseModel):
+    submission_id: int
+    message: str
