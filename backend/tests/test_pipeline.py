@@ -1,6 +1,7 @@
 """POST /grade → 큐 → 워커 → DB 저장 → GET /grade/{id} 흐름 E2E.
 LLM ensemble은 monkeypatch로 mocking하여 Ollama 의존 제거."""
 import asyncio
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -125,3 +126,39 @@ def test_already_solved_blocks_resubmission(
     # 두 번째 시도는 409 (이미 해결)
     r2 = client.post("/grade", json=body)
     assert r2.status_code == 409
+
+
+def test_sse_streams_until_done(client: TestClient, seeded_problem_id: int):
+    r = client.post("/grade", json={
+        "user_id": 42,
+        "problem_id": seeded_problem_id,
+        "code": "n = int(input())\nprint(n * 2)\n",
+    })
+    assert r.status_code == 202
+    sub_id = r.json()["submission_id"]
+
+    events = []
+    with client.stream("GET", f"/grade/{sub_id}/events") as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        for line in resp.iter_lines():
+            if not line.startswith("data: "):
+                continue
+            payload = json.loads(line[len("data: "):])
+            events.append(payload)
+            if payload["status"] in ("done", "failed"):
+                break
+
+    assert events, "SSE stream produced no data events"
+    terminal = events[-1]
+    assert terminal["status"] == "done"
+    assert terminal["final_verdict"] == "AC"
+    assert terminal["points_awarded"] is not None
+    statuses = [e["status"] for e in events]
+    # 큐가 워커 처리보다 빠른 경우 첫 스냅샷이 이미 done일 수 있음 — 그래도 OK.
+    assert statuses[-1] == "done"
+
+
+def test_sse_404_for_unknown_submission(client: TestClient):
+    r = client.get("/grade/999999/events")
+    assert r.status_code == 404

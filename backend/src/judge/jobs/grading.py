@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 
+from ...events import SubmissionEventBroker
 from ...schemas import Problem, TestResult
 from ...storage import get_session
 from ...storage.submissions import save_grading, set_status
@@ -26,12 +27,18 @@ def _efficiency_multiplier(
 
 
 async def grade_submission(
-    submission_id: int, problem: Problem, code: str
+    submission_id: int,
+    problem: Problem,
+    code: str,
+    *,
+    events: SubmissionEventBroker | None = None,
 ) -> None:
     base_url = os.getenv("OLLAMA_BASE_URL")
 
     with get_session() as s:
         set_status(s, submission_id, "running")
+    if events is not None:
+        events.notify(submission_id)
 
     try:
         test_results = await asyncio.to_thread(
@@ -65,8 +72,12 @@ async def grade_submission(
                 ensemble=ensemble,
                 points_awarded=points,
             )
+        if events is not None:
+            events.notify(submission_id)
     except Exception:
         log.exception("grading failed for submission %d", submission_id)
         with get_session() as s:
             set_status(s, submission_id, "failed")
+        if events is not None:
+            events.notify(submission_id)
         raise

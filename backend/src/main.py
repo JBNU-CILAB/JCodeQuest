@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from .api.grading import router as grading_router
 from .api.tutor import router as tutor_router
+from .events import SubmissionEventBroker
 from .judge.jobs import JobQueue
 from .storage import init_db
 
@@ -17,6 +18,7 @@ async def lifespan(app: FastAPI):
     )
     await queue.start()
     app.state.queue = queue
+    app.state.events = SubmissionEventBroker()
     try:
         yield
     finally:
