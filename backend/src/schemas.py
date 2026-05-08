@@ -113,3 +113,14 @@ class SubmissionStatusResponse(BaseModel):
 class TutorResponse(BaseModel):
     submission_id: int
     message: str
+
+
+class TutorHistoryItem(BaseModel):
+    id: int
+    message: str
+    created_at: datetime
+
+
+class TutorHistoryResponse(BaseModel):
+    submission_id: int
+    messages: list[TutorHistoryItem]

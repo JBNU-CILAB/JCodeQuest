@@ -130,6 +130,108 @@ def test_tutor_when_sandbox_fail_no_votes(
     assert any(not t.get("passed") for t in captured["test_results"])
 
 
+def test_tutor_caches_by_default(
+    client: TestClient, seeded_problem_id: int, monkeypatch
+):
+    """두 번째 POST는 캐시 hit — LLM 호출 1회만 발생해야."""
+    calls = 0
+
+    async def counting_tutor(**_kwargs):
+        nonlocal calls
+        calls += 1
+        return f"메시지 #{calls}", "gpt-4o-mini"
+
+    import src.api.tutor as tutor_api
+    monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
+
+    sid = _create_done_submission(client, seeded_problem_id, user_id=21)
+
+    r1 = client.post(f"/tutor/{sid}")
+    assert r1.status_code == 200
+    assert r1.json()["message"] == "메시지 #1"
+
+    r2 = client.post(f"/tutor/{sid}")
+    assert r2.status_code == 200
+    # 캐시 hit이면 메시지 그대로
+    assert r2.json()["message"] == "메시지 #1"
+    assert calls == 1
+
+
+def test_tutor_regenerate_creates_new_message(
+    client: TestClient, seeded_problem_id: int, monkeypatch
+):
+    """?regenerate=true는 캐시를 무시하고 새 행을 만든다."""
+    calls = 0
+
+    async def counting_tutor(**_kwargs):
+        nonlocal calls
+        calls += 1
+        return f"메시지 #{calls}", "gpt-4o-mini"
+
+    import src.api.tutor as tutor_api
+    monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
+
+    sid = _create_done_submission(client, seeded_problem_id, user_id=22)
+
+    client.post(f"/tutor/{sid}")  # 첫 생성
+    r2 = client.post(f"/tutor/{sid}?regenerate=true")
+    assert r2.status_code == 200
+    assert r2.json()["message"] == "메시지 #2"
+    assert calls == 2
+
+    # 다시 캐시 모드로 부르면 최신(=#2)이 돌아와야
+    r3 = client.post(f"/tutor/{sid}")
+    assert r3.json()["message"] == "메시지 #2"
+    assert calls == 2
+
+
+def test_tutor_history_returns_all_revisions(
+    client: TestClient, seeded_problem_id: int, monkeypatch
+):
+    counter = 0
+
+    async def counting_tutor(**_kwargs):
+        nonlocal counter
+        counter += 1
+        return f"리비전 {counter}", "gpt-4o-mini"
+
+    import src.api.tutor as tutor_api
+    monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
+
+    sid = _create_done_submission(client, seeded_problem_id, user_id=23)
+
+    client.post(f"/tutor/{sid}")
+    client.post(f"/tutor/{sid}?regenerate=true")
+    client.post(f"/tutor/{sid}?regenerate=true")
+
+    r = client.get(f"/tutor/{sid}/history")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["submission_id"] == sid
+    msgs = body["messages"]
+    assert [m["message"] for m in msgs] == ["리비전 1", "리비전 2", "리비전 3"]
+    # id 단조 증가 + created_at 존재
+    ids = [m["id"] for m in msgs]
+    assert ids == sorted(ids)
+    for m in msgs:
+        assert "created_at" in m
+
+
+def test_tutor_history_404_on_missing_submission(client: TestClient):
+    r = client.get("/tutor/999999/history")
+    assert r.status_code == 404
+
+
+def test_tutor_history_empty_for_un_tutored_submission(
+    client: TestClient, seeded_problem_id: int
+):
+    """채점은 끝났지만 한 번도 튜터링 안 받은 제출 — 200 + 빈 리스트."""
+    sid = _create_done_submission(client, seeded_problem_id, user_id=24)
+    r = client.get(f"/tutor/{sid}/history")
+    assert r.status_code == 200
+    assert r.json() == {"submission_id": sid, "messages": []}
+
+
 def test_tutor_404_on_missing_submission(client: TestClient, monkeypatch):
     async def boom(**_kwargs):
         raise AssertionError("OpenAI는 호출되면 안 됨")

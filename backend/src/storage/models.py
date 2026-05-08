@@ -62,3 +62,14 @@ class SubmissionRow(SQLModel, table=True):
     peak_memory_kb: int | None = None
     points_awarded: int | None = None       # AC인 경우에만 채워짐
     created_at: datetime = Field(default_factory=_utcnow)
+
+
+class TutorMessageRow(SQLModel, table=True):
+    """제출당 N개 — `?regenerate=true`로 새 행이 추가됨. 이력 보존."""
+
+    __tablename__ = "tutor_message"
+
+    id: int | None = Field(default=None, primary_key=True)
+    submission_id: int = Field(foreign_key="submission.id", index=True)
+    message: str
+    created_at: datetime = Field(default_factory=_utcnow)
