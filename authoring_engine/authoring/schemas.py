@@ -1,10 +1,12 @@
 from typing import TypedDict
 
+from jcq_shared.schemas import ProblemLevel
+
 
 class CandidateProblem(TypedDict):
     index: int
     category: str
-    level: str
+    level: ProblemLevel
     points: int
     time_limit_ms: int
     memory_limit_mb: int
@@ -32,7 +34,7 @@ class CandidateProblem(TypedDict):
     saved_id: int | None
 
 
-class AuthoringState(TypedDict):
+class AuthoringState(TypedDict, total=False):
     original_problem_id: int
     target_count: int
     original_problem: dict | None
@@ -40,3 +42,5 @@ class AuthoringState(TypedDict):
     candidates: list[CandidateProblem]
     saved_problem_ids: list[int]
     errors: list[str]
+    # 서버에서 주입 — persist 단계가 ProblemRow에 함께 기록
+    langsmith_trace_id: str

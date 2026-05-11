@@ -10,8 +10,10 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .api.grading import router as grading_router
+from .api.problems import router as problems_router
 from .api.tutor import router as tutor_router
 from .events import SubmissionEventBroker
 from .judge.jobs import JobQueue
@@ -34,6 +36,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="JCodeQuest Backend", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(problems_router)
 app.include_router(grading_router)
 app.include_router(tutor_router)
 

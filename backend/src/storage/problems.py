@@ -44,7 +44,15 @@ def list_problems(
     return [_to_domain(r) for r in session.exec(stmt).all()]
 
 
-def create_problem(session: Session, problem: Problem, *, status: str = "draft") -> int:
+def create_problem(
+    session: Session,
+    problem: Problem,
+    *,
+    status: str = "draft",
+    parent_id: int | None = None,
+    langsmith_trace_id: str | None = None,
+    authoring_meta: dict | None = None,
+) -> int:
     row = ProblemRow(
         title=problem.title,
         statement=problem.statement,
@@ -56,6 +64,9 @@ def create_problem(session: Session, problem: Problem, *, status: str = "draft")
         reference_code=problem.reference_code,
         intent_rubric=problem.intent_rubric.model_dump(),
         status=status,
+        parent_id=parent_id,
+        langsmith_trace_id=langsmith_trace_id,
+        authoring_meta=authoring_meta,
         test_cases=[
             TestCaseRow(
                 ordinal=t.ordinal,

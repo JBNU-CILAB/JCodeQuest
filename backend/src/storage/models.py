@@ -24,6 +24,11 @@ class ProblemRow(SQLModel, table=True):
     status: str = Field(default="draft", index=True)  # draft | approved | retired
     created_at: datetime = Field(default_factory=_utcnow)
 
+    # 출제 엔진 메타 (수동 등록 문제는 모두 NULL)
+    parent_id: int | None = Field(default=None, foreign_key="problem.id", index=True)
+    langsmith_trace_id: str | None = Field(default=None, index=True)
+    authoring_meta: dict | None = Field(default=None, sa_column=Column(JSON))
+
     test_cases: list["TestCaseRow"] = Relationship(
         back_populates="problem",
         sa_relationship_kwargs={

@@ -3,26 +3,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from jcq_shared.schemas import IntentRubric, Problem, ProblemLevel, TestCase
+
+__all__ = ["IntentRubric", "Problem", "ProblemLevel", "TestCase"]
+
 Verdict = Literal["AC", "SUS"]
 EnsembleVerdict = Literal["AC", "SUS"]
 EnsembleMode = Literal["unanimous", "majority"]
 ExecStatus = Literal["OK", "TLE", "MLE", "RE"]
-
-
-class IntentRubric(BaseModel):
-    expected_approach: str
-    expected_complexity: str
-    must_handle: list[str] = Field(default_factory=list)
-    forbidden_patterns: list[str] = Field(default_factory=list)
-    key_insight: str
-    one_line_summary: str
-
-
-class TestCase(BaseModel):
-    ordinal: int
-    stdin: str
-    expected_stdout: str
-    is_sample: bool = False
 
 
 class ExecResult(BaseModel):
@@ -42,20 +30,6 @@ class TestResult(BaseModel):
     error: str | None = None
     elapsed_ms: int = 0
     peak_memory_kb: int = 0
-
-
-class Problem(BaseModel):
-    id: int
-    title: str
-    statement: str
-    category: str
-    level: Literal["bronze", "silver", "gold"] = "bronze"
-    points: int = 100
-    time_limit_ms: int = 2000
-    memory_limit_mb: int = 256
-    reference_code: str
-    intent_rubric: IntentRubric
-    test_cases: list[TestCase] = Field(default_factory=list)
 
 
 class Submission(BaseModel):

@@ -1,5 +1,6 @@
 import json
 
+from jcq_shared.schemas import IntentRubric
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
@@ -90,6 +91,11 @@ def generate_variants(state: AuthoringState) -> dict:
             continue
 
         rubric = draft.get("intent_rubric", {})
+        try:
+            IntentRubric.model_validate(rubric)
+        except Exception as exc:
+            errors.append(f"variant {i}: intent_rubric 검증 실패 — {exc}")
+            continue
 
         # ── step 2: author_solution ────────────────────────────────────────
         try:

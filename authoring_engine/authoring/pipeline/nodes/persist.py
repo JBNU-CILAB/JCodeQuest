@@ -1,3 +1,5 @@
+from jcq_shared.schemas import IntentRubric, Problem, TestCase
+
 from ...config import ensure_backend_on_path
 from ...schemas import AuthoringState
 
@@ -5,13 +7,15 @@ from ...schemas import AuthoringState
 def persist_approved(state: AuthoringState) -> dict:
     """solver_passed된 문제를 status='approved'로 DB에 저장한다."""
     ensure_backend_on_path()
-    from src.schemas import IntentRubric, Problem, TestCase  # type: ignore[import]
     from src.storage.db import get_session  # type: ignore[import]
     from src.storage.problems import create_problem  # type: ignore[import]
 
     saved_ids: list[int] = list(state.get("saved_problem_ids", []))
     errors: list[str] = list(state.get("errors", []))
     updated: list[dict] = []
+
+    parent_id = state.get("original_problem_id")
+    trace_id = state.get("langsmith_trace_id")
 
     for c in state["candidates"]:
         c = dict(c)
@@ -44,8 +48,27 @@ def persist_approved(state: AuthoringState) -> dict:
                 intent_rubric=rubric,
                 test_cases=test_cases,
             )
+            authoring_meta = {
+                "candidate_index": c.get("index"),
+                "judge_score": c.get("judge_score"),
+                "judge_passed": c.get("judge_passed"),
+                "judge_rationale": c.get("judge_rationale"),
+                "judge_issues": c.get("judge_issues") or [],
+                "solver_results": c.get("solver_results") or [],
+                "solver_passed": c.get("solver_passed"),
+                "verify_passed": c.get("verify_passed"),
+                "verify_error": c.get("verify_error"),
+                "verify_attempts": c.get("verify_attempts"),
+            }
             with get_session() as session:
-                pid = create_problem(session, problem, status="approved")
+                pid = create_problem(
+                    session,
+                    problem,
+                    status="approved",
+                    parent_id=parent_id,
+                    langsmith_trace_id=trace_id,
+                    authoring_meta=authoring_meta,
+                )
             c["saved_id"] = pid
             saved_ids.append(pid)
         except Exception as exc:
