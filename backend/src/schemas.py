@@ -88,6 +88,40 @@ class SubmissionStatusResponse(BaseModel):
     points_awarded: int | None = None
 
 
+class PublicTestCase(BaseModel):
+    """학생에게 노출되는 샘플 케이스. hidden 케이스의 stdin/expected는 절대 포함하지 않음."""
+
+    ordinal: int
+    stdin: str
+    expected_stdout: str
+
+
+class ProblemSummary(BaseModel):
+    """목록용 — reference_code / intent_rubric 내부는 제외."""
+
+    id: int
+    title: str
+    category: str
+    level: Literal["bronze", "silver", "gold"]
+    points: int
+    one_line_summary: str
+
+
+class ProblemDetail(BaseModel):
+    """상세 — statement와 샘플 케이스만 공개. 채점 기준/정답 코드는 비공개."""
+
+    id: int
+    title: str
+    statement: str
+    category: str
+    level: Literal["bronze", "silver", "gold"]
+    points: int
+    time_limit_ms: int
+    memory_limit_mb: int
+    one_line_summary: str
+    sample_test_cases: list[PublicTestCase] = Field(default_factory=list)
+
+
 class TutorResponse(BaseModel):
     submission_id: int
     message: str

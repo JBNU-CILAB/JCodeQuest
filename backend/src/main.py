@@ -45,6 +45,7 @@ app.add_middleware(
 app.include_router(problems_router)
 app.include_router(grading_router)
 app.include_router(tutor_router)
+app.include_router(problems_router)
 
 
 @app.get("/health")

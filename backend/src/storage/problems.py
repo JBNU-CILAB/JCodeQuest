@@ -34,13 +34,19 @@ def get_problem(session: Session, problem_id: int) -> Problem | None:
 
 
 def list_problems(
-    session: Session, *, status: str | None = None, category: str | None = None
+    session: Session,
+    *,
+    status: str | None = None,
+    category: str | None = None,
+    level: str | None = None,
 ) -> list[Problem]:
     stmt = select(ProblemRow)
     if status is not None:
         stmt = stmt.where(ProblemRow.status == status)
     if category is not None:
         stmt = stmt.where(ProblemRow.category == category)
+    if level is not None:
+        stmt = stmt.where(ProblemRow.level == level)
     return [_to_domain(r) for r in session.exec(stmt).all()]
 
 
