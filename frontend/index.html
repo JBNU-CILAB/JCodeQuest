@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JCodeQuest</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d14;
+      --surface: #13131e;
+      --card: #1b1b28;
+      --border: #27273a;
+      --text: #ddddf0;
+      --muted: #7777a0;
+      --primary: #7c6fff;
+      --primary-dim: #3d3880;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --bronze: #cd7f32;
+      --silver: #a0aec0;
+      --gold: #eab308;
+      --mono: 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      height: 54px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      background: linear-gradient(135deg, #a78bfa, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .header-right input {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 10px;
+      border-radius: 6px;
+      width: 64px;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .header-right input:focus { outline: none; border-color: var(--primary); }
+
+    /* ── Layout ── */
+    .layout {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 54px);
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 280px;
+      min-width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-head {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sidebar-head span:first-child {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+    }
+
+    #problemCount { font-size: 11px; color: var(--muted); }
+
+    .problem-list { flex: 1; overflow-y: auto; padding: 8px; }
+
+    .problem-card {
+      padding: 11px 13px;
+      border-radius: 7px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background .12s, border-color .12s;
+      margin-bottom: 3px;
+    }
+
+    .problem-card:hover { background: var(--card); border-color: var(--border); }
+    .problem-card.active { background: var(--card); border-color: var(--primary-dim); }
+
+    .pc-title {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 5px;
+      display: flex;
+      gap: 6px;
+    }
+
+    .pc-title .num { color: var(--muted); flex-shrink: 0; }
+
+    .pc-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ── Main ── */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 32px;
+    }
+
+    /* ── Empty state ── */
+    .empty-state {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--muted);
+    }
+
+    .empty-icon { font-size: 52px; opacity: .25; line-height: 1; }
+    .empty-title { font-size: 17px; font-weight: 600; color: var(--text); opacity: .6; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .b-bronze { background: rgba(205,127,50,.18); color: var(--bronze); border: 1px solid rgba(205,127,50,.4); }
+    .b-silver { background: rgba(160,174,192,.15); color: var(--silver); border: 1px solid rgba(160,174,192,.35); }
+    .b-gold   { background: rgba(234,179,8,.15);   color: var(--gold);   border: 1px solid rgba(234,179,8,.35); }
+    .b-cat    { background: rgba(124,111,255,.12); color: #a78bfa;       border: 1px solid rgba(124,111,255,.3); }
+    .b-pts    { background: rgba(34,197,94,.12);   color: var(--success); border: 1px solid rgba(34,197,94,.3); }
+
+    /* ── Problem detail ── */
+    .problem-detail { max-width: 820px; }
+
+    .pd-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+
+    .pd-title { font-size: 22px; font-weight: 700; flex: 1; min-width: 0; }
+
+    .pd-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    .pd-meta {
+      display: flex;
+      gap: 18px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 20px;
+      margin-top: 8px;
+    }
+
+    /* ── Section card ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    /* ── Statement ── */
+    .statement { font-size: 14px; line-height: 1.75; white-space: pre-wrap; }
+
+    /* ── Sample IO ── */
+    .samples { display: flex; flex-direction: column; gap: 10px; }
+
+    .sample-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .io-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .io-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .io-box pre {
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* ── Editor ── */
+    textarea#code {
+      width: 100%;
+      min-height: 220px;
+      background: #09090f;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: #e2e8f0;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.65;
+      padding: 13px 15px;
+      resize: vertical;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    textarea#code:focus { border-color: var(--primary); }
+
+    .submit-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: 8px 18px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: filter .12s, opacity .12s;
+      white-space: nowrap;
+    }
+
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { filter: brightness(1.18); }
+    .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      padding: 5px 12px;
+    }
+
+    .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+
+    #submitError { font-size: 12px; color: var(--danger); }
+
+    /* ── Result ── */
+    .verdict {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    .v-AC      { background: rgba(34,197,94,.14);  color: var(--success); border: 1px solid rgba(34,197,94,.3); }
+    .v-SUS     { background: rgba(239,68,68,.13);  color: var(--danger);  border: 1px solid rgba(239,68,68,.3); }
+    .v-running { background: rgba(245,158,11,.13); color: var(--warning); border: 1px solid rgba(245,158,11,.3); }
+    .v-failed  { background: rgba(239,68,68,.1);   color: var(--danger);  border: 1px solid rgba(239,68,68,.2); }
+
+    .points-line {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--gold);
+      margin-bottom: 14px;
+    }
+
+    /* ── Test table ── */
+    table.tt {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .tt th {
+      text-align: left;
+      padding: 5px 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tt td {
+      padding: 7px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.03);
+      font-family: var(--mono);
+    }
+
+    .tt tr:last-child td { border-bottom: none; }
+
+    .ok  { color: var(--success); font-weight: 600; }
+    .err { color: var(--danger);  font-weight: 600; }
+
+    .stag {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .s-OK  { background: rgba(34,197,94,.15);  color: var(--success); }
+    .s-TLE { background: rgba(245,158,11,.15); color: var(--warning); }
+    .s-MLE { background: rgba(124,111,255,.15); color: #a78bfa; }
+    .s-RE  { background: rgba(239,68,68,.15);  color: var(--danger); }
+
+    /* ── Ensemble votes ── */
+    .votes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+    .vote-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      min-width: 130px;
+    }
+
+    .vc-judge { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+    .vc-verdict { font-size: 14px; font-weight: 700; }
+    .vc-conf { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .vc-rationale { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.4; font-family: system-ui; font-weight: 400; }
+
+    .mode-line { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+    /* ── Tutor ── */
+    .tutor-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .tutor-msg {
+      font-size: 13px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      color: var(--text);
+    }
+
+    /* ── Spinner ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .spin {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,.15);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      vertical-align: middle;
+    }
+
+    .loading-hint {
+      padding: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .layout { flex-direction: column; height: auto; overflow: visible; }
+      .sidebar { width: 100%; max-height: 180px; border-right: none; border-bottom: 1px solid var(--border); }
+      .main { padding: 16px; overflow-y: visible; }
+      .sample-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⚔ JCodeQuest</div>
+  <div class="header-right">
+    <span>User ID</span>
+    <input type="number" id="userId" value="1" min="1" max="9999">
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── Sidebar ───────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <span>문제 목록</span>
+      <span id="problemCount"></span>
+    </div>
+    <div class="problem-list" id="problemList">
+      <div class="loading-hint"><span class="spin"></span></div>
+    </div>
+  </aside>
+
+  <!-- ── Main ──────────────────────────────────── -->
+  <main class="main" id="main">
+
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">🗡</div>
+      <div class="empty-title">문제를 선택하세요</div>
+      <div style="font-size:13px">왼쪽 목록에서 풀고 싶은 문제를 클릭하세요</div>
+    </div>
+
+    <div class="problem-detail" id="problemView" style="display:none"></div>
+
+  </main>
+</div>
+
+<script>
+'use strict';
+
+const API = 'http://localhost:8000';
+let currentProblem = null;
+let currentSubId   = null;
+let activeES       = null;
+
+// ── API helpers ──────────────────────────────────────────────────────────
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Problem list ─────────────────────────────────────────────────────────
+
+async function loadProblems() {
+  const listEl = document.getElementById('problemList');
+  try {
+    const problems = await apiFetch('/problems');
+    document.getElementById('problemCount').textContent = `${problems.length}개`;
+
+    if (!problems.length) {
+      listEl.innerHTML = '<div class="loading-hint">등록된 문제가 없습니다</div>';
+      return;
+    }
+
+    listEl.innerHTML = problems.map(p => `
+      <div class="problem-card" id="pc-${p.id}" onclick="selectProblem(${p.id})">
+        <div class="pc-title">
+          <span class="num">#${p.id}</span>
+          <span>${h(p.title)}</span>
+        </div>
+        <div class="pc-meta">
+          <span class="badge ${levelBadge(p.level)}">${levelLabel(p.level)}</span>
+          <span>${h(p.category)}</span>
+          <span>·</span>
+          <span>${p.points}pts</span>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    listEl.innerHTML = `<div class="loading-hint" style="color:var(--danger)">오류: ${h(e.message)}</div>`;
+  }
+}
+
+async function selectProblem(id) {
+  document.querySelectorAll('.problem-card').forEach(c => c.classList.remove('active'));
+  document.getElementById(`pc-${id}`)?.classList.add('active');
+
+  closeES();
+
+  try {
+    const p = await apiFetch(`/problems/${id}`);
+    currentProblem = p;
+    currentSubId   = null;
+    renderProblem(p);
+  } catch (e) {
+    showMainError(e.message);
+  }
+}
+
+// ── Render problem view ──────────────────────────────────────────────────
+
+function renderProblem(p) {
+  document.getElementById('emptyState').style.display = 'none';
+  const view = document.getElementById('problemView');
+  view.style.display = 'block';
+
+  const samples = (p.test_cases || []).filter(tc => tc.is_sample);
+
+  view.innerHTML = `
+    <!-- Header -->
+    <div class="pd-header">
+      <div class="pd-title">${h(p.title)}</div>
+      <div class="pd-badges">
+        <span class="badge ${levelBadge(p.level)}">${levelLabel(p.level)}</span>
+        <span class="badge b-cat">${h(p.category)}</span>
+        <span class="badge b-pts">+${p.points}pts</span>
+      </div>
+    </div>
+    <div class="pd-meta">
+      <span>⏱ 제한 ${p.time_limit_ms}ms</span>
+      <span>💾 ${p.memory_limit_mb}MB</span>
+    </div>
+
+    <!-- Statement -->
+    <div class="card">
+      <div class="card-title">문제 설명</div>
+      <div class="statement">${h(p.statement)}</div>
+    </div>
+
+    <!-- Sample cases -->
+    ${samples.length ? `
+    <div class="card">
+      <div class="card-title">샘플 테스트케이스</div>
+      <div class="samples">
+        ${samples.map((tc, i) => `
+          <div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:5px">케이스 ${i + 1}</div>
+            <div class="sample-row">
+              <div class="io-box">
+                <div class="io-label">입력</div>
+                <pre>${h(tc.stdin)}</pre>
+              </div>
+              <div class="io-box">
+                <div class="io-label">출력</div>
+                <pre>${h(tc.expected_stdout)}</pre>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    ` : ''}
+
+    <!-- Editor -->
+    <div class="card">
+      <div class="card-title">코드 작성 (Python)</div>
+      <textarea id="code" spellcheck="false" placeholder="# 여기에 Python 코드를 작성하세요&#10;"></textarea>
+      <div class="submit-bar">
+        <button class="btn btn-primary" id="submitBtn" onclick="submitCode()">제출</button>
+        <span id="submitError"></span>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div class="card" id="resultCard" style="display:none">
+      <div class="card-title">채점 결과</div>
+      <div id="resultBody"></div>
+    </div>
+
+    <!-- Tutor -->
+    <div class="card" id="tutorCard" style="display:none">
+      <div class="tutor-head">
+        <div class="card-title" style="margin:0">AI 튜터 피드백</div>
+        <button class="btn btn-ghost" onclick="requestTutor(true)">↺ 다시 받기</button>
+      </div>
+      <div id="tutorBody"><div class="loading-hint"><span class="spin"></span> 분석 중...</div></div>
+    </div>
+  `;
+
+  // Tab key → 4 spaces
+  document.getElementById('code').addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const ta = e.target, s = ta.selectionStart;
+    ta.value = ta.value.slice(0, s) + '    ' + ta.value.slice(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = s + 4;
+  });
+}
+
+// ── Submit ───────────────────────────────────────────────────────────────
+
+async function submitCode() {
+  const code = (document.getElementById('code')?.value ?? '').trim();
+  if (!code) { setErr('코드를 입력하세요'); return; }
+
+  const userId = parseInt(document.getElementById('userId').value) || 1;
+  const btn    = document.getElementById('submitBtn');
+
+  btn.disabled = true;
+  setErr('');
+
+  try {
+    const res = await apiFetch('/grade', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, problem_id: currentProblem.id, code }),
+    });
+    currentSubId = res.submission_id;
+    showResult({ status: 'queued' });
+    watchResult(res.submission_id);
+  } catch (e) {
+    setErr(e.message);
+    btn.disabled = false;
+  }
+}
+
+// ── SSE watch ────────────────────────────────────────────────────────────
+
+function watchResult(subId) {
+  closeES();
+  const es = new EventSource(`${API}/grade/${subId}/events`);
+  activeES = es;
+
+  es.onmessage = e => {
+    const data = JSON.parse(e.data);
+    showResult(data);
+
+    if (data.status === 'done' || data.status === 'failed') {
+      es.close(); activeES = null;
+      document.getElementById('submitBtn').disabled = false;
+
+      if (data.status === 'done') {
+        document.getElementById('tutorCard').style.display = 'block';
+        requestTutor(false);
+      }
+    }
+  };
+
+  es.onerror = () => {
+    es.close(); activeES = null;
+    document.getElementById('submitBtn').disabled = false;
+  };
+}
+
+function closeES() {
+  if (activeES) { activeES.close(); activeES = null; }
+}
+
+// ── Render result ─────────────────────────────────────────────────────────
+
+function showResult(data) {
+  const card = document.getElementById('resultCard');
+  const body = document.getElementById('resultBody');
+  if (!card || !body) return;
+  card.style.display = 'block';
+
+  const { status, final_verdict: verdict, test_results, ensemble, points_awarded } = data;
+
+  if (status === 'queued' || status === 'running') {
+    body.innerHTML = `
+      <div class="verdict v-running">
+        <span class="spin"></span>
+        ${status === 'queued' ? '채점 대기 중' : '채점 진행 중...'}
+      </div>`;
+    return;
+  }
+
+  if (status === 'failed') {
+    body.innerHTML = `<div class="verdict v-failed">⚠ 채점 실패</div>`;
+    return;
+  }
+
+  let html = `<div class="verdict v-${verdict}">
+    ${verdict === 'AC' ? '✓ Accepted' : '✗ Suspicious'}
+  </div>`;
+
+  if (verdict === 'AC' && points_awarded) {
+    html += `<div class="points-line">🏆 +${points_awarded} points 획득!</div>`;
+  }
+
+  if (test_results?.length) {
+    const passCount = test_results.filter(t => t.passed).length;
+    html += `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
+        ${passCount} / ${test_results.length} 테스트 통과
+      </div>
+      <table class="tt">
+        <thead>
+          <tr>
+            <th>#</th><th>결과</th><th>상태</th><th>시간</th><th>메모리</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${test_results.map(t => `
+            <tr>
+              <td style="color:var(--muted);font-size:12px">${t.ordinal}</td>
+              <td class="${t.passed ? 'ok' : 'err'}">${t.passed ? '✓ 통과' : '✗ 실패'}</td>
+              <td><span class="stag s-${t.status}">${t.status}</span></td>
+              <td>${t.elapsed_ms}ms</td>
+              <td>${(t.peak_memory_kb / 1024).toFixed(1)}MB</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  if (ensemble?.votes?.length) {
+    html += `
+      <div class="votes">
+        ${ensemble.votes.map(v => `
+          <div class="vote-card">
+            <div class="vc-judge">${h(v.judge_id)}</div>
+            <div class="vc-verdict" style="color:${v.verdict === 'AC' ? 'var(--success)' : 'var(--danger)'}">
+              ${v.verdict === 'AC' ? '✓ AC' : '✗ SUS'}
+            </div>
+            <div class="vc-conf">신뢰도 ${(v.confidence * 100).toFixed(0)}%</div>
+            <div class="vc-rationale">${h((v.rationale || '').slice(0, 80))}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="mode-line">
+        판정 방식: ${ensemble.mode === 'unanimous' ? '만장일치' : '다수결'}
+      </div>`;
+  }
+
+  body.innerHTML = html;
+}
+
+// ── Tutor ─────────────────────────────────────────────────────────────────
+
+async function requestTutor(regenerate = false) {
+  if (!currentSubId) return;
+  const body = document.getElementById('tutorBody');
+  body.innerHTML = '<div class="loading-hint"><span class="spin"></span> AI 튜터가 분석 중...</div>';
+
+  try {
+    const res = await apiFetch(
+      `/tutor/${currentSubId}${regenerate ? '?regenerate=true' : ''}`,
+      { method: 'POST' }
+    );
+    body.innerHTML = `<div class="tutor-msg">${h(res.message)}</div>`;
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--danger);font-size:13px">오류: ${h(e.message)}</div>`;
+  }
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────
+
+function h(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function levelBadge(l) {
+  return { bronze: 'b-bronze', silver: 'b-silver', gold: 'b-gold' }[l] ?? 'b-bronze';
+}
+
+function levelLabel(l) {
+  return { bronze: '🥉 Bronze', silver: '🥈 Silver', gold: '🥇 Gold' }[l] ?? l;
+}
+
+function setErr(msg) {
+  const el = document.getElementById('submitError');
+  if (el) el.textContent = msg;
+}
+
+function showMainError(msg) {
+  document.getElementById('emptyState').style.display = 'none';
+  const v = document.getElementById('problemView');
+  v.style.display = 'block';
+  v.innerHTML = `<div style="color:var(--danger);padding:8px">${h(msg)}</div>`;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+loadProblems();
+</script>
+
+</body>
+</html>
