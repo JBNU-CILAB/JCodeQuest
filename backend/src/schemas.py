@@ -63,11 +63,15 @@ class EnsembleResult(BaseModel):
 
 JobStatus = Literal["queued", "running", "done", "failed"]
 
+# 제출 코드 길이 상한 — 알고리즘 풀이는 통상 수 KB. 페이로드 폭주로 DB·메모리를 흔드는
+# 케이스 차단. 변경 시 storage.submissions.MAX_ATTEMPTS와 무관.
+MAX_CODE_LENGTH = 64 * 1024
+
 
 class GradeRequest(BaseModel):
     user_id: int
     problem_id: int
-    code: str
+    code: str = Field(min_length=1, max_length=MAX_CODE_LENGTH)
 
 
 class GradeAcceptedResponse(BaseModel):

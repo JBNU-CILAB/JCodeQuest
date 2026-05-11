@@ -162,3 +162,43 @@ def test_sse_streams_until_done(client: TestClient, seeded_problem_id: int):
 def test_sse_404_for_unknown_submission(client: TestClient):
     r = client.get("/grade/999999/events")
     assert r.status_code == 404
+
+
+def test_rejects_oversized_code(client: TestClient, seeded_problem_id: int):
+    """64KB 상한을 초과한 코드는 Pydantic 단계(422)에서 차단 — 큐/DB까지 가지 않음."""
+    from src.schemas import MAX_CODE_LENGTH
+
+    huge = "x = 1\n" * (MAX_CODE_LENGTH // 6 + 100)  # 약 12K줄, ≈ 70KB
+    assert len(huge) > MAX_CODE_LENGTH
+    r = client.post("/grade", json={
+        "user_id": 1,
+        "problem_id": seeded_problem_id,
+        "code": huge,
+    })
+    assert r.status_code == 422
+
+
+def test_rejects_empty_code(client: TestClient, seeded_problem_id: int):
+    r = client.post("/grade", json={
+        "user_id": 1,
+        "problem_id": seeded_problem_id,
+        "code": "",
+    })
+    assert r.status_code == 422
+
+
+def test_accepts_code_at_limit(client: TestClient, seeded_problem_id: int):
+    """상한 이하라면 통과해야 함 — boundary 회귀 방지."""
+    from src.schemas import MAX_CODE_LENGTH
+
+    # 실제 동작하는 코드 + 의미없는 주석으로 정확히 상한 근처까지 채움
+    base = "n = int(input())\nprint(n * 2)\n"
+    pad = "# " + "p" * (MAX_CODE_LENGTH - len(base) - 4) + "\n"
+    code = base + pad
+    assert len(code) <= MAX_CODE_LENGTH
+    r = client.post("/grade", json={
+        "user_id": 8,
+        "problem_id": seeded_problem_id,
+        "code": code,
+    })
+    assert r.status_code == 202
