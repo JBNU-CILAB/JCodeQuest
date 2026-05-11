@@ -1,0 +1,26 @@
+[project]
+name = "jcq-authoring"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain>=0.3",
+    "langchain-ollama>=0.2",
+    "langchain-openai>=0.2",
+    "langgraph>=0.2",
+    "langsmith>=0.1",
+    "sqlmodel>=0.0.21",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.0",
+    "rich>=13.0",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["authoring*"]
+
+[project.scripts]
+jcq-author = "authoring.main:cli"

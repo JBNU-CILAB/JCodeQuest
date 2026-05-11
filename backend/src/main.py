@@ -1,3 +1,11 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# src.storage.db가 모듈 임포트 시점에 JCQ_DB_URL을 읽으므로
+# src.* 임포트보다 반드시 먼저 실행되어야 한다.
+load_dotenv(Path(__file__).parent.parent / ".env")
+
 import os
 from contextlib import asynccontextmanager
 

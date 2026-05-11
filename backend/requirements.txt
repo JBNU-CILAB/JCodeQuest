@@ -5,3 +5,4 @@ sqlmodel>=0.0.22
 langchain-core>=0.3
 langchain-ollama>=0.2
 openai>=1.50
+python-dotenv>=1.0

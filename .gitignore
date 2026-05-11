@@ -1,7 +1,27 @@
 history.md
 sqlite.db
-/.venv
-__pycache__
+
+# 환경변수 파일 — 어느 위치든 전부 제외, *.env.example 파일은 추적
+.env
 env.sh
+.env_example
+!*.env.example
+
+# venv — 어느 위치에 있든 전부 제외
+.venv/
+
+# Python 캐시 및 빌드 산출물
+__pycache__/
+*.egg-info/
+*.pyc
+*.pyo
+dist/
+build/
+
+# 백엔드
+backend/data/
 backend/tests/artifacts/*
 !backend/tests/artifacts/.gitkeep
+
+# 출제 엔진
+authoring_engine/data/
