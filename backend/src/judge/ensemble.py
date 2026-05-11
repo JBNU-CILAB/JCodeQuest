@@ -31,7 +31,14 @@ async def _ask(
     results: list[TestResult],
     base_url: str | None,
 ) -> JudgeVote:
-    llm = ChatOllama(model=spec.model, temperature=0, format="json", base_url=base_url)
+    llm = ChatOllama(
+        model=spec.model,
+        temperature=0,
+        format="json",
+        base_url=base_url,
+        num_ctx=8192,
+        keep_alive="30m",
+    )
     chain = judge_prompt | llm.with_structured_output(JudgeVotePartial, method="json_mode")
     r = problem.intent_rubric
     passed = sum(x.passed for x in results)
