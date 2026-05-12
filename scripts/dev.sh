@@ -122,6 +122,19 @@ start_one() {
     fi
 }
 
+# ── 마이그레이션 ────────────────────────────────────────────────────────────
+run_migrations() {
+    local mlog="$LOG_DIR/migrate.log"
+    info "DB 마이그레이션 실행 중 (backend/migrate.py)..."
+    if (cd "$REPO_ROOT/backend" && "$PY" migrate.py) > "$mlog" 2>&1; then
+        ok "migrate 완료 (로그: $mlog)"
+    else
+        fail "migrate 실패 — 로그: $mlog"
+        tail -n 20 "$mlog" | sed 's/^/    /'
+        return 1
+    fi
+}
+
 # ── 종료 로직 ──────────────────────────────────────────────────────────────
 stop_one() {
     local name="$1" pid_file
@@ -158,6 +171,7 @@ cmd_up() {
     section "JCodeQuest dev — 기동"
     info "python: $PY"
     info "log dir: $LOG_DIR"
+    run_migrations || exit 1
     local rc=0
     for s in "${SERVICES[@]}"; do
         start_one "$s" || rc=1

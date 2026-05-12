@@ -85,3 +85,28 @@ source backend/env.sh
 - **상대경로 DB의 함정**: `sqlite:///./data/jcq.db`는 셸의 현재 디렉터리 기준으로 잡히므로, 다른 위치에서 돌리면 새 DB가 생긴다. 절대경로를 권장.
 - **키 회전**: `env.sh`가 노출되면 키가 그대로 새는 거다. 의심되면 발급처에서 즉시 무효화 후 재발급.
 - **테스트는 자체 격리**: `tests/conftest.py`가 임시 SQLite를 만들어 `JCQ_DB_URL`을 덮어쓰므로, pytest 실행 시 `env.sh`의 DB는 건드리지 않는다.
+
+## 파이썬 의존성 부트스트랩 / 동기화
+
+`scripts/dev.sh`는 backend와 authoring_engine을 **같은 venv (`backend/.venv`)** 로 실행한다 — 두 패키지의 의존성을 한 venv에 모두 설치해야 한다. `git pull`/`git reset`으로 새 커밋을 받은 직후에는 `requirements.txt` / `pyproject.toml`도 함께 갱신됐을 수 있으므로 venv 동기화를 같이 돌리는 것을 기본 절차로 삼는다.
+
+```bash
+# 최초 부트스트랩 (venv 없을 때)
+cd backend && python3 -m venv .venv
+.venv/bin/pip install --upgrade pip          # ★ jcq-shared의 `@ file:../shared` 상대 경로는 pip 23.1+에서만 동작
+
+# backend 의존성 + jcq-shared (editable)
+cd backend && .venv/bin/pip install -r requirements.txt    # ★ requirements.txt의 첫 줄이 `file:../shared` 상대경로라 반드시 backend/에서 실행
+
+# authoring_engine 의존성 (같은 venv에 editable로 추가)
+cd ../authoring_engine && /Users/<you>/JCodeQuest/backend/.venv/bin/pip install -e .
+```
+
+증상별 대응:
+
+- `ModuleNotFoundError: No module named 'itsdangerous'` / `'authlib'` → backend가 `requirements.txt`에 새로 추가된 OAuth 의존성. backend `pip install -r requirements.txt` 재실행.
+- `ModuleNotFoundError: No module named 'sse_starlette'` / `'langgraph'` 등 → authoring_engine 의존성. `pip install -e authoring_engine/` 재실행 (같은 backend venv 대상).
+- `ERROR: Invalid requirement: 'jcq-shared @ file:../shared'` → pip가 23.0 이하. `pip install --upgrade pip` 후 재시도.
+- `scripts/dev.sh up` 헬스체크 실패 시 로그는 `.dev-logs/{backend,authoring}.log`에 남는다 — 첫 트레이스만 보면 원인이 잡힌다.
+
+> 운영 규칙: `git pull` 또는 `git reset --hard origin/main`으로 신규 커밋을 받았다면, 코드를 돌리기 전에 위 두 `pip install` 명령을 한 번 더 실행하는 것을 습관으로 한다. 의존성 매니페스트만 갱신되고 venv가 그대로면 import 단계에서 깨진다.
