@@ -3,6 +3,7 @@ JCQ_DB_URL을 임시 파일 경로로 박아둬야 테스트가 격리된다."""
 import os
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 # 1) 임시 DB 파일
@@ -19,6 +20,7 @@ import pytest  # noqa: E402
 from src.schemas import IntentRubric, Problem, TestCase  # noqa: E402
 from src.storage import init_db  # noqa: E402
 from src.storage.problems import create_problem  # noqa: E402
+from src.storage.users import get_or_create_user  # noqa: E402
 from src.storage import get_session  # noqa: E402
 
 
@@ -73,3 +75,24 @@ def sample_problem() -> Problem:
 def seeded_problem_id(sample_problem: Problem) -> int:
     with get_session() as s:
         return create_problem(s, sample_problem, status="approved")
+
+
+@pytest.fixture
+def make_user():
+    """Submission/Tutor 테스트용 헬퍼 — FK 충족용 User 행을 그때그때 만들어 id 반환.
+    external_id는 uuid로 매 호출 unique → 같은 fixture 안에서 여러 번 부르면 별도 유저."""
+
+    def _make(display_name: str | None = None, *, email: str | None = None) -> int:
+        ext = uuid.uuid4().hex[:12]
+        with get_session() as s:
+            u = get_or_create_user(
+                s,
+                provider="dev_stub",
+                external_id=f"test-{ext}",
+                display_name=display_name or f"테스트유저-{ext}",
+                email=email,
+            )
+            assert u.id is not None
+            return u.id
+
+    return _make

@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 
 from ..schemas import EnsembleResult, TestResult
 from .models import SubmissionRow
+from .users import bump_user_exp
 
 MAX_ATTEMPTS = 3
 
@@ -110,6 +111,21 @@ def save_grading(
     )
     row.points_awarded = points_awarded if final_verdict == "AC" else None
     session.add(row)
+
+    # 첫 AC 시점에만 user.exp 가산. attempt_status가 solved이면 POST를 409로 막지만,
+    # 직접 save_grading을 호출하는 경로(테스트 등)에서도 중복 가산되지 않도록 방어.
+    if final_verdict == "AC" and points_awarded > 0:
+        prior_ac = session.exec(
+            select(SubmissionRow.id).where(
+                SubmissionRow.user_id == row.user_id,
+                SubmissionRow.problem_id == row.problem_id,
+                SubmissionRow.final_verdict == "AC",
+                SubmissionRow.id != submission_id,
+            )
+        ).first()
+        if prior_ac is None:
+            bump_user_exp(session, row.user_id, delta=points_awarded)
+
     session.commit()
 
 

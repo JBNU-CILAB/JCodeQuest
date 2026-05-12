@@ -57,7 +57,7 @@ def _create_done_submission(
     c: TestClient,
     problem_id: int,
     *,
-    user_id: int = 1,
+    user_id: int,
     code: str = "n = int(input())\nprint(n * 2)\n",
 ) -> int:
     r = c.post("/grade", json={"user_id": user_id, "problem_id": problem_id, "code": code})
@@ -72,7 +72,7 @@ def _create_done_submission(
 
 
 def test_tutor_returns_message_for_ac(
-    client: TestClient, seeded_problem_id: int, monkeypatch
+    client: TestClient, seeded_problem_id: int, monkeypatch, make_user
 ):
     captured: dict = {}
 
@@ -86,7 +86,7 @@ def test_tutor_returns_message_for_ac(
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", fake_tutor)
 
-    sid = _create_done_submission(client, seeded_problem_id, user_id=11)
+    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
     r = client.post(f"/tutor/{sid}")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -106,7 +106,7 @@ def test_tutor_returns_message_for_ac(
 
 
 def test_tutor_when_sandbox_fail_no_votes(
-    client: TestClient, seeded_problem_id: int, monkeypatch
+    client: TestClient, seeded_problem_id: int, monkeypatch, make_user
 ):
     """WA로 끝난 제출(LLM 미호출 → votes=None)도 튜터링 가능해야."""
     captured: dict = {}
@@ -119,7 +119,7 @@ def test_tutor_when_sandbox_fail_no_votes(
     monkeypatch.setattr(tutor_api, "run_tutor", fake_tutor)
 
     sid = _create_done_submission(
-        client, seeded_problem_id, user_id=12,
+        client, seeded_problem_id, user_id=make_user(),
         code="n = int(input())\nprint(n + 1)\n",  # 오답
     )
     r = client.post(f"/tutor/{sid}")
@@ -131,7 +131,7 @@ def test_tutor_when_sandbox_fail_no_votes(
 
 
 def test_tutor_caches_by_default(
-    client: TestClient, seeded_problem_id: int, monkeypatch
+    client: TestClient, seeded_problem_id: int, monkeypatch, make_user
 ):
     """두 번째 POST는 캐시 hit — LLM 호출 1회만 발생해야."""
     calls = 0
@@ -144,7 +144,7 @@ def test_tutor_caches_by_default(
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
-    sid = _create_done_submission(client, seeded_problem_id, user_id=21)
+    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
 
     r1 = client.post(f"/tutor/{sid}")
     assert r1.status_code == 200
@@ -158,7 +158,7 @@ def test_tutor_caches_by_default(
 
 
 def test_tutor_regenerate_creates_new_message(
-    client: TestClient, seeded_problem_id: int, monkeypatch
+    client: TestClient, seeded_problem_id: int, monkeypatch, make_user
 ):
     """?regenerate=true는 캐시를 무시하고 새 행을 만든다."""
     calls = 0
@@ -171,7 +171,7 @@ def test_tutor_regenerate_creates_new_message(
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
-    sid = _create_done_submission(client, seeded_problem_id, user_id=22)
+    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
 
     client.post(f"/tutor/{sid}")  # 첫 생성
     r2 = client.post(f"/tutor/{sid}?regenerate=true")
@@ -186,7 +186,7 @@ def test_tutor_regenerate_creates_new_message(
 
 
 def test_tutor_history_returns_all_revisions(
-    client: TestClient, seeded_problem_id: int, monkeypatch
+    client: TestClient, seeded_problem_id: int, monkeypatch, make_user
 ):
     counter = 0
 
@@ -198,7 +198,7 @@ def test_tutor_history_returns_all_revisions(
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
-    sid = _create_done_submission(client, seeded_problem_id, user_id=23)
+    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
 
     client.post(f"/tutor/{sid}")
     client.post(f"/tutor/{sid}?regenerate=true")
@@ -223,10 +223,10 @@ def test_tutor_history_404_on_missing_submission(client: TestClient):
 
 
 def test_tutor_history_empty_for_un_tutored_submission(
-    client: TestClient, seeded_problem_id: int
+    client: TestClient, seeded_problem_id: int, make_user
 ):
     """채점은 끝났지만 한 번도 튜터링 안 받은 제출 — 200 + 빈 리스트."""
-    sid = _create_done_submission(client, seeded_problem_id, user_id=24)
+    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
     r = client.get(f"/tutor/{sid}/history")
     assert r.status_code == 200
     assert r.json() == {"submission_id": sid, "messages": []}
@@ -244,7 +244,7 @@ def test_tutor_404_on_missing_submission(client: TestClient, monkeypatch):
 
 
 def test_tutor_409_when_submission_not_done(
-    client: TestClient, seeded_problem_id: int, monkeypatch
+    client: TestClient, seeded_problem_id: int, monkeypatch, make_user
 ):
     """status=queued 상태(=채점 안 끝남)에 호출하면 409."""
     from src.storage import get_session
@@ -252,7 +252,7 @@ def test_tutor_409_when_submission_not_done(
 
     # 큐를 거치지 않고 직접 row 삽입 → status 기본값은 "queued"
     with get_session() as s:
-        sid = create_submission(s, user_id=66, problem_id=seeded_problem_id, code="x")
+        sid = create_submission(s, user_id=make_user(), problem_id=seeded_problem_id, code="x")
 
     async def boom(**_kwargs):
         raise AssertionError("OpenAI는 호출되면 안 됨")

@@ -1,11 +1,37 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class UserRow(SQLModel, table=True):
+    __tablename__ = "user"
+    __table_args__ = (
+        UniqueConstraint("provider", "external_id", name="uq_user_provider_sub"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    display_name: str
+
+    # 외부 IdP 매핑 — 학교 SSO 문서 도착 전엔 dev stub로 채움.
+    # provider+external_id가 IdP의 안정적 식별자(=OIDC sub) 쌍.
+    provider: str = Field(index=True)
+    external_id: str = Field(index=True)
+    email: str | None = None
+
+    # 게임 상태 — 누적 AC points (효율성 multiplier 적용된 값의 합).
+    # save_grading에서 첫 AC 시점에만 가산 → SubmissionRow 풀스캔 없이 리더보드 정렬 가능.
+    exp: int = Field(default=0, index=True)
+    # 컬럼만 두고 산정 룰은 미정. 추후 bump_user_exp 안에서 같이 갱신할 자리.
+    tier: str = Field(default="bronze", index=True)
+
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class ProblemRow(SQLModel, table=True):
@@ -55,7 +81,7 @@ class SubmissionRow(SQLModel, table=True):
     __tablename__ = "submission"
 
     id: int | None = Field(default=None, primary_key=True)
-    user_id: int = Field(index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
     problem_id: int = Field(foreign_key="problem.id", index=True)
     code: str
     status: str = Field(default="queued", index=True)  # queued|running|done|failed

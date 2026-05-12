@@ -56,12 +56,13 @@ def test_problem_roundtrip(seeded_problem_id: int):
     assert p.intent_rubric.expected_complexity == "O(1)"
 
 
-def test_attempt_count_only_llm_judged(seeded_problem_id: int):
+def test_attempt_count_only_llm_judged(seeded_problem_id: int, make_user):
     """테스트 실패(test-fail SUS, mode=None)는 시도 카운트에서 제외돼야 한다."""
+    user_id = make_user()
     with get_session() as s:
         # 1) 테스트 실패: ensemble=None, final_verdict="SUS"
         sid1 = create_submission(
-            s, user_id=42, problem_id=seeded_problem_id, code="bad"
+            s, user_id=user_id, problem_id=seeded_problem_id, code="bad"
         )
         save_grading(
             s, sid1,
@@ -70,14 +71,14 @@ def test_attempt_count_only_llm_judged(seeded_problem_id: int):
             ensemble=None,
             points_awarded=0,
         )
-        st = attempt_status(s, 42, seeded_problem_id)
+        st = attempt_status(s, user_id, seeded_problem_id)
     assert st.attempts == 0  # test-fail은 안 세어짐
     assert st.solved is False
 
     # 2) LLM-judge SUS: mode 채워짐
     with get_session() as s:
         sid2 = create_submission(
-            s, user_id=42, problem_id=seeded_problem_id, code="suspicious"
+            s, user_id=user_id, problem_id=seeded_problem_id, code="suspicious"
         )
         save_grading(
             s, sid2,
@@ -86,16 +87,17 @@ def test_attempt_count_only_llm_judged(seeded_problem_id: int):
             ensemble=_sus_ensemble(),
             points_awarded=0,
         )
-        st = attempt_status(s, 42, seeded_problem_id)
+        st = attempt_status(s, user_id, seeded_problem_id)
     assert st.attempts == 1
     assert st.solved is False
     assert st.remaining == MAX_ATTEMPTS - 1
 
 
-def test_ac_locks_out(seeded_problem_id: int):
+def test_ac_locks_out(seeded_problem_id: int, make_user):
+    user_id = make_user()
     with get_session() as s:
         sid = create_submission(
-            s, user_id=99, problem_id=seeded_problem_id, code="good"
+            s, user_id=user_id, problem_id=seeded_problem_id, code="good"
         )
         save_grading(
             s, sid,
@@ -104,7 +106,7 @@ def test_ac_locks_out(seeded_problem_id: int):
             ensemble=_ac_ensemble(),
             points_awarded=100,
         )
-        st = attempt_status(s, 99, seeded_problem_id)
+        st = attempt_status(s, user_id, seeded_problem_id)
         sub = get_submission(s, sid)
     assert st.solved is True
     assert st.can_submit is False

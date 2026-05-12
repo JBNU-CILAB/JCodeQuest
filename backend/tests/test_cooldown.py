@@ -111,10 +111,10 @@ def _wait_done(client: TestClient, sub_id: int, timeout_s: float = 10.0) -> dict
 
 
 def test_second_submit_blocked_by_cooldown(
-    client_with_cooldown: TestClient, seeded_problem_id: int
+    client_with_cooldown: TestClient, seeded_problem_id: int, make_user
 ):
     body = {
-        "user_id": 314,
+        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n * 2)\n",
     }
@@ -123,9 +123,9 @@ def test_second_submit_blocked_by_cooldown(
     _wait_done(client_with_cooldown, r1.json()["submission_id"])
 
     # 두 번째 시도 — AC로 막혔는지가 아니라 쿨다운이 먼저 잡는지 확인하기 위해
-    # 다른 user_id로 첫 제출 후 같은 user로 즉시 재시도
+    # 다른 user로 첫 제출 후 같은 user로 즉시 재시도
     body2 = {
-        "user_id": 315,
+        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n + 1)\n",  # WA — sandbox-fail 경로
     }
@@ -133,7 +133,7 @@ def test_second_submit_blocked_by_cooldown(
     assert r2.status_code == 202
     _wait_done(client_with_cooldown, r2.json()["submission_id"])
 
-    # 같은 (user 315, problem) 즉시 재제출 → 쿨다운 429
+    # 같은 user/problem 즉시 재제출 → 쿨다운 429
     r3 = client_with_cooldown.post("/grade", json={**body2, "code": "x"})
     assert r3.status_code == 429
     assert "Retry-After" in r3.headers
@@ -142,11 +142,11 @@ def test_second_submit_blocked_by_cooldown(
 
 
 def test_cooldown_blocks_even_after_sandbox_fail(
-    client_with_cooldown: TestClient, seeded_problem_id: int
+    client_with_cooldown: TestClient, seeded_problem_id: int, make_user
 ):
     """sandbox-fail 제출도 쿨다운 트리거 — 정찰 차단의 핵심 시나리오."""
     body = {
-        "user_id": 316,
+        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "1/0\n",  # RE
     }
