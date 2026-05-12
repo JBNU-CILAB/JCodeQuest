@@ -93,7 +93,8 @@ ok "backend 의존성 설치 완료 (jcq-shared 포함)"
 
 info "authoring_engine: pip + editable install"
 "$AUTHORING_PY" -m pip install --upgrade pip > /dev/null
-"$AUTHORING_PY" -m pip install -e "$REPO_ROOT/authoring_engine"
+# pyproject.toml의 `jcq-shared @ file:../shared`도 pip CWD 기준이라 같은 cd 트릭 필요.
+(cd "$REPO_ROOT/authoring_engine" && "$AUTHORING_PY" -m pip install -e .)
 ok "authoring_engine 의존성 설치 완료 (jcq-shared 포함)"
 
 # ── 4) .env 셋업 ───────────────────────────────────────────────────────────
