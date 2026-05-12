@@ -14,15 +14,20 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO_ROOT/.dev-logs"
 mkdir -p "$LOG_DIR"
 
-# venv 자동 감지: 백엔드 venv → 리포 루트 venv → 시스템 python 순.
+# 각 서비스가 자기 venv를 쓰도록 분리 — backend와 authoring은 의존성 집합이 달라
+# (예: authoring만 sse-starlette를 요구) 같은 uvicorn으로 띄우면 ModuleNotFoundError.
+BACKEND_VENV_BIN="$REPO_ROOT/backend/.venv/bin"
+AUTHORING_VENV_BIN="$REPO_ROOT/authoring_engine/.venv/bin"
+
+# 일반 python — migrate.py 실행, frontend의 http.server 등 venv 의존성이 없는 작업용.
+# backend venv를 우선 사용 (sqlmodel 등 migrate.py가 쓰는 모듈을 갖고 있음).
 PY=""
-for cand in "$REPO_ROOT/backend/.venv/bin/python" \
+for cand in "$BACKEND_VENV_BIN/python" \
             "$REPO_ROOT/.venv/bin/python" \
             "$(command -v python3 || true)"; do
     if [[ -x "$cand" ]]; then PY="$cand"; break; fi
 done
 [[ -z "$PY" ]] && { echo "python을 찾을 수 없습니다"; exit 1; }
-VENV_BIN="$(dirname "$PY")"
 
 # ── 서비스 정의 (이름 / 포트 / 헬스 경로 / cwd / 실행 인자) ──────────────────
 SERVICES=("backend" "authoring" "frontend")
@@ -76,7 +81,7 @@ wait_health() {
 # ── 시작 로직 ──────────────────────────────────────────────────────────────
 start_backend() {
     cd "$REPO_ROOT/backend"
-    nohup "$VENV_BIN/uvicorn" src.main:app \
+    nohup "$BACKEND_VENV_BIN/uvicorn" src.main:app \
         --host 127.0.0.1 --port "$backend_port" \
         > "$(logfile backend)" 2>&1 &
     echo $! > "$(pidfile backend)"
@@ -84,7 +89,7 @@ start_backend() {
 
 start_authoring() {
     cd "$REPO_ROOT/authoring_engine"
-    nohup "$VENV_BIN/uvicorn" authoring.server:app \
+    nohup "$AUTHORING_VENV_BIN/uvicorn" authoring.server:app \
         --host 127.0.0.1 --port "$authoring_port" \
         > "$(logfile authoring)" 2>&1 &
     echo $! > "$(pidfile authoring)"

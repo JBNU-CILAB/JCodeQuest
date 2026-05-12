@@ -123,6 +123,39 @@ class ProblemDetail(BaseModel):
     sample_test_cases: list[PublicTestCase] = Field(default_factory=list)
 
 
+class AttemptStatusResponse(BaseModel):
+    """제출 화면이 '남은 시도 횟수 / 쿨다운 / AC 여부'를 한 번에 보고 그릴 수 있도록 묶음."""
+
+    problem_id: int
+    attempts: int
+    remaining: int
+    max_attempts: int
+    solved: bool
+    cooldown_remaining_s: float
+    can_submit: bool
+
+
+class SubmissionListItem(BaseModel):
+    """본인 제출 목록용 — code는 페이로드 비대해서 제외. 상세는 /grade/{id}로."""
+
+    id: int
+    problem_id: int
+    status: JobStatus
+    final_verdict: EnsembleVerdict | None = None
+    mode: EnsembleMode | None = None
+    points_awarded: int | None = None
+    max_elapsed_ms: int | None = None
+    peak_memory_kb: int | None = None
+    created_at: datetime
+
+
+class SubmissionListResponse(BaseModel):
+    items: list[SubmissionListItem]
+    total: int
+    limit: int
+    offset: int
+
+
 class TutorResponse(BaseModel):
     submission_id: int
     message: str

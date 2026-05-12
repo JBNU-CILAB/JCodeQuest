@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..schemas import EnsembleResult, TestResult
@@ -131,3 +132,32 @@ def save_grading(
 
 def get_submission(session: Session, submission_id: int) -> SubmissionRow | None:
     return session.get(SubmissionRow, submission_id)
+
+
+def list_user_submissions(
+    session: Session,
+    user_id: int,
+    *,
+    problem_id: int | None = None,
+    verdict: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[SubmissionRow], int]:
+    """본인 제출 이력 페이지네이션. 최신순(created_at DESC, id DESC)으로 반환."""
+    base = select(SubmissionRow).where(SubmissionRow.user_id == user_id)
+    if problem_id is not None:
+        base = base.where(SubmissionRow.problem_id == problem_id)
+    if verdict is not None:
+        base = base.where(SubmissionRow.final_verdict == verdict)
+
+    total = session.exec(
+        select(func.count()).select_from(base.subquery())
+    ).one()
+
+    page = (
+        base.order_by(SubmissionRow.created_at.desc(), SubmissionRow.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = session.exec(page).all()
+    return list(rows), int(total)
