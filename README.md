@@ -101,6 +101,35 @@ JCQ_DB_URL=sqlite:////absolute/path/to/backend/data/jcq.db
 # JCQ_SOLVER_PASS_MIN_AC=1
 ```
 
+## API Docs — Swagger / OpenAPI
+
+두 서버 모두 FastAPI라서 Swagger UI/OpenAPI 명세가 자동 생성된다. 별도 빌드 없이 서버만 띄우면 브라우저로 바로 확인 가능.
+
+| 서버 | Swagger UI | ReDoc | OpenAPI JSON (라이브) |
+| --- | --- | --- | --- |
+| backend | http://localhost:8000/docs | http://localhost:8000/redoc | http://localhost:8000/openapi.json |
+| authoring | http://localhost:8001/docs | http://localhost:8001/redoc | http://localhost:8001/openapi.json |
+
+`scripts/dev.sh up` 후 위 URL을 그대로 열면 된다. 인증이 필요한 엔드포인트는 같은 브라우저에서 `/auth/login`(또는 `JCQ_AUTH_ALLOW_DEV_STUB=1`일 때 `POST /auth/dev-login`)을 호출해 두면 쿠키가 유지돼 "Try it out"으로 그대로 호출된다.
+
+### 저장소에 커밋된 정적 명세
+
+서버 없이도 명세를 열람·SDK 생성에 쓸 수 있도록 `docs/`에 정적 JSON을 둔다. `dev-login`은 prod-shape에서 제외된다.
+
+- [`docs/openapi-backend.json`](docs/openapi-backend.json)
+- [`docs/openapi-authoring.json`](docs/openapi-authoring.json)
+- [`docs/api-overview.md`](docs/api-overview.md) — 외부 SDK 생성 예시·정책 요약
+
+### 갱신 — 라우터/스키마를 바꿨다면
+
+`scripts/dump_openapi.py`가 각 FastAPI 앱의 `app.openapi()`를 직접 호출해 JSON을 떨군다. 서버를 띄우지 않으므로 빠르다.
+
+```bash
+# 각 패키지 .venv 의존성이 분리되어 있어 한 번씩 호출
+backend/.venv/bin/python           scripts/dump_openapi.py backend
+authoring_engine/.venv/bin/python  scripts/dump_openapi.py authoring
+```
+
 ## Documents
 - `docs/setup-ollama.md` — Backend Model Setup 가이드
 - `docs/environment.md` — `backend/env.sh` 작성법, 환경변수 목록(필수/선택/테스트 전용)과 주의사항
@@ -108,3 +137,4 @@ JCQ_DB_URL=sqlite:////absolute/path/to/backend/data/jcq.db
 - `docs/authoring-prompt.md` — 출제 LangGraph의 `draft_problem` / `author_solution` 노드용 LLM 프롬프트 사양
 - `docs/authoring-engine.md` — 출제 엔진(CLI/HTTP) 실행 가이드, 환경변수, 단계별 결과 해석법
 - `docs/testing.md` — 테스트 계층(단위/통합/라이브/스모크), 실행 방법, 격리·LLM mocking 규약
+- `docs/api-overview.md` / `docs/api-backend.md` / `docs/api-authoring-engine.md` — API 요약 + Swagger/OpenAPI 사용법
