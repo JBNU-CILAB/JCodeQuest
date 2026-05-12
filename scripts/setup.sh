@@ -86,7 +86,9 @@ section "3. 의존성 설치"
 
 info "backend: pip + requirements.txt"
 "$BACKEND_PY" -m pip install --upgrade pip > /dev/null
-"$BACKEND_PY" -m pip install -r "$REPO_ROOT/backend/requirements.txt"
+# requirements.txt 안의 `jcq-shared @ file:../shared`는 pip의 CWD 기준으로 풀리므로
+# backend 디렉터리에서 실행해야 ../shared 가 올바르게 해석된다.
+(cd "$REPO_ROOT/backend" && "$BACKEND_PY" -m pip install -r requirements.txt)
 ok "backend 의존성 설치 완료 (jcq-shared 포함)"
 
 info "authoring_engine: pip + editable install"
