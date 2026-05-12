@@ -1,9 +1,10 @@
 import asyncio
 
-from fastapi import APIRouter, HTTPException, Request, status as http_status
+from fastapi import APIRouter, Depends, HTTPException, Request, status as http_status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
+from ..auth.deps import get_current_user
 from ..events import SubmissionEventBroker
 from ..judge.jobs import grade_submission
 from ..schemas import (
@@ -15,6 +16,7 @@ from ..schemas import (
     TestResult,
 )
 from ..storage import get_session
+from ..storage.models import UserRow
 from ..storage.problems import get_problem
 from ..storage import submissions as subs_store
 from ..storage.submissions import (
@@ -67,14 +69,18 @@ def _build_status_response(
     response_model=GradeAcceptedResponse,
 )
 async def submit_grade(
-    req: GradeRequest, request: Request
+    req: GradeRequest,
+    request: Request,
+    user: UserRow = Depends(get_current_user),
 ) -> GradeAcceptedResponse:
+    user_id = user.id
+    assert user_id is not None
     with get_session() as session:
         problem = get_problem(session, req.problem_id)
         if problem is None:
             raise HTTPException(404, f"problem {req.problem_id} not found")
 
-        astatus = attempt_status(session, req.user_id, req.problem_id)
+        astatus = attempt_status(session, user_id, req.problem_id)
         if astatus.solved:
             raise HTTPException(409, "이미 해결한 문제입니다")
         if astatus.attempts >= MAX_ATTEMPTS:
@@ -95,7 +101,7 @@ async def submit_grade(
 
         submission_id = create_submission(
             session,
-            user_id=req.user_id,
+            user_id=user_id,
             problem_id=req.problem_id,
             code=req.code,
         )

@@ -53,9 +53,11 @@ def _wait_done(client: TestClient, sub_id: int, timeout_s: float = 10.0) -> dict
     raise AssertionError(f"timed out waiting for submission {sub_id}")
 
 
-def test_happy_path_test_pass_then_llm_ac(client: TestClient, seeded_problem_id: int, make_user):
+def test_happy_path_test_pass_then_llm_ac(
+    client: TestClient, seeded_problem_id: int, login_as
+):
+    login_as(client, "happy@example.com")
     r = client.post("/grade", json={
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n * 2)\n",
     })
@@ -75,7 +77,7 @@ def test_happy_path_test_pass_then_llm_ac(client: TestClient, seeded_problem_id:
 
 
 def test_test_fail_skips_llm_and_doesnt_count_attempt(
-    client: TestClient, seeded_problem_id: int, monkeypatch, make_user
+    client: TestClient, seeded_problem_id: int, monkeypatch, login_as
 ):
     # vote가 호출되면 안 됨을 검증
     called = []
@@ -87,9 +89,8 @@ def test_test_fail_skips_llm_and_doesnt_count_attempt(
     import src.judge.jobs.grading as grading_mod
     monkeypatch.setattr(grading_mod, "vote", boom_vote)
 
-    user_id = make_user()
+    login_as(client, "test-fail@example.com")
     r = client.post("/grade", json={
-        "user_id": user_id,
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n + 1)\n",  # 오답
     })
@@ -105,7 +106,6 @@ def test_test_fail_skips_llm_and_doesnt_count_attempt(
 
     # 시도 카운트는 차감되지 않아야 — 다시 똑같이 또 보내도 통과해야 함
     r2 = client.post("/grade", json={
-        "user_id": user_id,
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n + 99)\n",  # 또 오답
     })
@@ -113,10 +113,10 @@ def test_test_fail_skips_llm_and_doesnt_count_attempt(
 
 
 def test_already_solved_blocks_resubmission(
-    client: TestClient, seeded_problem_id: int, make_user
+    client: TestClient, seeded_problem_id: int, login_as
 ):
+    login_as(client, "solver@example.com")
     body = {
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n * 2)\n",
     }
@@ -129,9 +129,11 @@ def test_already_solved_blocks_resubmission(
     assert r2.status_code == 409
 
 
-def test_sse_streams_until_done(client: TestClient, seeded_problem_id: int, make_user):
+def test_sse_streams_until_done(
+    client: TestClient, seeded_problem_id: int, login_as
+):
+    login_as(client, "sse@example.com")
     r = client.post("/grade", json={
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n * 2)\n",
     })
@@ -165,41 +167,50 @@ def test_sse_404_for_unknown_submission(client: TestClient):
     assert r.status_code == 404
 
 
-def test_rejects_oversized_code(client: TestClient, seeded_problem_id: int, make_user):
+def test_rejects_oversized_code(client: TestClient, seeded_problem_id: int, login_as):
     """64KB 상한을 초과한 코드는 Pydantic 단계(422)에서 차단 — 큐/DB까지 가지 않음."""
     from src.schemas import MAX_CODE_LENGTH
 
+    login_as(client, "oversize@example.com")
     huge = "x = 1\n" * (MAX_CODE_LENGTH // 6 + 100)  # 약 12K줄, ≈ 70KB
     assert len(huge) > MAX_CODE_LENGTH
     r = client.post("/grade", json={
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": huge,
     })
     assert r.status_code == 422
 
 
-def test_rejects_empty_code(client: TestClient, seeded_problem_id: int, make_user):
+def test_rejects_empty_code(client: TestClient, seeded_problem_id: int, login_as):
+    login_as(client, "empty@example.com")
     r = client.post("/grade", json={
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "",
     })
     assert r.status_code == 422
 
 
-def test_accepts_code_at_limit(client: TestClient, seeded_problem_id: int, make_user):
+def test_accepts_code_at_limit(client: TestClient, seeded_problem_id: int, login_as):
     """상한 이하라면 통과해야 함 — boundary 회귀 방지."""
     from src.schemas import MAX_CODE_LENGTH
 
+    login_as(client, "atlimit@example.com")
     # 실제 동작하는 코드 + 의미없는 주석으로 정확히 상한 근처까지 채움
     base = "n = int(input())\nprint(n * 2)\n"
     pad = "# " + "p" * (MAX_CODE_LENGTH - len(base) - 4) + "\n"
     code = base + pad
     assert len(code) <= MAX_CODE_LENGTH
     r = client.post("/grade", json={
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": code,
     })
     assert r.status_code == 202
+
+
+def test_grade_requires_auth(client: TestClient, seeded_problem_id: int):
+    """쿠키 없으면 401 — body가 valid해도 dep에서 막힘."""
+    r = client.post("/grade", json={
+        "problem_id": seeded_problem_id,
+        "code": "print('x')\n",
+    })
+    assert r.status_code == 401

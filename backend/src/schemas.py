@@ -69,7 +69,8 @@ MAX_CODE_LENGTH = 64 * 1024
 
 
 class GradeRequest(BaseModel):
-    user_id: int
+    """user_id는 인증된 세션에서 추출 — body로 받지 않음(위조 차단)."""
+
     problem_id: int
     code: str = Field(min_length=1, max_length=MAX_CODE_LENGTH)
 

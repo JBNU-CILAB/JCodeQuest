@@ -111,10 +111,11 @@ def _wait_done(client: TestClient, sub_id: int, timeout_s: float = 10.0) -> dict
 
 
 def test_second_submit_blocked_by_cooldown(
-    client_with_cooldown: TestClient, seeded_problem_id: int, make_user
+    client_with_cooldown: TestClient, seeded_problem_id: int, login_as
 ):
+    # 첫 user의 AC 한 번
+    login_as(client_with_cooldown, "cooldown-1@example.com")
     body = {
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n * 2)\n",
     }
@@ -122,10 +123,10 @@ def test_second_submit_blocked_by_cooldown(
     assert r1.status_code == 202
     _wait_done(client_with_cooldown, r1.json()["submission_id"])
 
-    # 두 번째 시도 — AC로 막혔는지가 아니라 쿨다운이 먼저 잡는지 확인하기 위해
-    # 다른 user로 첫 제출 후 같은 user로 즉시 재시도
+    # 다른 user로 전환 후 한 번 제출 → 즉시 재제출이 쿨다운으로 막히는지
+    client_with_cooldown.cookies.clear()
+    login_as(client_with_cooldown, "cooldown-2@example.com")
     body2 = {
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "n = int(input())\nprint(n + 1)\n",  # WA — sandbox-fail 경로
     }
@@ -142,11 +143,11 @@ def test_second_submit_blocked_by_cooldown(
 
 
 def test_cooldown_blocks_even_after_sandbox_fail(
-    client_with_cooldown: TestClient, seeded_problem_id: int, make_user
+    client_with_cooldown: TestClient, seeded_problem_id: int, login_as
 ):
     """sandbox-fail 제출도 쿨다운 트리거 — 정찰 차단의 핵심 시나리오."""
+    login_as(client_with_cooldown, "cooldown-sf@example.com")
     body = {
-        "user_id": make_user(),
         "problem_id": seeded_problem_id,
         "code": "1/0\n",  # RE
     }

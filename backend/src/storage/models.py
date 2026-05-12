@@ -95,6 +95,20 @@ class SubmissionRow(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class SessionRow(SQLModel, table=True):
+    """서버 측 세션. 쿠키에 들어가는 token이 곧 PK.
+    JWT와 달리 logout/만료가 즉시 무효화됨 — 한 row delete로 끝."""
+
+    __tablename__ = "session"
+
+    # secrets.token_urlsafe(32) → 약 43자. 추측 불가능한 opaque 토큰.
+    id: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    # 만료 후 lookup이 None을 돌려주는 게이트. cleanup은 별도 purge 호출.
+    expires_at: datetime = Field(index=True)
+
+
 class TutorMessageRow(SQLModel, table=True):
     """제출당 N개 — `?regenerate=true`로 새 행이 추가됨. 이력 보존."""
 

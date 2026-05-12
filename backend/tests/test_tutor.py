@@ -57,10 +57,14 @@ def _create_done_submission(
     c: TestClient,
     problem_id: int,
     *,
-    user_id: int,
+    email: str,
     code: str = "n = int(input())\nprint(n * 2)\n",
 ) -> int:
-    r = c.post("/grade", json={"user_id": user_id, "problem_id": problem_id, "code": code})
+    """email로 dev-login한 뒤 /grade에 제출 → done까지 대기. 기존 쿠키는 클리어."""
+    c.cookies.clear()
+    r_login = c.post("/auth/dev-login", params={"email": email})
+    assert r_login.status_code == 200, r_login.text
+    r = c.post("/grade", json={"problem_id": problem_id, "code": code})
     assert r.status_code == 202, r.text
     sid = r.json()["submission_id"]
     body = _wait_done(c, sid)
@@ -86,7 +90,7 @@ def test_tutor_returns_message_for_ac(
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", fake_tutor)
 
-    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
+    sid = _create_done_submission(client, seeded_problem_id, email="ac@example.com")
     r = client.post(f"/tutor/{sid}")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -119,7 +123,7 @@ def test_tutor_when_sandbox_fail_no_votes(
     monkeypatch.setattr(tutor_api, "run_tutor", fake_tutor)
 
     sid = _create_done_submission(
-        client, seeded_problem_id, user_id=make_user(),
+        client, seeded_problem_id, email="wa@example.com",
         code="n = int(input())\nprint(n + 1)\n",  # 오답
     )
     r = client.post(f"/tutor/{sid}")
@@ -144,7 +148,7 @@ def test_tutor_caches_by_default(
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
-    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
+    sid = _create_done_submission(client, seeded_problem_id, email="cache@example.com")
 
     r1 = client.post(f"/tutor/{sid}")
     assert r1.status_code == 200
@@ -171,7 +175,7 @@ def test_tutor_regenerate_creates_new_message(
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
-    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
+    sid = _create_done_submission(client, seeded_problem_id, email="regen@example.com")
 
     client.post(f"/tutor/{sid}")  # 첫 생성
     r2 = client.post(f"/tutor/{sid}?regenerate=true")
@@ -198,7 +202,7 @@ def test_tutor_history_returns_all_revisions(
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
-    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
+    sid = _create_done_submission(client, seeded_problem_id, email="hist@example.com")
 
     client.post(f"/tutor/{sid}")
     client.post(f"/tutor/{sid}?regenerate=true")
@@ -226,7 +230,7 @@ def test_tutor_history_empty_for_un_tutored_submission(
     client: TestClient, seeded_problem_id: int, make_user
 ):
     """채점은 끝났지만 한 번도 튜터링 안 받은 제출 — 200 + 빈 리스트."""
-    sid = _create_done_submission(client, seeded_problem_id, user_id=make_user())
+    sid = _create_done_submission(client, seeded_problem_id, email="empty-hist@example.com")
     r = client.get(f"/tutor/{sid}/history")
     assert r.status_code == 200
     assert r.json() == {"submission_id": sid, "messages": []}

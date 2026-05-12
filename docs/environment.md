@@ -25,6 +25,9 @@ JCodeQuest/
 |------|------|------|
 | `OPENAI_API_KEY` | 튜터 LLM 호출 — `src/tutor/client.py` | 비밀. 절대 커밋 금지 |
 | `OLLAMA_BASE_URL` | 채점 ensemble의 Ollama 엔드포인트 — `src/judge/ensemble.py` | 예: `http://localhost:11434`. 모델 셋업은 `setup-ollama.md` 참조 |
+| `GOOGLE_CLIENT_ID` | Google OAuth 클라이언트 ID — `src/auth/google.py` | Google Cloud Console에서 발급 |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 시크릿 | 비밀. 절대 커밋 금지 |
+| `SESSION_SECRET_KEY` | OAuth 핸드셰이크용 임시 쿠키 서명 (Starlette `SessionMiddleware`) | 32B+ 랜덤. 사용자 세션은 DB 측에 저장됨 — 이 키와 무관 |
 
 ### 선택 (기본값 있음)
 
@@ -36,6 +39,11 @@ JCodeQuest/
 | `JCQ_QUEUE_CONCURRENCY` | `1` | 채점 워커 코루틴 수. 단일 프로세스 |
 | `JCQ_SUBMIT_COOLDOWN_S` | `10` | 같은 (user, problem) 두 제출 사이 최소 간격(초). 0이면 비활성 |
 | `JCQ_BASE_URL` | `http://127.0.0.1:8000` | 스모크 스크립트가 붙을 서버 주소 — `tests/scripts/smoke_e2e.py` |
+| `GOOGLE_REDIRECT_URI` | `{request base}/auth/callback` | Google Cloud Console의 등록된 redirect URI와 정확히 일치해야 함 |
+| `JCQ_AUTH_ALLOWED_HD` | `jbnu.ac.kr` | 허용할 Google Workspace 도메인. 콜백에서 ID token의 `hd` claim과 정확 비교. 비우면 모든 도메인 허용 (비권장) |
+| `JCQ_SESSION_DAYS` | `7` | 서버 측 세션 만료(일). 로그아웃 시 SessionRow 즉시 삭제 — 진짜 무효화 |
+| `JCQ_FRONTEND_REDIRECT_URL` | `/` | 로그인 성공 후 302로 보낼 곳. 프론트가 별 도메인이면 절대 URL로 |
+| `JCQ_AUTH_ALLOW_DEV_STUB` | (미설정) | `1`/`true`/`yes`일 때만 `POST /auth/dev-login` 라우트 등록. **prod 절대 금지** |
 
 ### 테스트 전용
 
