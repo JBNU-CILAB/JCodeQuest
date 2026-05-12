@@ -1,0 +1,89 @@
+INFO:     Started server process [2567147]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58472 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58486 - "POST /auth/dev-login?email=verify%40example.com&name=verify HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58486 - "POST /grade HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58486 - "GET /grade/3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58486 - "GET /grade/3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "POST /auth/dev-login?email=verify-llm%40example.com&name=verify HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "POST /grade HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45102 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:45102 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58490 - "GET /grade/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "POST /tutor/4 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2567147]

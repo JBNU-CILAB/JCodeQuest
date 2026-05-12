@@ -42,7 +42,11 @@ app = FastAPI(title="JCodeQuest Authoring Engine")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5500", "http://127.0.0.1:5500",
+        "http://localhost:8000", "http://127.0.0.1:8000",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -235,6 +239,109 @@ async def get_problem_detail(problem_id: int) -> dict[str, Any]:
         if row is None:
             raise HTTPException(status_code=404, detail="problem not found")
         return _row_to_detail(row)
+
+
+# ── 원본 문제 직접 등록 (출제 엔진 우회) ────────────────────────────────────
+class TestCaseInput(BaseModel):
+    stdin: str
+    expected_stdout: str = ""  # 비면 reference_code로 sandbox 실행해 자동 채움
+    is_sample: bool = False
+
+
+class CreateOriginalRequest(BaseModel):
+    title: str
+    statement: str
+    category: str = "basic"
+    level: str = "bronze"  # bronze | silver | gold
+    points: int = 100
+    time_limit_ms: int = 2000
+    memory_limit_mb: int = 256
+    reference_code: str
+    one_line_summary: str = ""
+    expected_approach: str = ""
+    key_insight: str = ""
+    expected_complexity: str = ""
+    must_handle: list[str] = []
+    forbidden_patterns: list[str] = []
+    test_cases: list[TestCaseInput]
+
+
+@app.post("/api/problems")
+async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
+    """원본 문제 1건을 status='approved'로 직접 등록.
+
+    expected_stdout을 비워두면 reference_code를 sandbox에서 실행해 자동으로 채운다.
+    채움 실패(non-zero/TLE/RE) 시 그 케이스 인덱스와 에러를 응답에 함께 반환.
+    """
+    from jcq_shared.schemas import IntentRubric, Problem, TestCase
+    from src.judge.sandbox.runner import run_user_code  # type: ignore[import]
+    from src.storage.db import get_session  # type: ignore[import]
+    from src.storage.problems import create_problem as _create  # type: ignore[import]
+
+    if not req.test_cases:
+        raise HTTPException(400, "test_cases 최소 1개 필요")
+    if req.level not in ("bronze", "silver", "gold"):
+        raise HTTPException(400, "level은 bronze|silver|gold")
+
+    filled: list[TestCase] = []
+    autofill_log: list[dict[str, Any]] = []
+    for i, tc in enumerate(req.test_cases, start=1):
+        stdin = tc.stdin if tc.stdin.endswith("\n") or not tc.stdin else tc.stdin + "\n"
+        expected = tc.expected_stdout
+        if not expected:
+            # reference_code 실행해서 stdout 채움
+            r = run_user_code(
+                req.reference_code,
+                stdin,
+                time_limit_ms=req.time_limit_ms,
+                memory_limit_mb=req.memory_limit_mb,
+            )
+            if r.status != "OK":
+                raise HTTPException(
+                    422,
+                    f"autofill 실패 — case {i}: {r.status} stderr={r.stderr[:200]!r}",
+                )
+            expected = r.stdout.rstrip()
+            autofill_log.append(
+                {"ordinal": i, "elapsed_ms": r.elapsed_ms, "expected": expected[:80]}
+            )
+        filled.append(
+            TestCase(ordinal=i, stdin=stdin, expected_stdout=expected, is_sample=tc.is_sample)
+        )
+
+    rubric = IntentRubric(
+        expected_approach=req.expected_approach or req.one_line_summary or req.title,
+        expected_complexity=req.expected_complexity or "O(1)",
+        must_handle=req.must_handle,
+        forbidden_patterns=req.forbidden_patterns,
+        key_insight=req.key_insight or req.one_line_summary or req.title,
+        one_line_summary=req.one_line_summary or req.title,
+    )
+
+    problem = Problem(
+        id=0,
+        title=req.title,
+        statement=req.statement,
+        category=req.category,
+        level=req.level,  # type: ignore[arg-type]
+        points=req.points,
+        time_limit_ms=req.time_limit_ms,
+        memory_limit_mb=req.memory_limit_mb,
+        reference_code=req.reference_code,
+        intent_rubric=rubric,
+        test_cases=filled,
+    )
+
+    with get_session() as session:
+        pid = _create(
+            session,
+            problem,
+            status="approved",
+            parent_id=None,
+            authoring_meta={"source": "manual", "autofill": autofill_log} if autofill_log else {"source": "manual"},
+        )
+
+    return {"id": pid, "autofill": autofill_log}
 
 
 @app.get("/api/problems/{problem_id}/children")

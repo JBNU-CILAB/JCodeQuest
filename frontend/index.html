@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JCodeQuest</title>
+  <title>JCodeQuest — Online Judge</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -61,11 +61,27 @@
       background-clip: text;
     }
 
+    /* Mode tabs */
+    .mode-tabs { display: flex; gap: 4px; margin-left: 24px; }
+    .mode-tab {
+      padding: 6px 14px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .12s;
+      background: transparent;
+      border: 1px solid transparent;
+    }
+    .mode-tab:hover { color: var(--text); }
+    .mode-tab.active { color: var(--text); background: var(--card); border-color: var(--primary-dim); }
+
     .header-right {
       margin-left: auto;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       font-size: 13px;
       color: var(--muted);
     }
@@ -74,14 +90,17 @@
       background: var(--card);
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 4px 10px;
+      padding: 5px 10px;
       border-radius: 6px;
-      width: 64px;
       font-size: 13px;
-      text-align: center;
+      width: 180px;
     }
 
     .header-right input:focus { outline: none; border-color: var(--primary); }
+
+    #userStatus { font-size: 12px; }
+    .ok-pill { color: var(--success); }
+    .err-pill { color: var(--danger); }
 
     /* ── Layout ── */
     .layout {
@@ -91,10 +110,13 @@
       overflow: hidden;
     }
 
+    .mode-panel { display: none; flex: 1; overflow: hidden; }
+    .mode-panel.active { display: flex; }
+
     /* ── Sidebar ── */
     .sidebar {
-      width: 280px;
-      min-width: 220px;
+      width: 320px;
+      min-width: 260px;
       background: var(--surface);
       border-right: 1px solid var(--border);
       display: flex;
@@ -102,15 +124,21 @@
       flex-shrink: 0;
     }
 
-    .sidebar-head {
+    .sidebar-section {
       padding: 12px 16px;
       border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-section.flex { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; }
+
+    .section-head {
+      padding: 12px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
 
-    .sidebar-head span:first-child {
+    .section-head span:first-child {
       font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
@@ -118,12 +146,25 @@
       color: var(--muted);
     }
 
-    #problemCount { font-size: 11px; color: var(--muted); }
+    #variantCount, #originalsCount { font-size: 11px; color: var(--muted); }
 
-    .problem-list { flex: 1; overflow-y: auto; padding: 8px; }
+    select#originalSelect {
+      width: 100%;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    select#originalSelect:focus { outline: none; border-color: var(--primary); }
+
+    .problem-list { flex: 1; overflow-y: auto; padding: 4px 8px 8px; }
 
     .problem-card {
-      padding: 11px 13px;
+      padding: 10px 12px;
       border-radius: 7px;
       cursor: pointer;
       border: 1px solid transparent;
@@ -148,8 +189,47 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 12px;
+      font-size: 11px;
       color: var(--muted);
+    }
+
+    .score-pill {
+      background: rgba(124,111,255,.12);
+      color: #a78bfa;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .authoring-panel { padding: 12px 16px; }
+
+    #authoringStatus, #labRunStatus {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      min-height: 16px;
+      line-height: 1.5;
+      word-break: break-all;
+    }
+
+    .stage-chain { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+
+    .stage-chip {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 6px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--muted);
+    }
+    .stage-chip.done { color: var(--success); border-color: rgba(34,197,94,.4); }
+    .stage-chip.running { color: var(--warning); border-color: rgba(245,158,11,.4); animation: pulse 1.2s ease-in-out infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .4; }
     }
 
     /* ── Main ── */
@@ -159,7 +239,6 @@
       padding: 28px 32px;
     }
 
-    /* ── Empty state ── */
     .empty-state {
       height: 100%;
       display: flex;
@@ -188,8 +267,7 @@
     .b-cat    { background: rgba(124,111,255,.12); color: #a78bfa;       border: 1px solid rgba(124,111,255,.3); }
     .b-pts    { background: rgba(34,197,94,.12);   color: var(--success); border: 1px solid rgba(34,197,94,.3); }
 
-    /* ── Problem detail ── */
-    .problem-detail { max-width: 820px; }
+    .problem-detail { max-width: 860px; }
 
     .pd-header {
       display: flex;
@@ -200,7 +278,7 @@
     }
 
     .pd-title { font-size: 22px; font-weight: 700; flex: 1; min-width: 0; }
-
+    .pd-title .parent { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 8px; }
     .pd-badges { display: flex; gap: 6px; flex-wrap: wrap; }
 
     .pd-meta {
@@ -210,6 +288,7 @@
       color: var(--muted);
       margin-bottom: 20px;
       margin-top: 8px;
+      flex-wrap: wrap;
     }
 
     /* ── Section card ── */
@@ -230,17 +309,10 @@
       margin-bottom: 12px;
     }
 
-    /* ── Statement ── */
     .statement { font-size: 14px; line-height: 1.75; white-space: pre-wrap; }
 
-    /* ── Sample IO ── */
     .samples { display: flex; flex-direction: column; gap: 10px; }
-
-    .sample-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
+    .sample-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
     .io-box {
       background: var(--bg);
@@ -266,9 +338,9 @@
     }
 
     /* ── Editor ── */
-    textarea#code {
+    textarea#code, textarea.code-input {
       width: 100%;
-      min-height: 220px;
+      min-height: 200px;
       background: #09090f;
       border: 1px solid var(--border);
       border-radius: 7px;
@@ -282,7 +354,7 @@
       transition: border-color .15s;
     }
 
-    textarea#code:focus { border-color: var(--primary); }
+    textarea#code:focus, textarea.code-input:focus { border-color: var(--primary); }
 
     .submit-bar {
       display: flex;
@@ -318,6 +390,15 @@
 
     .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
 
+    .btn-danger-ghost {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid rgba(239,68,68,.3);
+      font-size: 11px;
+      padding: 3px 8px;
+    }
+
+    .btn-block { width: 100%; }
     #submitError { font-size: 12px; color: var(--danger); }
 
     /* ── Result ── */
@@ -337,21 +418,9 @@
     .v-running { background: rgba(245,158,11,.13); color: var(--warning); border: 1px solid rgba(245,158,11,.3); }
     .v-failed  { background: rgba(239,68,68,.1);   color: var(--danger);  border: 1px solid rgba(239,68,68,.2); }
 
-    .points-line {
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--gold);
-      margin-bottom: 14px;
-    }
+    .points-line { font-size: 18px; font-weight: 700; color: var(--gold); margin-bottom: 14px; }
 
-    /* ── Test table ── */
-    table.tt {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      margin-top: 4px;
-    }
-
+    table.tt { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
     .tt th {
       text-align: left;
       padding: 5px 12px;
@@ -362,13 +431,7 @@
       color: var(--muted);
       border-bottom: 1px solid var(--border);
     }
-
-    .tt td {
-      padding: 7px 12px;
-      border-bottom: 1px solid rgba(255,255,255,.03);
-      font-family: var(--mono);
-    }
-
+    .tt td { padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,.03); font-family: var(--mono); }
     .tt tr:last-child td { border-bottom: none; }
 
     .ok  { color: var(--success); font-weight: 600; }
@@ -387,7 +450,6 @@
     .s-MLE { background: rgba(124,111,255,.15); color: #a78bfa; }
     .s-RE  { background: rgba(239,68,68,.15);  color: var(--danger); }
 
-    /* ── Ensemble votes ── */
     .votes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 
     .vote-card {
@@ -396,6 +458,7 @@
       border-radius: 8px;
       padding: 10px 14px;
       min-width: 130px;
+      flex: 1;
     }
 
     .vc-judge { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
@@ -405,28 +468,12 @@
 
     .mode-line { font-size: 12px; color: var(--muted); margin-top: 8px; }
 
-    /* ── Tutor ── */
-    .tutor-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-
-    .tutor-msg {
-      font-size: 13px;
-      line-height: 1.8;
-      white-space: pre-wrap;
-      color: var(--text);
-    }
-
     /* ── Spinner ── */
     @keyframes spin { to { transform: rotate(360deg); } }
-
     .spin {
       display: inline-block;
-      width: 14px;
-      height: 14px;
+      width: 12px;
+      height: 12px;
       border: 2px solid rgba(255,255,255,.15);
       border-top-color: currentColor;
       border-radius: 50%;
@@ -441,70 +488,370 @@
       font-size: 13px;
     }
 
+    /* ── Lab — 원본 추가 폼 ── */
+    .lab-form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .lab-field { display: flex; flex-direction: column; gap: 4px; }
+    .lab-field.full { grid-column: 1 / -1; }
+    .lab-field label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+    }
+    .lab-field input, .lab-field textarea, .lab-field select {
+      background: #09090f;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .lab-field input:focus, .lab-field textarea:focus, .lab-field select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    .lab-field textarea { font-family: var(--mono); font-size: 12px; resize: vertical; }
+    .lab-field .hint { font-size: 10px; color: var(--muted); }
+
+    .tc-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto auto;
+      gap: 6px;
+      margin-bottom: 6px;
+      align-items: start;
+    }
+    .tc-row textarea {
+      min-height: 50px;
+      background: #09090f;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      padding: 5px 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      resize: vertical;
+    }
+    .tc-row label.sample-check {
+      font-size: 10px;
+      color: var(--muted);
+      align-self: center;
+      white-space: nowrap;
+    }
+
+    /* ── Lab — 라이브 로그 ── */
+    .live-log {
+      background: #06060c;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.6;
+      max-height: 280px;
+      overflow-y: auto;
+      color: var(--text);
+    }
+    .live-log .log-line { word-break: break-all; }
+    .live-log .log-time { color: var(--muted); }
+    .live-log .log-node { color: #a78bfa; font-weight: 600; }
+    .live-log .log-info { color: var(--text); }
+    .live-log .log-done { color: var(--success); font-weight: 600; }
+    .live-log .log-error { color: var(--danger); font-weight: 600; }
+
+    /* ── Lab — 변형 메타 카드 ── */
+    .variant-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 12px;
+    }
+
+    .variant-meta-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .vm-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .vm-title { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; }
+    .vm-id { font-size: 11px; color: var(--muted); }
+
+    .vm-row {
+      display: grid;
+      grid-template-columns: 90px 1fr auto;
+      gap: 8px;
+      font-size: 12px;
+      align-items: center;
+    }
+    .vm-row .lbl { color: var(--muted); font-size: 11px; }
+    .vm-row .val { font-family: var(--mono); font-size: 11px; word-break: break-all; }
+
+    .vm-pass { color: var(--success); }
+    .vm-fail { color: var(--danger); }
+    .vm-skip { color: var(--muted); }
+
+    details.vm-details {
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      margin-top: 4px;
+    }
+    details.vm-details summary {
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--muted);
+      user-select: none;
+    }
+    details.vm-details summary:hover { color: var(--text); }
+    details.vm-details[open] summary { margin-bottom: 8px; }
+
+    .vm-detail-block {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-top: 6px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .vm-detail-block pre {
+      font-family: var(--mono);
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .judge-mini {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      margin-right: 4px;
+    }
+    .judge-mini.ac { color: var(--success); border-color: rgba(34,197,94,.3); }
+    .judge-mini.sus, .judge-mini.fail { color: var(--danger); border-color: rgba(239,68,68,.3); }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    /* ── Responsive ── */
-    @media (max-width: 600px) {
-      .layout { flex-direction: column; height: auto; overflow: visible; }
-      .sidebar { width: 100%; max-height: 180px; border-right: none; border-bottom: 1px solid var(--border); }
-      .main { padding: 16px; overflow-y: visible; }
-      .sample-row { grid-template-columns: 1fr; }
-    }
   </style>
 </head>
 <body>
 
 <header>
   <div class="logo">⚔ JCodeQuest</div>
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tab-solve" onclick="switchMode('solve')">🎯 학습</button>
+    <button class="mode-tab" id="tab-lab" onclick="switchMode('lab')">🧪 출제 Lab</button>
+  </div>
   <div class="header-right">
-    <span>User ID</span>
-    <input type="number" id="userId" value="1" min="1" max="9999">
+    <span id="userStatus">로그인 안됨</span>
+    <input type="email" id="emailInput" placeholder="email@example.com" value="demo@example.com">
+    <button class="btn btn-ghost" onclick="devLogin()">Dev Login</button>
   </div>
 </header>
 
-<div class="layout">
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- ── 학습 모드 ──────────────────────────────────────────────────────────── -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
 
-  <!-- ── Sidebar ───────────────────────────────── -->
+<div class="mode-panel active" id="mode-solve">
   <aside class="sidebar">
-    <div class="sidebar-head">
-      <span>문제 목록</span>
-      <span id="problemCount"></span>
+    <div class="sidebar-section">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">
+        원본 문제
+      </div>
+      <select id="originalSelect" onchange="onOriginalSelect()">
+        <option value="">— 원본을 선택하세요 —</option>
+      </select>
     </div>
-    <div class="problem-list" id="problemList">
-      <div class="loading-hint"><span class="spin"></span></div>
+
+    <div class="sidebar-section flex">
+      <div class="section-head">
+        <span>생성된 변형 문제</span>
+        <span id="variantCount"></span>
+      </div>
+      <div class="problem-list" id="variantList">
+        <div class="loading-hint">원본을 먼저 선택하세요</div>
+      </div>
+    </div>
+
+    <div class="authoring-panel">
+      <button class="btn btn-primary btn-block" id="authorBtn" onclick="startAuthoring()">
+        🪄 이 원본으로 새 변형 출제
+      </button>
+      <div id="authoringStatus"></div>
     </div>
   </aside>
 
-  <!-- ── Main ──────────────────────────────────── -->
-  <main class="main" id="main">
-
+  <main class="main">
     <div class="empty-state" id="emptyState">
       <div class="empty-icon">🗡</div>
-      <div class="empty-title">문제를 선택하세요</div>
-      <div style="font-size:13px">왼쪽 목록에서 풀고 싶은 문제를 클릭하세요</div>
+      <div class="empty-title">변형 문제를 선택하세요</div>
+      <div style="font-size:13px">왼쪽 드롭다운에서 원본을 고른 뒤 생성된 변형 카드를 클릭하세요</div>
+    </div>
+    <div class="problem-detail" id="problemView" style="display:none"></div>
+  </main>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- ── 출제 Lab 모드 ──────────────────────────────────────────────────────── -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+
+<div class="mode-panel" id="mode-lab">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">
+          원본 문제 풀
+        </span>
+        <span id="originalsCount"></span>
+      </div>
+      <button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="toggleNewOriginalForm()">
+        + 원본 추가
+      </button>
     </div>
 
-    <div class="problem-detail" id="problemView" style="display:none"></div>
+    <div class="sidebar-section flex">
+      <div class="problem-list" id="labOriginalList">
+        <div class="loading-hint"><span class="spin"></span></div>
+      </div>
+    </div>
 
+    <div class="authoring-panel">
+      <button class="btn btn-primary btn-block" id="labAuthorBtn" onclick="labStartAuthoring()" disabled>
+        🪄 선택한 원본으로 변형 출제
+      </button>
+      <div id="labRunStatus"></div>
+    </div>
+  </aside>
+
+  <main class="main" id="labMain">
+
+    <!-- 원본 추가 폼 (토글) -->
+    <div class="card" id="newOriginalForm" style="display:none">
+      <div class="card-title">+ 새 원본 문제 등록</div>
+      <div class="lab-form-grid">
+        <div class="lab-field">
+          <label>제목</label>
+          <input id="np_title" placeholder="예: 두 수의 합">
+        </div>
+        <div class="lab-field">
+          <label>카테고리 / 난이도</label>
+          <div style="display:flex;gap:6px">
+            <input id="np_category" value="arithmetic" style="flex:1">
+            <select id="np_level" style="width:110px">
+              <option value="bronze">🥉 Bronze</option>
+              <option value="silver">🥈 Silver</option>
+              <option value="gold">🥇 Gold</option>
+            </select>
+          </div>
+        </div>
+        <div class="lab-field full">
+          <label>문제 설명</label>
+          <textarea id="np_statement" rows="4" placeholder="공백으로 구분된 두 정수 a, b가 주어진다. a + b를 출력하라."></textarea>
+        </div>
+        <div class="lab-field">
+          <label>제한시간 (ms)</label>
+          <input id="np_time" type="number" value="2000">
+        </div>
+        <div class="lab-field">
+          <label>메모리 (MB)</label>
+          <input id="np_mem" type="number" value="256">
+        </div>
+        <div class="lab-field full">
+          <label>한 줄 요약 (intent_rubric의 one_line_summary)</label>
+          <input id="np_summary" placeholder="예: 두 정수의 합을 계산해 출력">
+        </div>
+        <div class="lab-field full">
+          <label>정답 코드 (Python)</label>
+          <textarea id="np_ref" class="code-input" placeholder="a, b = map(int, input().split())&#10;print(a + b)&#10;"></textarea>
+        </div>
+        <div class="lab-field full">
+          <label>테스트 케이스 — expected를 비우면 정답 코드로 자동 채움</label>
+          <div id="np_tcList">
+            <!-- JS가 채움 -->
+          </div>
+          <button class="btn btn-ghost" style="width:fit-content;margin-top:4px" onclick="addTC()">+ 케이스 추가</button>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" onclick="submitNewOriginal()">등록</button>
+        <button class="btn btn-ghost" onclick="toggleNewOriginalForm()">취소</button>
+        <span id="np_err" style="font-size:12px;color:var(--danger)"></span>
+      </div>
+    </div>
+
+    <!-- 출제 진행 라이브 로그 -->
+    <div class="card" id="labLogCard" style="display:none">
+      <div class="card-title">출제 파이프라인 라이브 로그</div>
+      <div class="live-log" id="labLog"></div>
+    </div>
+
+    <!-- 변형 메타 그리드 -->
+    <div id="labVariantSection" style="display:none">
+      <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px">
+        <h2 style="font-size:18px" id="labVariantTitle">변형 결과</h2>
+        <span style="font-size:12px;color:var(--muted)" id="labVariantSubtitle"></span>
+      </div>
+      <div class="variant-meta-grid" id="labVariantGrid"></div>
+    </div>
+
+    <div class="empty-state" id="labEmptyState">
+      <div class="empty-icon">🧪</div>
+      <div class="empty-title">출제 Lab</div>
+      <div style="font-size:13px">좌측에서 원본을 선택하거나 새 원본을 추가하세요</div>
+    </div>
   </main>
 </div>
 
 <script>
 'use strict';
 
-const API = 'http://localhost:8000';
-let currentProblem = null;
-let currentSubId   = null;
-let activeES       = null;
+const BACKEND   = 'http://localhost:8000';
+const AUTHORING = 'http://localhost:8001';
 
-// ── API helpers ──────────────────────────────────────────────────────────
+let currentMode = 'solve';
 
-async function apiFetch(path, opts = {}) {
-  const res = await fetch(API + path, {
+// solve 모드 상태
+let currentVariant     = null;
+let currentOriginalId  = null;
+let currentSubId       = null;
+let activeES           = null;
+let activeAuthoringES  = null;
+
+// lab 모드 상태
+let labSelectedOriginal = null;
+let labRunES            = null;
+let labRunStages        = [];
+
+// ── API helpers ────────────────────────────────────────────────────────────
+
+async function apiFetch(url, opts = {}) {
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     ...opts,
   });
   if (!res.ok) {
@@ -514,30 +861,102 @@ async function apiFetch(path, opts = {}) {
   return res.json();
 }
 
-// ── Problem list ─────────────────────────────────────────────────────────
+// ── Mode switching ─────────────────────────────────────────────────────────
 
-async function loadProblems() {
-  const listEl = document.getElementById('problemList');
+function switchMode(m) {
+  currentMode = m;
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`tab-${m}`).classList.add('active');
+  document.querySelectorAll('.mode-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`mode-${m}`).classList.add('active');
+  if (m === 'lab') loadLabOriginals();
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+
+async function devLogin() {
+  const email = (document.getElementById('emailInput').value || '').trim() || 'demo@example.com';
+  const status = document.getElementById('userStatus');
   try {
-    const problems = await apiFetch('/problems');
-    document.getElementById('problemCount').textContent = `${problems.length}개`;
+    const r = await apiFetch(
+      `${BACKEND}/auth/dev-login?email=${encodeURIComponent(email)}&name=${encodeURIComponent(email.split('@')[0])}`,
+      { method: 'POST' }
+    );
+    status.textContent = `✓ user_id=${r.user_id}`;
+    status.className = 'ok-pill';
+  } catch (e) {
+    status.textContent = '✗ 로그인 실패';
+    status.className = 'err-pill';
+    alert(`Dev login 실패: ${e.message}`);
+  }
+}
 
-    if (!problems.length) {
-      listEl.innerHTML = '<div class="loading-hint">등록된 문제가 없습니다</div>';
+async function checkAuth() {
+  try {
+    const r = await apiFetch(`${BACKEND}/me`);
+    const status = document.getElementById('userStatus');
+    status.textContent = `✓ user_id=${r.id}`;
+    status.className = 'ok-pill';
+    return true;
+  } catch (_) { return false; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── 학습 모드 ──────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+
+async function loadOriginals() {
+  const sel = document.getElementById('originalSelect');
+  try {
+    const data = await apiFetch(`${AUTHORING}/api/problems?originals_only=true`);
+    if (!data.length) {
+      sel.innerHTML = '<option value="">(원본 문제 없음)</option>';
       return;
     }
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— 원본을 선택하세요 —</option>' +
+      data.map(p => `
+        <option value="${p.id}">#${p.id} ${escapeAttr(p.title)} — 변형 ${p.child_count}개${
+          p.avg_judge_score != null ? ` (평균 ${p.avg_judge_score.toFixed(2)})` : ''
+        }</option>
+      `).join('');
+    if (prev) sel.value = prev;
+  } catch (e) {
+    sel.innerHTML = `<option>오류: ${e.message}</option>`;
+  }
+}
 
-    listEl.innerHTML = problems.map(p => `
-      <div class="problem-card" id="pc-${p.id}" onclick="selectProblem(${p.id})">
+async function onOriginalSelect() {
+  const id = document.getElementById('originalSelect').value;
+  currentOriginalId = id ? parseInt(id) : null;
+  if (!currentOriginalId) {
+    document.getElementById('variantList').innerHTML = '<div class="loading-hint">원본을 먼저 선택하세요</div>';
+    document.getElementById('variantCount').textContent = '';
+    return;
+  }
+  await loadVariants(currentOriginalId);
+}
+
+async function loadVariants(originalId) {
+  const listEl = document.getElementById('variantList');
+  listEl.innerHTML = '<div class="loading-hint"><span class="spin"></span></div>';
+  try {
+    const data = await apiFetch(`${AUTHORING}/api/problems/${originalId}/children`);
+    document.getElementById('variantCount').textContent = `${data.length}개`;
+    if (!data.length) {
+      listEl.innerHTML = '<div class="loading-hint">아직 변형이 없습니다<br><br>아래 <b>“새 변형 출제”</b>를 눌러보세요</div>';
+      return;
+    }
+    listEl.innerHTML = data.map(v => `
+      <div class="problem-card" id="vc-${v.id}" onclick="selectVariant(${v.id})">
         <div class="pc-title">
-          <span class="num">#${p.id}</span>
-          <span>${h(p.title)}</span>
+          <span class="num">#${v.id}</span>
+          <span>${h(v.title)}</span>
         </div>
         <div class="pc-meta">
-          <span class="badge ${levelBadge(p.level)}">${levelLabel(p.level)}</span>
-          <span>${h(p.category)}</span>
-          <span>·</span>
-          <span>${p.points}pts</span>
+          <span class="badge ${levelBadge(v.level)}">${levelLabel(v.level)}</span>
+          <span>${h(v.category)}</span>
+          ${(v.authoring_meta?.judge_score != null) ? `<span class="score-pill">품질 ${v.authoring_meta.judge_score.toFixed(2)}</span>` : ''}
         </div>
       </div>
     `).join('');
@@ -546,35 +965,32 @@ async function loadProblems() {
   }
 }
 
-async function selectProblem(id) {
-  document.querySelectorAll('.problem-card').forEach(c => c.classList.remove('active'));
-  document.getElementById(`pc-${id}`)?.classList.add('active');
-
+async function selectVariant(id) {
+  document.querySelectorAll('#variantList .problem-card').forEach(c => c.classList.remove('active'));
+  document.getElementById(`vc-${id}`)?.classList.add('active');
   closeES();
-
   try {
-    const p = await apiFetch(`/problems/${id}`);
-    currentProblem = p;
-    currentSubId   = null;
+    const p = await apiFetch(`${BACKEND}/problems/${id}`);
+    currentVariant = p;
+    currentSubId = null;
     renderProblem(p);
   } catch (e) {
     showMainError(e.message);
   }
 }
 
-// ── Render problem view ──────────────────────────────────────────────────
-
 function renderProblem(p) {
   document.getElementById('emptyState').style.display = 'none';
   const view = document.getElementById('problemView');
   view.style.display = 'block';
-
-  const samples = (p.test_cases || []).filter(tc => tc.is_sample);
+  const samples = p.sample_test_cases || [];
 
   view.innerHTML = `
-    <!-- Header -->
     <div class="pd-header">
-      <div class="pd-title">${h(p.title)}</div>
+      <div class="pd-title">
+        ${h(p.title)}
+        <span class="parent">변형 #${p.id} ← 원본 #${currentOriginalId ?? '?'}</span>
+      </div>
       <div class="pd-badges">
         <span class="badge ${levelBadge(p.level)}">${levelLabel(p.level)}</span>
         <span class="badge b-cat">${h(p.category)}</span>
@@ -582,17 +998,16 @@ function renderProblem(p) {
       </div>
     </div>
     <div class="pd-meta">
-      <span>⏱ 제한 ${p.time_limit_ms}ms</span>
+      <span>⏱ ${p.time_limit_ms}ms</span>
       <span>💾 ${p.memory_limit_mb}MB</span>
+      ${p.one_line_summary ? `<span>📝 ${h(p.one_line_summary)}</span>` : ''}
     </div>
 
-    <!-- Statement -->
     <div class="card">
       <div class="card-title">문제 설명</div>
       <div class="statement">${h(p.statement)}</div>
     </div>
 
-    <!-- Sample cases -->
     ${samples.length ? `
     <div class="card">
       <div class="card-title">샘플 테스트케이스</div>
@@ -601,48 +1016,29 @@ function renderProblem(p) {
           <div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:5px">케이스 ${i + 1}</div>
             <div class="sample-row">
-              <div class="io-box">
-                <div class="io-label">입력</div>
-                <pre>${h(tc.stdin)}</pre>
-              </div>
-              <div class="io-box">
-                <div class="io-label">출력</div>
-                <pre>${h(tc.expected_stdout)}</pre>
-              </div>
+              <div class="io-box"><div class="io-label">입력</div><pre>${h(tc.stdin)}</pre></div>
+              <div class="io-box"><div class="io-label">출력</div><pre>${h(tc.expected_stdout)}</pre></div>
             </div>
           </div>
         `).join('')}
       </div>
-    </div>
-    ` : ''}
+    </div>` : ''}
 
-    <!-- Editor -->
     <div class="card">
       <div class="card-title">코드 작성 (Python)</div>
       <textarea id="code" spellcheck="false" placeholder="# 여기에 Python 코드를 작성하세요&#10;"></textarea>
       <div class="submit-bar">
-        <button class="btn btn-primary" id="submitBtn" onclick="submitCode()">제출</button>
+        <button class="btn btn-primary" id="submitBtn" onclick="submitCode()">제출 (채점)</button>
         <span id="submitError"></span>
       </div>
     </div>
 
-    <!-- Result -->
     <div class="card" id="resultCard" style="display:none">
       <div class="card-title">채점 결과</div>
       <div id="resultBody"></div>
     </div>
-
-    <!-- Tutor -->
-    <div class="card" id="tutorCard" style="display:none">
-      <div class="tutor-head">
-        <div class="card-title" style="margin:0">AI 튜터 피드백</div>
-        <button class="btn btn-ghost" onclick="requestTutor(true)">↺ 다시 받기</button>
-      </div>
-      <div id="tutorBody"><div class="loading-hint"><span class="spin"></span> 분석 중...</div></div>
-    </div>
   `;
 
-  // Tab key → 4 spaces
   document.getElementById('code').addEventListener('keydown', e => {
     if (e.key !== 'Tab') return;
     e.preventDefault();
@@ -652,22 +1048,17 @@ function renderProblem(p) {
   });
 }
 
-// ── Submit ───────────────────────────────────────────────────────────────
-
 async function submitCode() {
   const code = (document.getElementById('code')?.value ?? '').trim();
   if (!code) { setErr('코드를 입력하세요'); return; }
-
-  const userId = parseInt(document.getElementById('userId').value) || 1;
-  const btn    = document.getElementById('submitBtn');
-
+  if (!currentVariant) return;
+  const btn = document.getElementById('submitBtn');
   btn.disabled = true;
   setErr('');
-
   try {
-    const res = await apiFetch('/grade', {
+    const res = await apiFetch(`${BACKEND}/grade`, {
       method: 'POST',
-      body: JSON.stringify({ user_id: userId, problem_id: currentProblem.id, code }),
+      body: JSON.stringify({ problem_id: currentVariant.id, code }),
     });
     currentSubId = res.submission_id;
     showResult({ status: 'queued' });
@@ -675,85 +1066,62 @@ async function submitCode() {
   } catch (e) {
     setErr(e.message);
     btn.disabled = false;
+    if (/401|403/i.test(e.message)) setErr(e.message + ' — Dev Login 먼저 눌러주세요');
   }
 }
 
-// ── SSE watch ────────────────────────────────────────────────────────────
-
 function watchResult(subId) {
   closeES();
-  const es = new EventSource(`${API}/grade/${subId}/events`);
+  const es = new EventSource(`${BACKEND}/grade/${subId}/events`, { withCredentials: true });
   activeES = es;
-
   es.onmessage = e => {
     const data = JSON.parse(e.data);
     showResult(data);
-
     if (data.status === 'done' || data.status === 'failed') {
       es.close(); activeES = null;
       document.getElementById('submitBtn').disabled = false;
-
-      if (data.status === 'done') {
-        document.getElementById('tutorCard').style.display = 'block';
-        requestTutor(false);
-      }
     }
   };
-
   es.onerror = () => {
     es.close(); activeES = null;
     document.getElementById('submitBtn').disabled = false;
   };
 }
 
-function closeES() {
-  if (activeES) { activeES.close(); activeES = null; }
-}
-
-// ── Render result ─────────────────────────────────────────────────────────
+function closeES() { if (activeES) { activeES.close(); activeES = null; } }
 
 function showResult(data) {
   const card = document.getElementById('resultCard');
   const body = document.getElementById('resultBody');
   if (!card || !body) return;
   card.style.display = 'block';
-
   const { status, final_verdict: verdict, test_results, ensemble, points_awarded } = data;
 
   if (status === 'queued' || status === 'running') {
-    body.innerHTML = `
-      <div class="verdict v-running">
-        <span class="spin"></span>
-        ${status === 'queued' ? '채점 대기 중' : '채점 진행 중...'}
-      </div>`;
+    body.innerHTML = `<div class="verdict v-running"><span class="spin"></span>${
+      status === 'queued' ? '채점 대기 중' : '샌드박스 + LLM 앙상블 채점 중...'
+    }</div>`;
     return;
   }
-
   if (status === 'failed') {
     body.innerHTML = `<div class="verdict v-failed">⚠ 채점 실패</div>`;
     return;
   }
 
-  let html = `<div class="verdict v-${verdict}">
-    ${verdict === 'AC' ? '✓ Accepted' : '✗ Suspicious'}
-  </div>`;
+  let html = `<div class="verdict v-${verdict}">${
+    verdict === 'AC' ? '✓ Accepted' : '✗ Suspicious (의도 불일치)'
+  }</div>`;
 
   if (verdict === 'AC' && points_awarded) {
-    html += `<div class="points-line">🏆 +${points_awarded} points 획득!</div>`;
+    html += `<div class="points-line">🏆 +${points_awarded} points</div>`;
   }
 
   if (test_results?.length) {
     const passCount = test_results.filter(t => t.passed).length;
     html += `
-      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
-        ${passCount} / ${test_results.length} 테스트 통과
-      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">샌드박스: ${passCount} / ${test_results.length} 통과</div>
       <table class="tt">
-        <thead>
-          <tr>
-            <th>#</th><th>결과</th><th>상태</th><th>시간</th><th>메모리</th>
-          </tr>
-        </thead>
+        <thead><tr><th>#</th><th>결과</th><th>상태</th><th>시간</th><th>메모리</th></tr></thead>
         <tbody>
           ${test_results.map(t => `
             <tr>
@@ -770,6 +1138,9 @@ function showResult(data) {
 
   if (ensemble?.votes?.length) {
     html += `
+      <div style="font-size:11px;color:var(--muted);margin-top:14px;text-transform:uppercase;letter-spacing:.08em;font-weight:700">
+        LLM 앙상블 (의도 부합 심사)
+      </div>
       <div class="votes">
         ${ensemble.votes.map(v => `
           <div class="vote-card">
@@ -778,57 +1149,405 @@ function showResult(data) {
               ${v.verdict === 'AC' ? '✓ AC' : '✗ SUS'}
             </div>
             <div class="vc-conf">신뢰도 ${(v.confidence * 100).toFixed(0)}%</div>
-            <div class="vc-rationale">${h((v.rationale || '').slice(0, 80))}</div>
+            <div class="vc-rationale">${h((v.rationale || '').slice(0, 120))}</div>
           </div>
         `).join('')}
       </div>
-      <div class="mode-line">
-        판정 방식: ${ensemble.mode === 'unanimous' ? '만장일치' : '다수결'}
-      </div>`;
+      <div class="mode-line">판정 방식: ${ensemble.mode === 'unanimous' ? '만장일치' : '다수결'}</div>`;
   }
-
   body.innerHTML = html;
 }
 
-// ── Tutor ─────────────────────────────────────────────────────────────────
-
-async function requestTutor(regenerate = false) {
-  if (!currentSubId) return;
-  const body = document.getElementById('tutorBody');
-  body.innerHTML = '<div class="loading-hint"><span class="spin"></span> AI 튜터가 분석 중...</div>';
-
+async function startAuthoring() {
+  if (!currentOriginalId) { alert('먼저 원본 문제를 선택하세요'); return; }
+  const btn = document.getElementById('authorBtn');
+  const statusEl = document.getElementById('authoringStatus');
+  btn.disabled = true;
+  statusEl.innerHTML = '<span class="spin"></span> 출제 파이프라인 시작...';
   try {
-    const res = await apiFetch(
-      `/tutor/${currentSubId}${regenerate ? '?regenerate=true' : ''}`,
-      { method: 'POST' }
-    );
-    body.innerHTML = `<div class="tutor-msg">${h(res.message)}</div>`;
+    const r = await apiFetch(`${AUTHORING}/api/runs`, {
+      method: 'POST',
+      body: JSON.stringify({ problem_id: currentOriginalId, count: 1 }),
+    });
+    watchAuthoring(r.run_id, currentOriginalId);
   } catch (e) {
-    body.innerHTML = `<div style="color:var(--danger);font-size:13px">오류: ${h(e.message)}</div>`;
+    statusEl.innerHTML = `<span style="color:var(--danger)">오류: ${h(e.message)}</span>`;
+    btn.disabled = false;
   }
 }
 
-// ── Utils ─────────────────────────────────────────────────────────────────
+function watchAuthoring(runId, originalId) {
+  if (activeAuthoringES) { activeAuthoringES.close(); activeAuthoringES = null; }
+  const es = new EventSource(`${AUTHORING}/api/runs/${runId}/events`);
+  activeAuthoringES = es;
+  const statusEl = document.getElementById('authoringStatus');
+  const stages = [];
+
+  es.onmessage = e => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'update') {
+      const node = Object.keys(data.data)[0];
+      stages.push(node);
+      statusEl.innerHTML = `<span class="spin"></span> 진행 중...<div class="stage-chain">${
+        stages.map(n => `<span class="stage-chip done">${h(n)}</span>`).join('')
+      }</div>`;
+    } else if (data.type === 'done') {
+      statusEl.innerHTML = `<span style="color:var(--success);font-weight:600">✓ 출제 완료</span>
+        <div class="stage-chain">${stages.map(n => `<span class="stage-chip done">${h(n)}</span>`).join('')}</div>`;
+      es.close(); activeAuthoringES = null;
+      document.getElementById('authorBtn').disabled = false;
+      loadVariants(originalId);
+      loadOriginals();
+    } else if (data.type === 'error') {
+      statusEl.innerHTML = `<span style="color:var(--danger)">⚠ ${h(data.message)}</span>`;
+      es.close(); activeAuthoringES = null;
+      document.getElementById('authorBtn').disabled = false;
+    }
+  };
+  es.onerror = () => {
+    es.close(); activeAuthoringES = null;
+    document.getElementById('authorBtn').disabled = false;
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── 출제 Lab 모드 ──────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+
+async function loadLabOriginals() {
+  const listEl = document.getElementById('labOriginalList');
+  listEl.innerHTML = '<div class="loading-hint"><span class="spin"></span></div>';
+  try {
+    const data = await apiFetch(`${AUTHORING}/api/problems?originals_only=true`);
+    document.getElementById('originalsCount').textContent = `${data.length}개`;
+    if (!data.length) {
+      listEl.innerHTML = '<div class="loading-hint">원본이 없습니다<br><br>위 <b>“+ 원본 추가”</b>로 등록</div>';
+      return;
+    }
+    listEl.innerHTML = data.map(p => `
+      <div class="problem-card" id="loc-${p.id}" onclick="labSelectOriginal(${p.id})">
+        <div class="pc-title">
+          <span class="num">#${p.id}</span>
+          <span>${h(p.title)}</span>
+        </div>
+        <div class="pc-meta">
+          <span class="badge ${levelBadge(p.level)}">${levelLabel(p.level)}</span>
+          <span>${h(p.category)}</span>
+          <span class="score-pill">변형 ${p.child_count}</span>
+          ${p.avg_judge_score != null ? `<span class="score-pill">⌀ ${p.avg_judge_score.toFixed(2)}</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+    if (labSelectedOriginal) document.getElementById(`loc-${labSelectedOriginal}`)?.classList.add('active');
+  } catch (e) {
+    listEl.innerHTML = `<div class="loading-hint" style="color:var(--danger)">${h(e.message)}</div>`;
+  }
+}
+
+async function labSelectOriginal(id) {
+  labSelectedOriginal = id;
+  document.querySelectorAll('#labOriginalList .problem-card').forEach(c => c.classList.remove('active'));
+  document.getElementById(`loc-${id}`)?.classList.add('active');
+  document.getElementById('labAuthorBtn').disabled = false;
+  document.getElementById('labEmptyState').style.display = 'none';
+  await labLoadVariants(id);
+}
+
+async function labLoadVariants(originalId) {
+  const section = document.getElementById('labVariantSection');
+  const grid = document.getElementById('labVariantGrid');
+  section.style.display = 'block';
+  grid.innerHTML = '<div class="loading-hint"><span class="spin"></span></div>';
+
+  try {
+    const origData = await apiFetch(`${AUTHORING}/api/problems/${originalId}`);
+    document.getElementById('labVariantTitle').textContent = `원본 #${origData.id} — ${origData.title}`;
+    const children = await apiFetch(`${AUTHORING}/api/problems/${originalId}/children`);
+    document.getElementById('labVariantSubtitle').textContent = `변형 ${children.length}개`;
+
+    if (!children.length) {
+      grid.innerHTML = '<div class="loading-hint">아직 변형이 없습니다 — 좌측 하단 <b>“변형 출제”</b>를 눌러보세요</div>';
+      return;
+    }
+    grid.innerHTML = children.map(renderVariantMetaCard).join('');
+  } catch (e) {
+    grid.innerHTML = `<div class="loading-hint" style="color:var(--danger)">${h(e.message)}</div>`;
+  }
+}
+
+function renderVariantMetaCard(v) {
+  const meta = v.authoring_meta || {};
+  const passIcon = b => b ? '<span class="vm-pass">✓</span>' : '<span class="vm-fail">✗</span>';
+  const skipped = !meta.verify_passed && !meta.judge_passed && !meta.solver_passed;
+
+  const solverResults = meta.solver_results || [];
+  const solverACs = solverResults.filter(s => s.verdict === 'AC').length;
+
+  return `
+    <div class="variant-meta-card">
+      <div class="vm-header">
+        <span class="vm-title">${h(v.title)}</span>
+        <span class="vm-id">#${v.id}</span>
+        <span class="badge ${levelBadge(v.level)}">${levelLabel(v.level)}</span>
+      </div>
+
+      <div class="vm-row">
+        <span class="lbl">verify</span>
+        <span class="val">${meta.verify_attempts ? `${meta.verify_attempts}회 시도` : '-'} ${meta.verify_error ? h(meta.verify_error.slice(0,40)) : ''}</span>
+        <span>${meta.verify_passed === undefined ? '<span class="vm-skip">—</span>' : passIcon(meta.verify_passed)}</span>
+      </div>
+      <div class="vm-row">
+        <span class="lbl">judge</span>
+        <span class="val">score ${meta.judge_score != null ? meta.judge_score.toFixed(3) : '—'} ${(meta.judge_issues||[]).length ? `(이슈 ${meta.judge_issues.length})` : ''}</span>
+        <span>${meta.judge_passed === undefined ? '<span class="vm-skip">—</span>' : passIcon(meta.judge_passed)}</span>
+      </div>
+      <div class="vm-row">
+        <span class="lbl">solver</span>
+        <span class="val">${solverResults.length ? `${solverACs}/${solverResults.length} AC` : '—'}</span>
+        <span>${meta.solver_passed === undefined ? '<span class="vm-skip">—</span>' : passIcon(meta.solver_passed)}</span>
+      </div>
+      <div class="vm-row">
+        <span class="lbl">persist</span>
+        <span class="val">status=${h(v.status)} ${v.langsmith_trace_id ? `trace=${h(v.langsmith_trace_id.slice(0,8))}…` : ''}</span>
+        <span>${v.status === 'approved' ? passIcon(true) : '<span class="vm-skip">—</span>'}</span>
+      </div>
+
+      <details class="vm-details">
+        <summary>판사 의견 / 풀이자 코드 ▾</summary>
+        ${meta.judge_rationale ? `
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">JUDGE RATIONALE</div>
+          <div class="vm-detail-block">${h(meta.judge_rationale)}</div>
+        ` : ''}
+        ${(meta.judge_issues || []).length ? `
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">ISSUES</div>
+          <div class="vm-detail-block">${meta.judge_issues.map(i => `• ${h(i)}`).join('<br>')}</div>
+        ` : ''}
+        ${solverResults.length ? `
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">SOLVER RESULTS</div>
+          <div style="margin-top:4px">
+            ${solverResults.map(s => `
+              <span class="judge-mini ${s.verdict === 'AC' ? 'ac' : 'fail'}">${h(s.judge_id)}: ${h(s.verdict)}</span>
+            `).join('')}
+          </div>
+          ${solverResults.map(s => `
+            <details style="margin-top:6px">
+              <summary style="font-size:11px;color:var(--muted);cursor:pointer">${h(s.judge_id)} 코드 (${h(s.verdict)}) ▾</summary>
+              <div class="vm-detail-block"><pre>${h(s.code || s.rationale || '(empty)')}</pre></div>
+            </details>
+          `).join('')}
+        ` : ''}
+        ${v.intent_rubric ? `
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">INTENT RUBRIC</div>
+          <div class="vm-detail-block"><pre>${h(JSON.stringify(v.intent_rubric, null, 2))}</pre></div>
+        ` : ''}
+        ${v.reference_code ? `
+          <div style="margin-top:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">REFERENCE CODE</div>
+          <div class="vm-detail-block"><pre>${h(v.reference_code)}</pre></div>
+        ` : ''}
+      </details>
+    </div>
+  `;
+}
+
+// ── Lab: 출제 트리거 + 라이브 로그 ─────────────────────────────────────────
+
+async function labStartAuthoring() {
+  if (!labSelectedOriginal) { alert('원본 선택 필요'); return; }
+  const btn = document.getElementById('labAuthorBtn');
+  const statusEl = document.getElementById('labRunStatus');
+  const logCard = document.getElementById('labLogCard');
+  const log = document.getElementById('labLog');
+
+  btn.disabled = true;
+  labRunStages = [];
+  log.innerHTML = '';
+  logCard.style.display = 'block';
+  appendLog('info', `▶ POST /api/runs { problem_id: ${labSelectedOriginal}, count: 1 }`);
+
+  statusEl.innerHTML = '<span class="spin"></span> run 생성 중...';
+
+  try {
+    const r = await apiFetch(`${AUTHORING}/api/runs`, {
+      method: 'POST',
+      body: JSON.stringify({ problem_id: labSelectedOriginal, count: 1 }),
+    });
+    appendLog('info', `◀ run_id=${r.run_id} trace_id=${r.trace_id}`);
+    labWatchRun(r.run_id, labSelectedOriginal);
+  } catch (e) {
+    appendLog('error', `오류: ${e.message}`);
+    statusEl.innerHTML = `<span style="color:var(--danger)">⚠ ${h(e.message)}</span>`;
+    btn.disabled = false;
+  }
+}
+
+function labWatchRun(runId, originalId) {
+  if (labRunES) { labRunES.close(); labRunES = null; }
+  const statusEl = document.getElementById('labRunStatus');
+  const es = new EventSource(`${AUTHORING}/api/runs/${runId}/events`);
+  labRunES = es;
+
+  appendLog('info', `▶ SSE 구독: /api/runs/${runId}/events`);
+
+  es.onmessage = e => {
+    const data = JSON.parse(e.data);
+
+    if (data.type === 'update') {
+      const node = Object.keys(data.data)[0];
+      const payload = data.data[node];
+      labRunStages.push(node);
+
+      appendLog('node', `[node] ${node}`);
+
+      // 노드별 candidate 요약 출력
+      if (payload && payload.candidates) {
+        payload.candidates.forEach((c, i) => {
+          const parts = [];
+          if (c.title) parts.push(`title="${c.title}"`);
+          if (c.verify_passed !== undefined) parts.push(`verify=${c.verify_passed ? '✓' : '✗'}${c.verify_error ? ` (${c.verify_error.slice(0,30)})` : ''}`);
+          if (c.judge_score !== undefined && c.judge_score > 0) parts.push(`judge=${c.judge_score.toFixed(3)}${c.judge_passed ? '✓' : '✗'}`);
+          if (c.solver_results?.length) {
+            const ac = c.solver_results.filter(s => s.verdict === 'AC').length;
+            parts.push(`solver=${ac}/${c.solver_results.length}AC`);
+          }
+          if (c.saved_id) parts.push(`saved=#${c.saved_id}`);
+          if (parts.length) appendLog('info', `  └ candidate ${i}: ${parts.join(', ')}`);
+        });
+      }
+      if (payload && payload.original_problem) {
+        appendLog('info', `  └ original #${payload.original_problem.id} "${payload.original_problem.title}" + seeds ${payload.seeds?.length || 0}`);
+      }
+      if (payload && payload.saved_problem_ids?.length) {
+        appendLog('done', `  └ saved problem_ids: [${payload.saved_problem_ids.join(', ')}]`);
+      }
+      if (payload && payload.errors?.length) {
+        payload.errors.forEach(e => appendLog('error', `  └ error: ${e}`));
+      }
+
+      statusEl.innerHTML = `<span class="spin"></span> ${labRunStages.length} stages<div class="stage-chain">${
+        labRunStages.map(n => `<span class="stage-chip done">${h(n)}</span>`).join('')
+      }</div>`;
+
+    } else if (data.type === 'done') {
+      appendLog('done', `◀ done (trace=${data.trace_id})`);
+      statusEl.innerHTML = `<span style="color:var(--success);font-weight:600">✓ 완료</span>
+        <div class="stage-chain">${labRunStages.map(n => `<span class="stage-chip done">${h(n)}</span>`).join('')}</div>`;
+      es.close(); labRunES = null;
+      document.getElementById('labAuthorBtn').disabled = false;
+      labLoadVariants(originalId);
+      loadLabOriginals();
+      loadOriginals();
+    } else if (data.type === 'error') {
+      appendLog('error', `◀ error: ${data.message}`);
+      statusEl.innerHTML = `<span style="color:var(--danger)">⚠ ${h(data.message)}</span>`;
+      es.close(); labRunES = null;
+      document.getElementById('labAuthorBtn').disabled = false;
+    }
+  };
+
+  es.onerror = () => {
+    appendLog('error', '◀ SSE 연결 끊김');
+    es.close(); labRunES = null;
+    document.getElementById('labAuthorBtn').disabled = false;
+  };
+}
+
+function appendLog(kind, msg) {
+  const log = document.getElementById('labLog');
+  const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  const cls = `log-${kind}`;
+  log.insertAdjacentHTML('beforeend',
+    `<div class="log-line"><span class="log-time">${time}</span> <span class="${cls}">${h(msg)}</span></div>`);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── Lab: 원본 추가 폼 ──────────────────────────────────────────────────────
+
+function toggleNewOriginalForm() {
+  const f = document.getElementById('newOriginalForm');
+  const visible = f.style.display !== 'none';
+  f.style.display = visible ? 'none' : 'block';
+  if (!visible && !document.getElementById('np_tcList').children.length) {
+    addTC(true);  // 첫 케이스는 sample
+    addTC(false);
+  }
+}
+
+function addTC(isSample = false) {
+  const list = document.getElementById('np_tcList');
+  const idx = list.children.length;
+  const row = document.createElement('div');
+  row.className = 'tc-row';
+  row.innerHTML = `
+    <textarea placeholder="stdin (예: 5 3)" data-field="stdin"></textarea>
+    <textarea placeholder="expected (비우면 자동 채움)" data-field="expected"></textarea>
+    <label class="sample-check"><input type="checkbox" data-field="sample" ${isSample ? 'checked' : ''}> sample</label>
+    <button class="btn btn-danger-ghost" onclick="this.parentElement.remove()">✕</button>
+  `;
+  list.appendChild(row);
+}
+
+async function submitNewOriginal() {
+  const errEl = document.getElementById('np_err');
+  errEl.textContent = '';
+
+  const title = document.getElementById('np_title').value.trim();
+  const statement = document.getElementById('np_statement').value.trim();
+  const reference_code = document.getElementById('np_ref').value;
+  if (!title || !statement || !reference_code.trim()) {
+    errEl.textContent = '제목/설명/정답 코드는 필수';
+    return;
+  }
+
+  const tcs = [...document.querySelectorAll('#np_tcList .tc-row')].map(r => ({
+    stdin: r.querySelector('[data-field=stdin]').value,
+    expected_stdout: r.querySelector('[data-field=expected]').value,
+    is_sample: r.querySelector('[data-field=sample]').checked,
+  })).filter(tc => tc.stdin !== '' || tc.expected_stdout !== '');
+
+  if (!tcs.length) { errEl.textContent = '테스트 케이스 최소 1개'; return; }
+
+  const body = {
+    title,
+    statement,
+    category: document.getElementById('np_category').value.trim() || 'basic',
+    level: document.getElementById('np_level').value,
+    points: 100,
+    time_limit_ms: parseInt(document.getElementById('np_time').value) || 2000,
+    memory_limit_mb: parseInt(document.getElementById('np_mem').value) || 256,
+    reference_code,
+    one_line_summary: document.getElementById('np_summary').value.trim(),
+    test_cases: tcs,
+  };
+
+  try {
+    const r = await apiFetch(`${AUTHORING}/api/problems`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    appendLog('done', `✓ 새 원본 등록: id=${r.id} (autofill ${r.autofill?.length || 0}건)`);
+    // 폼 비우기
+    ['np_title','np_statement','np_ref','np_summary'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('np_tcList').innerHTML = '';
+    addTC(true); addTC(false);
+    toggleNewOriginalForm();
+    loadLabOriginals();
+    loadOriginals();
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────────
 
 function h(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-
-function levelBadge(l) {
-  return { bronze: 'b-bronze', silver: 'b-silver', gold: 'b-gold' }[l] ?? 'b-bronze';
-}
-
-function levelLabel(l) {
-  return { bronze: '🥉 Bronze', silver: '🥈 Silver', gold: '🥇 Gold' }[l] ?? l;
-}
-
-function setErr(msg) {
-  const el = document.getElementById('submitError');
-  if (el) el.textContent = msg;
-}
-
+function escapeAttr(str) { return String(str ?? '').replace(/"/g, '&quot;'); }
+function levelBadge(l) { return { bronze:'b-bronze', silver:'b-silver', gold:'b-gold' }[l] ?? 'b-bronze'; }
+function levelLabel(l) { return { bronze:'🥉 Bronze', silver:'🥈 Silver', gold:'🥇 Gold' }[l] ?? l; }
+function setErr(msg) { const el = document.getElementById('submitError'); if (el) el.textContent = msg; }
 function showMainError(msg) {
   document.getElementById('emptyState').style.display = 'none';
   const v = document.getElementById('problemView');
@@ -836,8 +1555,9 @@ function showMainError(msg) {
   v.innerHTML = `<div style="color:var(--danger);padding:8px">${h(msg)}</div>`;
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────
-loadProblems();
+// ── Init ───────────────────────────────────────────────────────────────────
+checkAuth();
+loadOriginals();
 </script>
 
 </body>
