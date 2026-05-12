@@ -269,6 +269,37 @@ class MeResponse(BaseModel):
     tier: str = Field(description="현재 티어 (exp 기반 산출)")
 
 
+LeaderboardPeriod = Literal["all", "week"]
+
+
+class LeaderboardEntry(BaseModel):
+    """리더보드 한 행. period에 따라 points 의미가 달라진다."""
+
+    rank: int = Field(description="1부터 시작하는 순위 (동점이면 user_id 오름차순)")
+    user_id: int = Field(examples=[1])
+    display_name: str = Field(examples=["김민석"])
+    tier: str = Field(description="현재 티어")
+    points: int = Field(
+        description=(
+            "period=all이면 누적 EXP, period=week면 이번 ISO 주차에 처음 AC로 획득한 "
+            "points_awarded 합"
+        ),
+        examples=[1500],
+    )
+
+
+class LeaderboardResponse(BaseModel):
+    period: LeaderboardPeriod = Field(description="all=전체 누적, week=이번 ISO 주차")
+    week: str | None = Field(
+        default=None,
+        description="period=week일 때만 채워짐. 집계 대상 ISO 주차 'YYYY-Www'.",
+        examples=["2026-W19"],
+    )
+    entries: list[LeaderboardEntry] = Field(
+        description="points 내림차순. 동점은 user_id 오름차순으로 안정 정렬."
+    )
+
+
 class TutorResponse(BaseModel):
     submission_id: int
     message: str = Field(description="튜터가 생성한 한국어 가이드 메시지")

@@ -15,6 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .api.auth import router as auth_router
 from .api.grading import router as grading_router
+from .api.leaderboard import router as leaderboard_router
 from .api.me import router as me_router
 from .api.problems import router as problems_router
 from .api.tutor import router as tutor_router
@@ -69,6 +70,7 @@ app.include_router(me_router)
 app.include_router(grading_router)
 app.include_router(tutor_router)
 app.include_router(problems_router)
+app.include_router(leaderboard_router)
 
 
 @app.get(
