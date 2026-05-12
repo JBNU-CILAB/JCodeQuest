@@ -191,39 +191,3 @@ def get_attempt_status(
     )
 
 
-@router.get(
-    "/{problem_id}/my-submissions",
-    response_model=SubmissionListResponse,
-    summary="이 문제에 낸 내 제출들",
-    description="`/me/submissions` 와 동일하지만 problem_id가 경로로 고정.",
-    responses={
-        401: {"description": "유효한 세션 쿠키 없음"},
-        **_NOT_FOUND_OR_NOT_APPROVED,
-    },
-)
-def list_my_submissions_for_problem(
-    problem_id: ProblemIdPath,
-    verdict: Annotated[
-        EnsembleVerdict | None, Query(description="AC|SUS 필터")
-    ] = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    user: UserRow = Depends(get_current_user),
-) -> SubmissionListResponse:
-    assert user.id is not None
-    with get_session() as session:
-        row = session.get(ProblemRow, problem_id)
-        if row is None or row.status != "approved":
-            raise HTTPException(404, f"problem {problem_id} not found")
-        rows, total = list_user_submissions(
-            session,
-            user.id,
-            problem_id=problem_id,
-            verdict=verdict,
-            limit=limit,
-            offset=offset,
-        )
-        items = [_to_submission_item(r) for r in rows]
-    return SubmissionListResponse(
-        items=items, total=total, limit=limit, offset=offset
-    )
