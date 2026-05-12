@@ -71,6 +71,11 @@ app.include_router(tutor_router)
 app.include_router(problems_router)
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["health"],
+    summary="Liveness probe",
+    description="서버가 떠 있고 라우터가 마운트됐는지 확인하는 단순 핑.",
+)
 def health() -> dict[str, str]:
     return {"status": "ok"}

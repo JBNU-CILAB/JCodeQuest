@@ -1,9 +1,12 @@
 """인증된 본인 프로필 + 본인 제출 이력."""
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Query
 
 from ..auth.deps import get_current_user
 from ..schemas import (
     EnsembleVerdict,
+    MeResponse,
     SubmissionListItem,
     SubmissionListResponse,
 )
@@ -14,16 +17,22 @@ from ..storage.submissions import list_user_submissions
 router = APIRouter(prefix="/me", tags=["me"])
 
 
-@router.get("")
-def me(user: UserRow = Depends(get_current_user)) -> dict:
-    return {
-        "id": user.id,
-        "display_name": user.display_name,
-        "email": user.email,
-        "provider": user.provider,
-        "exp": user.exp,
-        "tier": user.tier,
-    }
+@router.get(
+    "",
+    response_model=MeResponse,
+    summary="내 프로필 조회",
+    description="현재 세션의 사용자 프로필을 반환한다.",
+    responses={401: {"description": "유효한 세션 쿠키 없음"}},
+)
+def me(user: UserRow = Depends(get_current_user)) -> MeResponse:
+    return MeResponse(
+        id=user.id,  # type: ignore[arg-type]
+        display_name=user.display_name,
+        email=user.email,
+        provider=user.provider,  # type: ignore[arg-type]
+        exp=user.exp,
+        tier=user.tier,
+    )
 
 
 def _to_submission_item(row) -> SubmissionListItem:
@@ -40,22 +49,35 @@ def _to_submission_item(row) -> SubmissionListItem:
     )
 
 
-@router.get("/submissions", response_model=SubmissionListResponse)
+@router.get(
+    "/submissions",
+    response_model=SubmissionListResponse,
+    summary="내 제출 목록",
+    description=(
+        "본인이 낸 제출들을 최신순으로 반환한다. "
+        "`code` 필드는 페이로드 비대해서 제외 — 상세는 `GET /grade/{id}`."
+    ),
+    responses={401: {"description": "유효한 세션 쿠키 없음"}},
+)
 def list_my_submissions(
-    problem_id: int | None = Query(default=None),
-    verdict: EnsembleVerdict | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    problem_id: Annotated[
+        int | None, Query(description="특정 문제로 필터")
+    ] = None,
+    verdict: Annotated[
+        EnsembleVerdict | None,
+        Query(
+            description=(
+                "AC | SUS. sandbox-fail은 final_verdict=SUS로 들어가므로 "
+                "verdict=SUS에 포함된다."
+            )
+        ),
+    ] = None,
+    limit: Annotated[
+        int, Query(ge=1, le=100, description="페이지 크기 (1–100)")
+    ] = 20,
+    offset: Annotated[int, Query(ge=0, description="오프셋")] = 0,
     user: UserRow = Depends(get_current_user),
 ) -> SubmissionListResponse:
-    """본인 제출 목록. 최신순.
-
-    필터:
-    - problem_id: 특정 문제만
-    - verdict: AC | SUS (final_verdict 기준 — sandbox-fail은 SUS로 들어가므로 verdict=SUS에 포함)
-
-    `code`는 응답에 포함하지 않음(페이로드 비대) — 상세는 GET /grade/{id}.
-    """
     assert user.id is not None
     with get_session() as session:
         rows, total = list_user_submissions(

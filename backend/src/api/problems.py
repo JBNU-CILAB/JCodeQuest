@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from ..auth.deps import get_current_user
 from ..schemas import (
@@ -22,6 +24,12 @@ from ..storage.submissions import (
 )
 
 router = APIRouter(prefix="/problems", tags=["problems"])
+
+ProblemIdPath = Annotated[int, Path(description="문제 ID", examples=[1])]
+
+_NOT_FOUND_OR_NOT_APPROVED = {
+    404: {"description": "문제가 없거나 status != 'approved'"}
+}
 
 
 def _to_submission_item(row) -> SubmissionListItem:
@@ -72,10 +80,19 @@ def _to_detail(p: Problem) -> ProblemDetail:
     )
 
 
-@router.get("", response_model=list[ProblemSummary])
+@router.get(
+    "",
+    response_model=list[ProblemSummary],
+    summary="승인된 문제 목록",
+    description="status='approved' 문제만 노출. category/level로 필터링 가능.",
+)
 def list_approved_problems(
-    category: str | None = Query(default=None),
-    level: ProblemLevel | None = Query(default=None),
+    category: Annotated[
+        str | None, Query(description="카테고리 슬러그로 필터")
+    ] = None,
+    level: Annotated[
+        ProblemLevel | None, Query(description="난이도 필터")
+    ] = None,
 ) -> list[ProblemSummary]:
     with get_session() as session:
         problems = list_problems(
@@ -84,8 +101,17 @@ def list_approved_problems(
     return [_to_summary(p) for p in problems]
 
 
-@router.get("/{problem_id}", response_model=ProblemDetail)
-def get_problem_detail(problem_id: int) -> ProblemDetail:
+@router.get(
+    "/{problem_id}",
+    response_model=ProblemDetail,
+    summary="문제 상세 (공개 정보)",
+    description=(
+        "statement와 sample test case만 노출한다. "
+        "reference_code/intent_rubric/hidden case는 응답에 포함되지 않는다."
+    ),
+    responses=_NOT_FOUND_OR_NOT_APPROVED,
+)
+def get_problem_detail(problem_id: ProblemIdPath) -> ProblemDetail:
     with get_session() as session:
         row = session.get(ProblemRow, problem_id)
         if row is None or row.status != "approved":
@@ -96,14 +122,22 @@ def get_problem_detail(problem_id: int) -> ProblemDetail:
 
 
 @router.get(
-    "/{problem_id}/attempt-status", response_model=AttemptStatusResponse
+    "/{problem_id}/attempt-status",
+    response_model=AttemptStatusResponse,
+    summary="시도 가능 여부 확인",
+    description=(
+        "제출 화면이 버튼 활성/비활성을 결정하기 위해 호출. "
+        "이미 풀었거나 시도 초과면 can_submit=False, 쿨다운 중이면 cooldown_remaining_s>0."
+    ),
+    responses={
+        401: {"description": "유효한 세션 쿠키 없음"},
+        **_NOT_FOUND_OR_NOT_APPROVED,
+    },
 )
 def get_attempt_status(
-    problem_id: int,
+    problem_id: ProblemIdPath,
     user: UserRow = Depends(get_current_user),
 ) -> AttemptStatusResponse:
-    """제출 화면이 버튼 활성화/비활성화를 결정하기 위해 호출.
-    이미 푼 문제거나 시도 초과면 can_submit=False — 쿨다운 중이면 남은 초가 양수."""
     assert user.id is not None
     with get_session() as session:
         row = session.get(ProblemRow, problem_id)
@@ -122,16 +156,24 @@ def get_attempt_status(
 
 
 @router.get(
-    "/{problem_id}/my-submissions", response_model=SubmissionListResponse
+    "/{problem_id}/my-submissions",
+    response_model=SubmissionListResponse,
+    summary="이 문제에 낸 내 제출들",
+    description="`/me/submissions` 와 동일하지만 problem_id가 경로로 고정.",
+    responses={
+        401: {"description": "유효한 세션 쿠키 없음"},
+        **_NOT_FOUND_OR_NOT_APPROVED,
+    },
 )
 def list_my_submissions_for_problem(
-    problem_id: int,
-    verdict: EnsembleVerdict | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    problem_id: ProblemIdPath,
+    verdict: Annotated[
+        EnsembleVerdict | None, Query(description="AC|SUS 필터")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
     user: UserRow = Depends(get_current_user),
 ) -> SubmissionListResponse:
-    """문제 페이지에서 '내가 이 문제에 낸 시도들'을 보여주기 위한 편의 엔드포인트."""
     assert user.id is not None
     with get_session() as session:
         row = session.get(ProblemRow, problem_id)

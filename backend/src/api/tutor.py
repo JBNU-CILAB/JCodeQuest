@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Path, Query
 
 from ..schemas import TutorHistoryItem, TutorHistoryResponse, TutorResponse
 from ..storage import get_session
@@ -13,15 +15,28 @@ from ..tutor import tutor as run_tutor
 
 router = APIRouter(prefix="/tutor", tags=["tutor"])
 
+SubmissionIdPath = Annotated[int, Path(description="제출 ID", examples=[42])]
 
-@router.post("/{submission_id}", response_model=TutorResponse)
+
+@router.post(
+    "/{submission_id}",
+    response_model=TutorResponse,
+    summary="튜터 메시지 생성/조회",
+    description=(
+        "기본: 최신 캐시가 있으면 그대로 반환 (LLM 호출 없음). "
+        "`regenerate=true`이면 항상 새로 생성하고 새 행으로 저장한다."
+    ),
+    responses={
+        404: {"description": "제출 또는 매칭된 문제 없음"},
+        409: {"description": "submission.status != 'done' — 튜터링은 채점 완료 후에만"},
+    },
+)
 async def request_tutor(
-    submission_id: int, regenerate: bool = False
+    submission_id: SubmissionIdPath,
+    regenerate: Annotated[
+        bool, Query(description="캐시 무시하고 새로 생성")
+    ] = False,
 ) -> TutorResponse:
-    """튜터 메시지 생성/조회.
-    - 기본: 최신 캐시가 있으면 그대로 반환 (LLM 호출 없음)
-    - `?regenerate=true`: 항상 새로 생성 + 새 행으로 저장
-    """
     with get_session() as session:
         sub = get_submission(session, submission_id)
         if sub is None:
@@ -66,8 +81,14 @@ async def request_tutor(
     return TutorResponse(submission_id=submission_id, message=message)
 
 
-@router.get("/{submission_id}/history", response_model=TutorHistoryResponse)
-async def tutor_history(submission_id: int) -> TutorHistoryResponse:
+@router.get(
+    "/{submission_id}/history",
+    response_model=TutorHistoryResponse,
+    summary="튜터 메시지 이력",
+    description="해당 제출에 생성된 모든 튜터 메시지를 생성 시각 오름차순으로 반환.",
+    responses={404: {"description": "제출 없음"}},
+)
+async def tutor_history(submission_id: SubmissionIdPath) -> TutorHistoryResponse:
     with get_session() as session:
         sub = get_submission(session, submission_id)
         if sub is None:

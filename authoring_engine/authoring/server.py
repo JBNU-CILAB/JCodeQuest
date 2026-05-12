@@ -16,15 +16,15 @@ import os
 import threading
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path as PathParam, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
 from .config import ensure_backend_on_path
@@ -38,7 +38,22 @@ if os.getenv("LANGSMITH_API_KEY"):
     os.environ.setdefault("LANGCHAIN_PROJECT", os.getenv("LANGSMITH_PROJECT", "jcq-authoring"))
 
 
-app = FastAPI(title="JCodeQuest Authoring Engine")
+tags_metadata = [
+    {"name": "health", "description": "liveness probe"},
+    {"name": "runs", "description": "출제 파이프라인 실행 + SSE 진행 스트림"},
+    {"name": "problems", "description": "원본/변형 문제 조회와 원본 직접 등록"},
+    {"name": "spans", "description": "LangSmith 트레이스 조회"},
+]
+
+app = FastAPI(
+    title="JCodeQuest Authoring Engine",
+    description=(
+        "LangGraph 파이프라인으로 원본 문제로부터 변형을 생성하고 같은 SQLite DB에 "
+        "저장하는 출제 엔진. 백엔드와 동일한 `JCQ_DB_URL`을 공유한다."
+    ),
+    version="0.1.0",
+    openapi_tags=tags_metadata,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,13 +75,165 @@ _loop: asyncio.AbstractEventLoop | None = None
 
 # ── 모델 ─────────────────────────────────────────────────────────────────
 class RunRequest(BaseModel):
-    problem_id: int
-    count: int = 5
+    problem_id: int = Field(description="변형의 부모가 될 원본 문제 ID", examples=[1])
+    count: int = Field(
+        default=5, ge=1, le=20,
+        description="생성할 변형 개수 (검증/심사 통과 시에만 저장됨)",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"problem_id": 1, "count": 5}]}
+    )
 
 
 class RunResponse(BaseModel):
-    run_id: str
+    run_id: str = Field(description="이 실행에 대한 메모리 큐 키 — SSE에서 사용")
+    trace_id: str = Field(
+        description="LangSmith 트레이스 ID (UUID). /api/spans/{trace_id}로 조회."
+    )
+
+
+class ProblemSummaryOut(BaseModel):
+    id: int
+    title: str
+    category: str
+    level: str
+    status: str = Field(description="approved | draft | rejected ...")
+    parent_id: int | None = Field(
+        default=None, description="원본 문제의 ID. 원본이면 null."
+    )
+    langsmith_trace_id: str | None = None
+    created_at: str | None = Field(default=None, description="ISO 8601")
+    child_count: int = Field(description="이 원본에서 생성된 변형 수")
+    avg_judge_score: float | None = Field(
+        default=None, description="변형들의 평균 judge_score (있는 것만)"
+    )
+
+
+class TestCasePublicOut(BaseModel):
+    ordinal: int
+    stdin: str
+    expected_stdout: str
+    is_sample: bool
+
+
+class ProblemDetailOut(ProblemSummaryOut):
+    statement: str
+    reference_code: str
+    intent_rubric: dict[str, Any] | None = None
+    authoring_meta: dict[str, Any] | None = None
+    points: int
+    time_limit_ms: int
+    memory_limit_mb: int
+    test_cases: list[TestCasePublicOut]
+
+
+class TestCaseInput(BaseModel):
+    stdin: str = Field(description="표준입력 (개행이 없으면 자동 부착)")
+    expected_stdout: str = Field(
+        default="",
+        description="기대 표준출력. 비면 reference_code를 sandbox에서 실행해 자동 채움.",
+    )
+    is_sample: bool = Field(default=False, description="공개 샘플 여부")
+
+
+class CreateOriginalRequest(BaseModel):
+    """원본 문제 1건을 status='approved'로 직접 등록. 출제 엔진 우회 — 운영자/시드 용도."""
+
+    title: str = Field(examples=["두 배 출력"])
+    statement: str = Field(description="문제 본문 (Markdown 허용)")
+    category: str = Field(default="basic")
+    level: str = Field(
+        default="bronze",
+        description="bronze | silver | gold",
+        pattern=r"^(bronze|silver|gold)$",
+    )
+    points: int = Field(default=100, ge=0, le=1000)
+    time_limit_ms: int = Field(default=2000, ge=100, le=60000)
+    memory_limit_mb: int = Field(default=256, ge=16, le=2048)
+    reference_code: str = Field(
+        description="autofill에 사용될 정답 Python 소스",
+        examples=["n = int(input())\nprint(n * 2)\n"],
+    )
+    one_line_summary: str = ""
+    expected_approach: str = ""
+    key_insight: str = ""
+    expected_complexity: str = ""
+    must_handle: list[str] = []
+    forbidden_patterns: list[str] = []
+    test_cases: list[TestCaseInput] = Field(
+        min_length=1, description="최소 1개. expected_stdout 비면 자동 채움."
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "title": "두 배 출력",
+                    "statement": "정수 n이 주어지면 n*2를 출력하라.",
+                    "category": "basic",
+                    "level": "bronze",
+                    "points": 100,
+                    "time_limit_ms": 2000,
+                    "memory_limit_mb": 256,
+                    "reference_code": "n = int(input())\nprint(n * 2)\n",
+                    "one_line_summary": "정수 두 배 출력",
+                    "expected_approach": "입력을 정수로 변환 후 2를 곱한다",
+                    "expected_complexity": "O(1)",
+                    "test_cases": [
+                        {"stdin": "3\n", "expected_stdout": "6", "is_sample": True},
+                        {"stdin": "10\n", "expected_stdout": "", "is_sample": False},
+                    ],
+                }
+            ]
+        }
+    )
+
+
+class CreateOriginalResponse(BaseModel):
+    id: int = Field(description="새로 등록된 문제 ID")
+    autofill: list[dict[str, Any]] = Field(
+        description="자동 채움된 케이스의 메타 (ordinal/elapsed_ms/expected 일부)"
+    )
+
+
+class SpanTokens(BaseModel):
+    prompt: int | None = None
+    completion: int | None = None
+    total: int | None = None
+
+
+class SpanOut(BaseModel):
+    id: str
+    parent_run_id: str | None = None
+    name: str
+    run_type: str
+    status: str
+    start_time: str | None = None
+    end_time: str | None = None
+    latency_seconds: float | None = None
+    tokens: SpanTokens
+    cost: float | None = None
+    inputs: dict[str, Any] | None = None
+    outputs: dict[str, Any] | None = None
+    error: str | None = None
+    extra: dict[str, Any] | None = None
+    tags: list[str] = []
+
+
+class SpansSummary(BaseModel):
+    span_count: int
+    total_tokens: int
+    prompt_tokens: int
+    completion_tokens: int
+    root_latency_seconds: float
+
+
+class SpansResponse(BaseModel):
     trace_id: str
+    project: str
+    summary: SpansSummary
+    spans: list[SpanOut]
 
 
 # ── 파이프라인 실행 ──────────────────────────────────────────────────────
@@ -114,12 +281,27 @@ async def _capture_loop() -> None:
     _loop = asyncio.get_running_loop()
 
 
-@app.get("/api/health")
+@app.get(
+    "/api/health",
+    tags=["health"],
+    summary="Liveness probe",
+    description="서버가 떠 있는지 확인하는 단순 핑.",
+)
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/runs", response_model=RunResponse)
+@app.post(
+    "/api/runs",
+    response_model=RunResponse,
+    tags=["runs"],
+    summary="출제 파이프라인 실행 시작",
+    description=(
+        "LangGraph DAG `fetch_problem → generate_variants → verify_candidates → "
+        "judge_candidates → solve_candidates → persist_approved`를 백그라운드 스레드로 실행. "
+        "즉시 `run_id`/`trace_id`를 반환하고, 진행 상황은 `/api/runs/{run_id}/events`로 추적."
+    ),
+)
 async def create_run(req: RunRequest) -> RunResponse:
     run_id = uuid.uuid4().hex
     trace_id = str(uuid.uuid4())  # LangSmith는 UUID 형식 요구
@@ -133,8 +315,32 @@ async def create_run(req: RunRequest) -> RunResponse:
     return RunResponse(run_id=run_id, trace_id=trace_id)
 
 
-@app.get("/api/runs/{run_id}/events")
-async def stream_events(run_id: str):
+@app.get(
+    "/api/runs/{run_id}/events",
+    tags=["runs"],
+    summary="파이프라인 진행 SSE 스트림",
+    description=(
+        "Server-Sent Events. payload 형식:\n"
+        "- `{type: 'update', data: <langgraph chunk>}`\n"
+        "- `{type: 'done', trace_id: '...'}`\n"
+        "- `{type: 'error', message: '...'}`\n\n"
+        "type이 done/error면 스트림 종료 + 서버측에서 run_id 해제."
+    ),
+    responses={
+        200: {
+            "description": "SSE 스트림 (text/event-stream)",
+            "content": {
+                "text/event-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            },
+        },
+        404: {"description": "run_id 없음 (이미 종료됐거나 존재하지 않음)"},
+    },
+)
+async def stream_events(
+    run_id: Annotated[str, PathParam(description="POST /api/runs가 반환한 run_id")]
+):
     q = _runs.get(run_id)
     if q is None:
         raise HTTPException(status_code=404, detail="run not found")
@@ -194,9 +400,18 @@ def _row_to_detail(row) -> dict[str, Any]:
     return base
 
 
-@app.get("/api/problems")
-async def list_problems(originals_only: bool = True) -> list[dict[str, Any]]:
-    """원본(parent_id IS NULL) 문제 목록과 변형 통계를 반환."""
+@app.get(
+    "/api/problems",
+    response_model=list[ProblemSummaryOut],
+    tags=["problems"],
+    summary="문제 목록 (변형 통계 포함)",
+    description="기본값은 원본(parent_id IS NULL)만. 각 원본에 대해 변형 수와 평균 judge_score를 포함한다.",
+)
+async def list_problems(
+    originals_only: Annotated[
+        bool, Query(description="false면 변형까지 모두 포함")
+    ] = True,
+) -> list[dict[str, Any]]:
     from sqlmodel import select
 
     from src.storage.db import get_session  # type: ignore[import]
@@ -229,8 +444,20 @@ async def list_problems(originals_only: bool = True) -> list[dict[str, Any]]:
         return [_row_to_summary(r, child_stats) for r in rows]
 
 
-@app.get("/api/problems/{problem_id}")
-async def get_problem_detail(problem_id: int) -> dict[str, Any]:
+@app.get(
+    "/api/problems/{problem_id}",
+    response_model=ProblemDetailOut,
+    tags=["problems"],
+    summary="문제 상세 (관리자 시야)",
+    description=(
+        "reference_code, intent_rubric, authoring_meta, 모든 test_cases를 포함한다. "
+        "백엔드의 `/problems/{id}`(학생 시야)와 달리 hidden 정보까지 전부 노출."
+    ),
+    responses={404: {"description": "문제 없음"}},
+)
+async def get_problem_detail(
+    problem_id: Annotated[int, PathParam(description="문제 ID")]
+) -> dict[str, Any]:
     from src.storage.db import get_session  # type: ignore[import]
     from src.storage.models import ProblemRow  # type: ignore[import]
 
@@ -241,38 +468,21 @@ async def get_problem_detail(problem_id: int) -> dict[str, Any]:
         return _row_to_detail(row)
 
 
-# ── 원본 문제 직접 등록 (출제 엔진 우회) ────────────────────────────────────
-class TestCaseInput(BaseModel):
-    stdin: str
-    expected_stdout: str = ""  # 비면 reference_code로 sandbox 실행해 자동 채움
-    is_sample: bool = False
-
-
-class CreateOriginalRequest(BaseModel):
-    title: str
-    statement: str
-    category: str = "basic"
-    level: str = "bronze"  # bronze | silver | gold
-    points: int = 100
-    time_limit_ms: int = 2000
-    memory_limit_mb: int = 256
-    reference_code: str
-    one_line_summary: str = ""
-    expected_approach: str = ""
-    key_insight: str = ""
-    expected_complexity: str = ""
-    must_handle: list[str] = []
-    forbidden_patterns: list[str] = []
-    test_cases: list[TestCaseInput]
-
-
-@app.post("/api/problems")
+@app.post(
+    "/api/problems",
+    response_model=CreateOriginalResponse,
+    tags=["problems"],
+    summary="원본 문제 직접 등록 (출제 엔진 우회)",
+    description=(
+        "운영자/시드 용도. `expected_stdout`이 비어 있으면 reference_code를 sandbox에서 "
+        "실행해 자동으로 채운다. 채움 실패(non-zero/TLE/RE) 시 그 케이스 인덱스를 422에 포함."
+    ),
+    responses={
+        400: {"description": "test_cases 비었거나 level 부정"},
+        422: {"description": "autofill 실패 — case <i>: <status>"},
+    },
+)
 async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
-    """원본 문제 1건을 status='approved'로 직접 등록.
-
-    expected_stdout을 비워두면 reference_code를 sandbox에서 실행해 자동으로 채운다.
-    채움 실패(non-zero/TLE/RE) 시 그 케이스 인덱스와 에러를 응답에 함께 반환.
-    """
     from jcq_shared.schemas import IntentRubric, Problem, TestCase
     from src.judge.sandbox.runner import run_user_code  # type: ignore[import]
     from src.storage.db import get_session  # type: ignore[import]
@@ -344,8 +554,16 @@ async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
     return {"id": pid, "autofill": autofill_log}
 
 
-@app.get("/api/problems/{problem_id}/children")
-async def list_problem_children(problem_id: int) -> list[dict[str, Any]]:
+@app.get(
+    "/api/problems/{problem_id}/children",
+    response_model=list[ProblemDetailOut],
+    tags=["problems"],
+    summary="원본의 변형 목록 (상세)",
+    description="parent_id == problem_id 인 변형들의 상세를 모두 반환.",
+)
+async def list_problem_children(
+    problem_id: Annotated[int, PathParam(description="원본 문제 ID")]
+) -> list[dict[str, Any]]:
     from sqlmodel import select
 
     from src.storage.db import get_session  # type: ignore[import]
@@ -361,9 +579,25 @@ async def list_problem_children(problem_id: int) -> list[dict[str, Any]]:
 
 
 # ── LangSmith 스팬 ───────────────────────────────────────────────────────
-@app.get("/api/spans/{trace_id}")
-async def get_spans(trace_id: str) -> dict[str, Any]:
-    """trace_id로 LangSmith의 모든 child run을 가져와 prompts/IO/tokens/latency를 정리."""
+@app.get(
+    "/api/spans/{trace_id}",
+    response_model=SpansResponse,
+    tags=["spans"],
+    summary="LangSmith 트레이스 스팬 트리",
+    description=(
+        "trace_id에 묶인 모든 LangSmith run을 가져와 prompts/IO/tokens/latency/cost를 정리. "
+        "`LANGSMITH_API_KEY`가 설정되어 있어야 한다."
+    ),
+    responses={
+        404: {"description": "해당 trace_id의 run이 LangSmith에 없음"},
+        500: {"description": "langsmith 클라이언트 import 실패"},
+        502: {"description": "LangSmith API 호출 실패"},
+        503: {"description": "LANGSMITH_API_KEY 미설정"},
+    },
+)
+async def get_spans(
+    trace_id: Annotated[str, PathParam(description="LangSmith 트레이스 UUID")]
+) -> dict[str, Any]:
     if not os.getenv("LANGSMITH_API_KEY"):
         raise HTTPException(status_code=503, detail="LANGSMITH_API_KEY not configured")
     try:

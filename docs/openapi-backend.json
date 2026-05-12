@@ -1,0 +1,1776 @@
+{
+  "components": {
+    "schemas": {
+      "AttemptStatusResponse": {
+        "description": "제출 화면이 '남은 시도 횟수 / 쿨다운 / AC 여부'를 한 번에 보고 그릴 수 있도록 묶음.",
+        "properties": {
+          "attempts": {
+            "description": "누적 제출 횟수",
+            "examples": [
+              2
+            ],
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "can_submit": {
+            "description": "현재 시점에 제출 가능 여부 (solved=False & remaining>0 & cooldown<=0)",
+            "title": "Can Submit",
+            "type": "boolean"
+          },
+          "cooldown_remaining_s": {
+            "description": "다음 제출까지 남은 쿨다운 초. 0 이하면 즉시 가능.",
+            "title": "Cooldown Remaining S",
+            "type": "number"
+          },
+          "max_attempts": {
+            "description": "문제당 최대 시도 횟수",
+            "examples": [
+              10
+            ],
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "problem_id": {
+            "title": "Problem Id",
+            "type": "integer"
+          },
+          "remaining": {
+            "description": "남은 시도 횟수 (max_attempts - attempts)",
+            "examples": [
+              8
+            ],
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "solved": {
+            "description": "이미 AC를 받은 적이 있는지",
+            "title": "Solved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "problem_id",
+          "attempts",
+          "remaining",
+          "max_attempts",
+          "solved",
+          "cooldown_remaining_s",
+          "can_submit"
+        ],
+        "title": "AttemptStatusResponse",
+        "type": "object"
+      },
+      "EnsembleResult": {
+        "properties": {
+          "final_verdict": {
+            "description": "3명의 심판 투표를 종합한 최종 판정",
+            "enum": [
+              "AC",
+              "SUS"
+            ],
+            "title": "Final Verdict",
+            "type": "string"
+          },
+          "mode": {
+            "description": "unanimous=3/3 동일, majority=2/3 다수결",
+            "enum": [
+              "unanimous",
+              "majority"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "votes": {
+            "description": "개별 심판의 판정 목록 (3개)",
+            "items": {
+              "$ref": "#/components/schemas/JudgeVote"
+            },
+            "title": "Votes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "final_verdict",
+          "mode",
+          "votes"
+        ],
+        "title": "EnsembleResult",
+        "type": "object"
+      },
+      "GradeAcceptedResponse": {
+        "properties": {
+          "status": {
+            "default": "queued",
+            "description": "제출 직후 상태 — 항상 queued",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submission_id": {
+            "description": "생성된 제출 ID — 이후 /grade/{id} 또는 SSE에서 사용",
+            "examples": [
+              42
+            ],
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id"
+        ],
+        "title": "GradeAcceptedResponse",
+        "type": "object"
+      },
+      "GradeRequest": {
+        "description": "user_id는 인증된 세션에서 추출 — body로 받지 않음(위조 차단).",
+        "examples": [
+          {
+            "code": "n = int(input())\nprint(n * 2)\n",
+            "problem_id": 1
+          }
+        ],
+        "properties": {
+          "code": {
+            "description": "제출할 Python 소스 — UTF-8, 최대 64 KiB",
+            "examples": [
+              "n = int(input())\nprint(n * 2)\n"
+            ],
+            "maxLength": 65536,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "problem_id": {
+            "description": "채점할 문제 ID",
+            "examples": [
+              1
+            ],
+            "title": "Problem Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "problem_id",
+          "code"
+        ],
+        "title": "GradeRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JudgeVote": {
+        "properties": {
+          "confidence": {
+            "description": "0.0–1.0 신뢰도",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "intent_match": {
+            "description": "제출 코드가 출제 의도(rubric)와 일치한다고 보는지",
+            "title": "Intent Match",
+            "type": "boolean"
+          },
+          "judge_id": {
+            "description": "모델 식별자 (Melchior | Balthasar | Casper)",
+            "examples": [
+              "Melchior"
+            ],
+            "title": "Judge Id",
+            "type": "string"
+          },
+          "rationale": {
+            "description": "판정 근거 (자연어)",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "이 심판의 판정 — AC(합격) 또는 SUS(의심)",
+            "enum": [
+              "AC",
+              "SUS"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "intent_match",
+          "rationale",
+          "confidence",
+          "judge_id"
+        ],
+        "title": "JudgeVote",
+        "type": "object"
+      },
+      "MeResponse": {
+        "description": "GET /me 의 응답 — UserRow의 공개 가능한 필드만.",
+        "properties": {
+          "display_name": {
+            "examples": [
+              "김민석"
+            ],
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "examples": [
+              "foo@jbnu.ac.kr"
+            ],
+            "title": "Email",
+            "type": "string"
+          },
+          "exp": {
+            "description": "누적 경험치",
+            "examples": [
+              1500
+            ],
+            "title": "Exp",
+            "type": "integer"
+          },
+          "id": {
+            "examples": [
+              1
+            ],
+            "title": "Id",
+            "type": "integer"
+          },
+          "provider": {
+            "description": "인증 공급자",
+            "enum": [
+              "google",
+              "dev_stub"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "tier": {
+            "description": "현재 티어 (exp 기반 산출)",
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "email",
+          "provider",
+          "exp",
+          "tier"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
+      "ProblemDetail": {
+        "description": "상세 — statement와 샘플 케이스만 공개. 채점 기준/정답 코드는 비공개.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "level": {
+            "enum": [
+              "bronze",
+              "silver",
+              "gold"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "memory_limit_mb": {
+            "description": "메모리 제한 (MB)",
+            "examples": [
+              256
+            ],
+            "title": "Memory Limit Mb",
+            "type": "integer"
+          },
+          "one_line_summary": {
+            "title": "One Line Summary",
+            "type": "string"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "sample_test_cases": {
+            "description": "공개 샘플 케이스 — hidden 케이스는 포함하지 않음",
+            "items": {
+              "$ref": "#/components/schemas/PublicTestCase"
+            },
+            "title": "Sample Test Cases",
+            "type": "array"
+          },
+          "statement": {
+            "description": "문제 본문 (Markdown 허용)",
+            "title": "Statement",
+            "type": "string"
+          },
+          "time_limit_ms": {
+            "description": "실행 시간 제한 (ms)",
+            "examples": [
+              2000
+            ],
+            "title": "Time Limit Ms",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "statement",
+          "category",
+          "level",
+          "points",
+          "time_limit_ms",
+          "memory_limit_mb",
+          "one_line_summary"
+        ],
+        "title": "ProblemDetail",
+        "type": "object"
+      },
+      "ProblemSummary": {
+        "description": "목록용 — reference_code / intent_rubric 내부는 제외.",
+        "properties": {
+          "category": {
+            "description": "카테고리 슬러그",
+            "examples": [
+              "basic"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "id": {
+            "examples": [
+              1
+            ],
+            "title": "Id",
+            "type": "integer"
+          },
+          "level": {
+            "description": "난이도",
+            "enum": [
+              "bronze",
+              "silver",
+              "gold"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "one_line_summary": {
+            "description": "한 줄 요약",
+            "title": "One Line Summary",
+            "type": "string"
+          },
+          "points": {
+            "description": "기본 배점 — 첫 AC 시 EXP로 가산 (효율 보너스 별도)",
+            "examples": [
+              100
+            ],
+            "title": "Points",
+            "type": "integer"
+          },
+          "title": {
+            "description": "문제 제목",
+            "examples": [
+              "두 배 출력"
+            ],
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "category",
+          "level",
+          "points",
+          "one_line_summary"
+        ],
+        "title": "ProblemSummary",
+        "type": "object"
+      },
+      "PublicTestCase": {
+        "description": "학생에게 노출되는 샘플 케이스. hidden 케이스의 stdin/expected는 절대 포함하지 않음.",
+        "properties": {
+          "expected_stdout": {
+            "description": "기대 표준출력 (개행 trim)",
+            "title": "Expected Stdout",
+            "type": "string"
+          },
+          "ordinal": {
+            "description": "테스트 순번",
+            "examples": [
+              1
+            ],
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "stdin": {
+            "description": "표준입력 (개행 포함)",
+            "title": "Stdin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ordinal",
+          "stdin",
+          "expected_stdout"
+        ],
+        "title": "PublicTestCase",
+        "type": "object"
+      },
+      "SubmissionListItem": {
+        "description": "본인 제출 목록용 — code는 페이로드 비대해서 제외. 상세는 /grade/{id}로.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "final_verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "AC",
+                  "SUS"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Verdict"
+          },
+          "id": {
+            "description": "제출 ID",
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "모든 케이스 중 최대 실행 시간 (ms)",
+            "title": "Max Elapsed Ms"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unanimous",
+                  "majority"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "앙상블 모드 (unanimous|majority). 앙상블 미실행이면 null.",
+            "title": "Mode"
+          },
+          "peak_memory_kb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "모든 케이스 중 최대 메모리 (KB)",
+            "title": "Peak Memory Kb"
+          },
+          "points_awarded": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points Awarded"
+          },
+          "problem_id": {
+            "title": "Problem Id",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "problem_id",
+          "status",
+          "created_at"
+        ],
+        "title": "SubmissionListItem",
+        "type": "object"
+      },
+      "SubmissionListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "필터 적용 후 전체 건수",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "SubmissionListResponse",
+        "type": "object"
+      },
+      "SubmissionStatusResponse": {
+        "properties": {
+          "ensemble": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnsembleResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "3-judge 앙상블 결과 — 모든 케이스 통과 시에만 채워짐"
+          },
+          "final_verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "AC",
+                  "SUS"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "채점 완료 후의 최종 판정 (status=done일 때만)",
+            "title": "Final Verdict"
+          },
+          "points_awarded": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "첫 AC일 때 사용자 EXP에 가산된 점수. 그 외엔 0 또는 None.",
+            "examples": [
+              100
+            ],
+            "title": "Points Awarded"
+          },
+          "status": {
+            "description": "채점 진행 상태",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submission_id": {
+            "examples": [
+              42
+            ],
+            "title": "Submission Id",
+            "type": "integer"
+          },
+          "test_results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TestResult"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "테스트 케이스별 결과 — sandbox 실행 후 채워짐",
+            "title": "Test Results"
+          }
+        },
+        "required": [
+          "submission_id",
+          "status"
+        ],
+        "title": "SubmissionStatusResponse",
+        "type": "object"
+      },
+      "TestResult": {
+        "properties": {
+          "actual_stdout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "실제 표준출력 (스니펫). 실패 시 비교용으로 노출.",
+            "title": "Actual Stdout"
+          },
+          "elapsed_ms": {
+            "default": 0,
+            "description": "이 케이스 실행 시간 (ms)",
+            "title": "Elapsed Ms",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "RE 등 비정상 종료 시 stderr 요약",
+            "title": "Error"
+          },
+          "ordinal": {
+            "description": "테스트 케이스 순번 (1부터)",
+            "examples": [
+              1
+            ],
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "passed": {
+            "description": "해당 케이스 통과 여부",
+            "examples": [
+              true
+            ],
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "peak_memory_kb": {
+            "default": 0,
+            "description": "이 케이스 피크 메모리 (KB)",
+            "title": "Peak Memory Kb",
+            "type": "integer"
+          },
+          "status": {
+            "default": "OK",
+            "description": "실행 분류 — passed=False일 때만 OK 외 값 가능",
+            "enum": [
+              "OK",
+              "TLE",
+              "MLE",
+              "RE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ordinal",
+          "passed"
+        ],
+        "title": "TestResult",
+        "type": "object"
+      },
+      "TutorHistoryItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "description": "tutor_message 행 ID",
+            "title": "Id",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "created_at"
+        ],
+        "title": "TutorHistoryItem",
+        "type": "object"
+      },
+      "TutorHistoryResponse": {
+        "properties": {
+          "messages": {
+            "description": "생성 시각 오름차순",
+            "items": {
+              "$ref": "#/components/schemas/TutorHistoryItem"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id",
+          "messages"
+        ],
+        "title": "TutorHistoryResponse",
+        "type": "object"
+      },
+      "TutorResponse": {
+        "properties": {
+          "message": {
+            "description": "튜터가 생성한 한국어 가이드 메시지",
+            "title": "Message",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id",
+          "message"
+        ],
+        "title": "TutorResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "JCodeQuest Backend",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/auth/callback": {
+      "get": {
+        "description": "ID 토큰 검증 → 도메인(hd) 검증 → 사용자 upsert → SessionRow 발급 → JCQ_FRONTEND_REDIRECT_URL로 302.",
+        "operationId": "auth_callback_auth_callback_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "302": {
+            "description": "프론트엔드로 리다이렉트하며 jcq_session 쿠키 발급"
+          },
+          "400": {
+            "description": "OAuth 실패 또는 ID 토큰에 sub/email 누락"
+          },
+          "403": {
+            "description": "이메일 미인증 또는 허용 도메인이 아님"
+          }
+        },
+        "summary": "Google OAuth 콜백",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/login": {
+      "get": {
+        "description": "Google OAuth의 authorize 엔드포인트로 302 리다이렉트한다. state/nonce는 Starlette SessionMiddleware의 임시 쿠키에 저장.",
+        "operationId": "login_auth_login_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "302": {
+            "description": "Google authorize URL로 리다이렉트"
+          }
+        },
+        "summary": "Google OAuth 로그인 시작",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "현재 세션의 SessionRow를 즉시 삭제하고 jcq_session 쿠키를 clear한다. 같은 토큰을 가진 다른 클라이언트도 그 시점부터 무효.",
+        "operationId": "logout_auth_logout_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "status": "logged out"
+                },
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Logout Auth Logout Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "로그아웃 완료 (쿠키가 없어도 200)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "세션 종료",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/grade": {
+      "post": {
+        "description": "제출을 큐에 적재하고 즉시 `202`로 반환한다. 결과는 `GET /grade/{id}` 폴링 또는 `GET /grade/{id}/events` SSE로 추적.",
+        "operationId": "submit_grade_grade_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GradeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradeAcceptedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "유효한 세션 쿠키 없음"
+          },
+          "404": {
+            "description": "문제 없음"
+          },
+          "409": {
+            "description": "이미 해결한 문제"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "최대 시도 초과 또는 쿨다운 중 (Retry-After 헤더 포함)"
+          }
+        },
+        "summary": "제출 채점 요청",
+        "tags": [
+          "grading"
+        ]
+      }
+    },
+    "/grade/{submission_id}": {
+      "get": {
+        "description": "채점 진행 상태와 누적 결과를 한 번에 반환한다.",
+        "operationId": "get_grade_grade__submission_id__get",
+        "parameters": [
+          {
+            "description": "제출 ID",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "description": "제출 ID",
+              "examples": [
+                42
+              ],
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "제출 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "제출 상태 스냅샷",
+        "tags": [
+          "grading"
+        ]
+      }
+    },
+    "/grade/{submission_id}/events": {
+      "get": {
+        "description": "Server-Sent Events. 구독 즉시 현재 스냅샷을 한 번 푸시하고, 이후 상태 변경 시마다 동일 페이로드를 푸시한다. 15초마다 `: keep-alive` 코멘트로 프록시 idle timeout을 회피. status가 done/failed가 되면 스트림 종료. **스냅샷을 읽기 전에 먼저 구독해야 중간 이벤트를 놓치지 않는다.**",
+        "operationId": "stream_grade_events_grade__submission_id__events_get",
+        "parameters": [
+          {
+            "description": "제출 ID",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "description": "제출 ID",
+              "examples": [
+                42
+              ],
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "SSE 스트림 (text/event-stream)"
+          },
+          "404": {
+            "description": "제출 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "제출 상태 SSE 스트림",
+        "tags": [
+          "grading"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "서버가 떠 있고 라우터가 마운트됐는지 확인하는 단순 핑.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness probe",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/me": {
+      "get": {
+        "description": "현재 세션의 사용자 프로필을 반환한다.",
+        "operationId": "me_me_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "유효한 세션 쿠키 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "내 프로필 조회",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/me/submissions": {
+      "get": {
+        "description": "본인이 낸 제출들을 최신순으로 반환한다. `code` 필드는 페이로드 비대해서 제외 — 상세는 `GET /grade/{id}`.",
+        "operationId": "list_my_submissions_me_submissions_get",
+        "parameters": [
+          {
+            "description": "특정 문제로 필터",
+            "in": "query",
+            "name": "problem_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "특정 문제로 필터",
+              "title": "Problem Id"
+            }
+          },
+          {
+            "description": "AC | SUS. sandbox-fail은 final_verdict=SUS로 들어가므로 verdict=SUS에 포함된다.",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "AC",
+                    "SUS"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "AC | SUS. sandbox-fail은 final_verdict=SUS로 들어가므로 verdict=SUS에 포함된다.",
+              "title": "Verdict"
+            }
+          },
+          {
+            "description": "페이지 크기 (1–100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "페이지 크기 (1–100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "오프셋",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "오프셋",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "유효한 세션 쿠키 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "내 제출 목록",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/problems": {
+      "get": {
+        "description": "status='approved' 문제만 노출. category/level로 필터링 가능.",
+        "operationId": "list_approved_problems_problems_get",
+        "parameters": [
+          {
+            "description": "카테고리 슬러그로 필터",
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "카테고리 슬러그로 필터",
+              "title": "Category"
+            }
+          },
+          {
+            "description": "난이도 필터",
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "bronze",
+                    "silver",
+                    "gold"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "난이도 필터",
+              "title": "Level"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProblemSummary"
+                  },
+                  "title": "Response List Approved Problems Problems Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "승인된 문제 목록",
+        "tags": [
+          "problems"
+        ]
+      }
+    },
+    "/problems/{problem_id}": {
+      "get": {
+        "description": "statement와 sample test case만 노출한다. reference_code/intent_rubric/hidden case는 응답에 포함되지 않는다.",
+        "operationId": "get_problem_detail_problems__problem_id__get",
+        "parameters": [
+          {
+            "description": "문제 ID",
+            "in": "path",
+            "name": "problem_id",
+            "required": true,
+            "schema": {
+              "description": "문제 ID",
+              "examples": [
+                1
+              ],
+              "title": "Problem Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "문제가 없거나 status != 'approved'"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "문제 상세 (공개 정보)",
+        "tags": [
+          "problems"
+        ]
+      }
+    },
+    "/problems/{problem_id}/attempt-status": {
+      "get": {
+        "description": "제출 화면이 버튼 활성/비활성을 결정하기 위해 호출. 이미 풀었거나 시도 초과면 can_submit=False, 쿨다운 중이면 cooldown_remaining_s>0.",
+        "operationId": "get_attempt_status_problems__problem_id__attempt_status_get",
+        "parameters": [
+          {
+            "description": "문제 ID",
+            "in": "path",
+            "name": "problem_id",
+            "required": true,
+            "schema": {
+              "description": "문제 ID",
+              "examples": [
+                1
+              ],
+              "title": "Problem Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "유효한 세션 쿠키 없음"
+          },
+          "404": {
+            "description": "문제가 없거나 status != 'approved'"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "시도 가능 여부 확인",
+        "tags": [
+          "problems"
+        ]
+      }
+    },
+    "/problems/{problem_id}/my-submissions": {
+      "get": {
+        "description": "`/me/submissions` 와 동일하지만 problem_id가 경로로 고정.",
+        "operationId": "list_my_submissions_for_problem_problems__problem_id__my_submissions_get",
+        "parameters": [
+          {
+            "description": "문제 ID",
+            "in": "path",
+            "name": "problem_id",
+            "required": true,
+            "schema": {
+              "description": "문제 ID",
+              "examples": [
+                1
+              ],
+              "title": "Problem Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "AC|SUS 필터",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "AC",
+                    "SUS"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "AC|SUS 필터",
+              "title": "Verdict"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "유효한 세션 쿠키 없음"
+          },
+          "404": {
+            "description": "문제가 없거나 status != 'approved'"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "이 문제에 낸 내 제출들",
+        "tags": [
+          "problems"
+        ]
+      }
+    },
+    "/tutor/{submission_id}": {
+      "post": {
+        "description": "기본: 최신 캐시가 있으면 그대로 반환 (LLM 호출 없음). `regenerate=true`이면 항상 새로 생성하고 새 행으로 저장한다.",
+        "operationId": "request_tutor_tutor__submission_id__post",
+        "parameters": [
+          {
+            "description": "제출 ID",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "description": "제출 ID",
+              "examples": [
+                42
+              ],
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "캐시 무시하고 새로 생성",
+            "in": "query",
+            "name": "regenerate",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "캐시 무시하고 새로 생성",
+              "title": "Regenerate",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TutorResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "제출 또는 매칭된 문제 없음"
+          },
+          "409": {
+            "description": "submission.status != 'done' — 튜터링은 채점 완료 후에만"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "튜터 메시지 생성/조회",
+        "tags": [
+          "tutor"
+        ]
+      }
+    },
+    "/tutor/{submission_id}/history": {
+      "get": {
+        "description": "해당 제출에 생성된 모든 튜터 메시지를 생성 시각 오름차순으로 반환.",
+        "operationId": "tutor_history_tutor__submission_id__history_get",
+        "parameters": [
+          {
+            "description": "제출 ID",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "description": "제출 ID",
+              "examples": [
+                42
+              ],
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TutorHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "제출 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "튜터 메시지 이력",
+        "tags": [
+          "tutor"
+        ]
+      }
+    }
+  }
+}
