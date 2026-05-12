@@ -98,7 +98,7 @@ def test_list_summary_shape_hides_secrets(client: TestClient):
     assert r.status_code == 200
     item = next(p for p in r.json() if p["id"] == pid)
     assert set(item.keys()) == {
-        "id", "title", "category", "level", "points", "one_line_summary"
+        "id", "title", "category", "level", "points", "one_line_summary", "iso_week"
     }
     assert "SECRET" not in r.text
 
@@ -136,3 +136,81 @@ def test_detail_404_for_draft_problem(client: TestClient):
 
     r = client.get(f"/problems/{draft_id}")
     assert r.status_code == 404
+
+
+def _force_week(problem_id: int, week: str) -> None:
+    """create 후 iso_week 컬럼을 강제로 갈아끼워 주차별 픽스처를 만든다.
+    default_factory가 '지금 주차'를 박는 게 정상 동작이므로 테스트만 우회."""
+    from src.storage.models import ProblemRow
+    with get_session() as s:
+        row = s.get(ProblemRow, problem_id)
+        assert row is not None
+        row.iso_week = week
+        s.add(row)
+        s.commit()
+
+
+def test_summary_carries_iso_week_for_current_week(client: TestClient):
+    from src.storage.models import iso_week_of
+    from datetime import datetime, timezone
+
+    with get_session() as s:
+        pid = create_problem(s, _make_problem(title="주차표시"), status="approved")
+
+    expected = iso_week_of(datetime.now(timezone.utc))
+    r = client.get("/problems")
+    assert r.status_code == 200
+    item = next(p for p in r.json() if p["id"] == pid)
+    assert item["iso_week"] == expected
+
+
+def test_weeks_endpoint_groups_approved_and_excludes_draft(client: TestClient):
+    with get_session() as s:
+        a = create_problem(s, _make_problem(title="A"), status="approved")
+        b = create_problem(s, _make_problem(title="B"), status="approved")
+        c = create_problem(s, _make_problem(title="C"), status="approved")
+        d = create_problem(s, _make_problem(title="D-draft"), status="draft")
+
+    _force_week(a, "2026-W18")
+    _force_week(b, "2026-W18")
+    _force_week(c, "2026-W19")
+    _force_week(d, "2026-W19")  # draft — 집계에서 제외돼야 함
+
+    r = client.get("/problems/weeks")
+    assert r.status_code == 200
+    buckets = r.json()["buckets"]
+    weeks = {b["week"]: b["count"] for b in buckets}
+    assert weeks.get("2026-W18") == 2
+    assert weeks.get("2026-W19") == 1
+    # 내림차순 (최신 주가 먼저)
+    listed = [b["week"] for b in buckets if b["week"].startswith("2026-W1")]
+    assert listed == sorted(listed, reverse=True)
+
+
+def test_weekly_bucket_listing_returns_summaries(client: TestClient):
+    with get_session() as s:
+        a = create_problem(s, _make_problem(title="P-A"), status="approved")
+        b = create_problem(s, _make_problem(title="P-B"), status="approved")
+        other = create_problem(s, _make_problem(title="P-other"), status="approved")
+        draft = create_problem(s, _make_problem(title="P-draft"), status="draft")
+
+    _force_week(a, "2020-W05")
+    _force_week(b, "2020-W05")
+    _force_week(other, "2020-W06")
+    _force_week(draft, "2020-W05")
+
+    r = client.get("/problems/weeks/2020-W05")
+    assert r.status_code == 200
+    items = r.json()
+    ids = {p["id"] for p in items}
+    assert ids == {a, b}
+    assert all(p["iso_week"] == "2020-W05" for p in items)
+    # 비밀 필드 누설 없음
+    assert "SECRET" not in r.text
+    assert "reference_code" not in r.text
+
+
+def test_weekly_bucket_unknown_week_returns_empty_list(client: TestClient):
+    r = client.get("/problems/weeks/1999-W01")
+    assert r.status_code == 200
+    assert r.json() == []

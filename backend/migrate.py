@@ -8,6 +8,7 @@ JCQ_DB_URL 환경변수가 설정되어 있으면 그 경로를 사용하고,
 """
 import os
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 raw_url = os.getenv("JCQ_DB_URL", "")
@@ -38,6 +39,10 @@ migrations: list[tuple[str, str]] = [
         "problem.authoring_meta",
         "ALTER TABLE problem ADD COLUMN authoring_meta TEXT",
     ),
+    (
+        "problem.iso_week",
+        "ALTER TABLE problem ADD COLUMN iso_week TEXT",
+    ),
 ]
 
 for col, sql in migrations:
@@ -57,6 +62,29 @@ cur.execute(
 cur.execute(
     "CREATE INDEX IF NOT EXISTS ix_problem_langsmith_trace_id ON problem (langsmith_trace_id)"
 )
+cur.execute(
+    "CREATE INDEX IF NOT EXISTS ix_problem_iso_week ON problem (iso_week)"
+)
+
+# iso_week 백필 — created_at(UTC)에서 ISO 주차를 Python으로 계산.
+# SQLite의 strftime은 ISO week(%V)를 일관되게 지원하지 않아 호스트 코드로 처리.
+cur.execute(
+    "SELECT id, created_at FROM problem WHERE iso_week IS NULL OR iso_week = ''"
+)
+to_fill = cur.fetchall()
+for pid, created_at in to_fill:
+    try:
+        # SQLAlchemy가 timezone-aware datetime을 저장하면 "+00:00" 접미가 붙는다.
+        # fromisoformat은 둘 다 받아준다.
+        dt = datetime.fromisoformat(created_at)
+    except ValueError:
+        # 혹시라도 포맷이 깨졌으면 그 행은 비워두고 넘어감 — 다음 행 인덱싱은 정상 동작해야 한다.
+        continue
+    y, w, _ = dt.isocalendar()
+    label = f"{y:04d}-W{w:02d}"
+    cur.execute("UPDATE problem SET iso_week = ? WHERE id = ?", (label, pid))
+if to_fill:
+    print(f"  OK  iso_week 백필 {len(to_fill)}건")
 
 conn.commit()
 conn.close()

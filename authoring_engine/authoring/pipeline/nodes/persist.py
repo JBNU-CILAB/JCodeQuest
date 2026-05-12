@@ -7,7 +7,10 @@ from ...schemas import AuthoringState
 def persist_approved(state: AuthoringState) -> dict:
     """solver_passed된 문제를 status='approved'로 DB에 저장한다."""
     ensure_backend_on_path()
+    from datetime import datetime, timezone
+
     from src.storage.db import get_session  # type: ignore[import]
+    from src.storage.models import iso_week_of  # type: ignore[import]
     from src.storage.problems import create_problem  # type: ignore[import]
 
     saved_ids: list[int] = list(state.get("saved_problem_ids", []))
@@ -16,6 +19,9 @@ def persist_approved(state: AuthoringState) -> dict:
 
     parent_id = state.get("original_problem_id")
     trace_id = state.get("langsmith_trace_id")
+    # 같은 배치(같은 파이프라인 실행)의 모든 변종은 한 주차로 묶는다 — 파이프라인이
+    # 자정/주차 경계를 가로지르더라도 일관된 라벨을 갖도록 노드 진입 시점에 한 번 계산.
+    issued_week = iso_week_of(datetime.now(timezone.utc))
 
     for c in state["candidates"]:
         c = dict(c)
@@ -59,6 +65,8 @@ def persist_approved(state: AuthoringState) -> dict:
                 "verify_passed": c.get("verify_passed"),
                 "verify_error": c.get("verify_error"),
                 "verify_attempts": c.get("verify_attempts"),
+                # 사후에 trace만 봐도 '몇 주차 출제분'인지 확인 가능하도록 함께 저장.
+                "issued_iso_week": issued_week,
             }
             with get_session() as session:
                 pid = create_problem(
@@ -68,6 +76,7 @@ def persist_approved(state: AuthoringState) -> dict:
                     parent_id=parent_id,
                     langsmith_trace_id=trace_id,
                     authoring_meta=authoring_meta,
+                    iso_week=issued_week,
                 )
             c["saved_id"] = pid
             saved_ids.append(pid)

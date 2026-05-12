@@ -195,6 +195,10 @@ class CreateOriginalResponse(BaseModel):
     autofill: list[dict[str, Any]] = Field(
         description="자동 채움된 케이스의 메타 (ordinal/elapsed_ms/expected 일부)"
     )
+    iso_week: str = Field(
+        description="이 등록 시점의 ISO 주차 라벨 'YYYY-Www'",
+        examples=["2026-W19"],
+    )
 
 
 class SpanTokens(BaseModel):
@@ -483,9 +487,12 @@ async def get_problem_detail(
     },
 )
 async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
     from jcq_shared.schemas import IntentRubric, Problem, TestCase
     from src.judge.sandbox.runner import run_user_code  # type: ignore[import]
     from src.storage.db import get_session  # type: ignore[import]
+    from src.storage.models import iso_week_of  # type: ignore[import]
     from src.storage.problems import create_problem as _create  # type: ignore[import]
 
     if not req.test_cases:
@@ -542,16 +549,22 @@ async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
         test_cases=filled,
     )
 
+    issued_week = iso_week_of(datetime.now(timezone.utc))
+    meta: dict[str, Any] = {"source": "manual", "issued_iso_week": issued_week}
+    if autofill_log:
+        meta["autofill"] = autofill_log
+
     with get_session() as session:
         pid = _create(
             session,
             problem,
             status="approved",
             parent_id=None,
-            authoring_meta={"source": "manual", "autofill": autofill_log} if autofill_log else {"source": "manual"},
+            authoring_meta=meta,
+            iso_week=issued_week,
         )
 
-    return {"id": pid, "autofill": autofill_log}
+    return {"id": pid, "autofill": autofill_log, "iso_week": issued_week}
 
 
 @app.get(

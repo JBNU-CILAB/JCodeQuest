@@ -164,6 +164,30 @@ class ProblemSummary(BaseModel):
         examples=[100],
     )
     one_line_summary: str = Field(description="한 줄 요약")
+    iso_week: str = Field(
+        description=(
+            "출제 주차 라벨 'YYYY-Www' (ISO 8601). "
+            "주차별 화면이 한 번의 목록 응답으로 라벨까지 그릴 수 있게 포함."
+        ),
+        examples=["2026-W19"],
+    )
+
+
+class WeeklyProblemBucket(BaseModel):
+    """주차 인덱스 — 'YYYY-Www'와 그 주에 출제된 approved 문제 수."""
+
+    week: str = Field(
+        description="ISO 8601 주차 라벨 'YYYY-Www'", examples=["2026-W19"]
+    )
+    count: int = Field(
+        description="해당 주에 출제된 approved 문제 수", examples=[3]
+    )
+
+
+class WeeklyProblemBucketsResponse(BaseModel):
+    buckets: list[WeeklyProblemBucket] = Field(
+        description="ISO 주차 내림차순(최신 주가 먼저) 정렬"
+    )
 
 
 class ProblemDetail(BaseModel):

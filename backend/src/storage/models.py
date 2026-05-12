@@ -8,6 +8,17 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def iso_week_of(dt: datetime) -> str:
+    """ISO 8601 주차 라벨 'YYYY-Www'. 정렬 가능한 사전식 포맷이라
+    week 버킷 집계/정렬에 그대로 쓸 수 있다."""
+    y, w, _ = dt.isocalendar()
+    return f"{y:04d}-W{w:02d}"
+
+
+def _current_iso_week() -> str:
+    return iso_week_of(_utcnow())
+
+
 class UserRow(SQLModel, table=True):
     __tablename__ = "user"
     __table_args__ = (
@@ -49,6 +60,9 @@ class ProblemRow(SQLModel, table=True):
     intent_rubric: dict = Field(sa_column=Column(JSON, nullable=False))
     status: str = Field(default="draft", index=True)  # draft | approved | retired
     created_at: datetime = Field(default_factory=_utcnow)
+    # 출제 시점의 ISO 주차 라벨(YYYY-Www). created_at에서 파생 가능하지만 명시 컬럼으로
+    # 두는 편이 인덱스 스캔 한 번에 주차 그룹핑/필터링이 끝나서 유리하다.
+    iso_week: str = Field(default_factory=_current_iso_week, index=True)
 
     # 출제 엔진 메타 (수동 등록 문제는 모두 NULL)
     parent_id: int | None = Field(default=None, foreign_key="problem.id", index=True)

@@ -13,10 +13,16 @@ from ..schemas import (
     PublicTestCase,
     SubmissionListItem,
     SubmissionListResponse,
+    WeeklyProblemBucket,
+    WeeklyProblemBucketsResponse,
 )
 from ..storage import get_session
 from ..storage.models import ProblemRow, UserRow
-from ..storage.problems import get_problem, list_problems
+from ..storage.problems import (
+    get_problem,
+    list_problem_rows,
+    list_week_buckets,
+)
 from ..storage.submissions import (
     MAX_ATTEMPTS,
     attempt_status,
@@ -46,14 +52,17 @@ def _to_submission_item(row) -> SubmissionListItem:
     )
 
 
-def _to_summary(p: Problem) -> ProblemSummary:
+def _row_to_summary(row: ProblemRow) -> ProblemSummary:
+    """ProblemRow에서 직접 요약을 만든다 — iso_week가 domain Problem에는 없기 때문."""
+    assert row.id is not None
     return ProblemSummary(
-        id=p.id,
-        title=p.title,
-        category=p.category,
-        level=p.level,
-        points=p.points,
-        one_line_summary=p.intent_rubric.one_line_summary,
+        id=row.id,
+        title=row.title,
+        category=row.category,
+        level=row.level,  # type: ignore[arg-type]
+        points=row.points,
+        one_line_summary=row.intent_rubric["one_line_summary"],
+        iso_week=row.iso_week,
     )
 
 
@@ -95,10 +104,37 @@ def list_approved_problems(
     ] = None,
 ) -> list[ProblemSummary]:
     with get_session() as session:
-        problems = list_problems(
-            session, status="approved", category=category, level=level
+        # row를 그대로 받아 iso_week까지 요약에 실어 보낸다.
+        rows = list_problem_rows(session, status="approved")
+        if category is not None:
+            rows = [r for r in rows if r.category == category]
+        if level is not None:
+            rows = [r for r in rows if r.level == level]
+        return [_row_to_summary(r) for r in rows]
+
+
+@router.get("/weeks", response_model=WeeklyProblemBucketsResponse)
+def list_weekly_buckets() -> WeeklyProblemBucketsResponse:
+    """approved 문제를 출제 주차별로 묶어 '주차/문제수' 인덱스를 돌려준다.
+    내림차순(최신 주가 먼저) — 별도 정렬 옵션은 사용 빈도가 낮아 추가하지 않음."""
+    with get_session() as session:
+        rows = list_week_buckets(session, status="approved")
+    return WeeklyProblemBucketsResponse(
+        buckets=[
+            WeeklyProblemBucket(week=week, count=count)
+            for week, count in rows
+        ]
+    )
+
+
+@router.get("/weeks/{week}", response_model=list[ProblemSummary])
+def list_problems_in_week(week: str) -> list[ProblemSummary]:
+    """특정 주차('YYYY-Www')의 approved 문제 요약 목록."""
+    with get_session() as session:
+        rows = list_problem_rows(
+            session, status="approved", iso_week=week
         )
-    return [_to_summary(p) for p in problems]
+    return [_row_to_summary(r) for r in rows]
 
 
 @router.get(

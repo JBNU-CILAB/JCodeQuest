@@ -1,6 +1,7 @@
-from src.schemas import EnsembleResult, JudgeVote, TestResult
+from src.schemas import EnsembleResult, JudgeVote, Problem, TestResult
 from src.storage import get_session
-from src.storage.problems import get_problem
+from src.storage.models import ProblemRow
+from src.storage.problems import create_problem, get_problem
 from src.storage.submissions import (
     MAX_ATTEMPTS,
     attempt_status,
@@ -113,3 +114,27 @@ def test_ac_locks_out(seeded_problem_id: int, make_user):
     assert sub is not None
     assert sub.status == "done"
     assert sub.points_awarded == 100
+
+
+def test_create_problem_uses_default_iso_week(sample_problem: Problem):
+    """iso_week를 명시하지 않으면 default_factory가 '지금 주차'를 박는다."""
+    from datetime import datetime, timezone
+
+    from src.storage.models import iso_week_of
+
+    with get_session() as s:
+        pid = create_problem(s, sample_problem, status="approved")
+        row = s.get(ProblemRow, pid)
+    assert row is not None
+    assert row.iso_week == iso_week_of(datetime.now(timezone.utc))
+
+
+def test_create_problem_honors_explicit_iso_week(sample_problem: Problem):
+    """출제 엔진처럼 호출자가 명시한 주차는 그대로 저장된다."""
+    with get_session() as s:
+        pid = create_problem(
+            s, sample_problem, status="approved", iso_week="2024-W42"
+        )
+        row = s.get(ProblemRow, pid)
+    assert row is not None
+    assert row.iso_week == "2024-W42"
