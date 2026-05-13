@@ -30,13 +30,12 @@ def _ac_ensemble() -> EnsembleResult:
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(mock_engine):
     # 채점 단계의 LLM은 mocking — 모든 통과 시나리오에서 AC ensemble 반환
-    async def fake_vote(problem, code, test_results, base_url=None):
+    async def fake_vote(problem, code, test_results):
         return _ac_ensemble()
 
-    import src.judge.jobs.grading as grading_mod
-    monkeypatch.setattr(grading_mod, "vote", fake_vote)
+    mock_engine.set_vote(fake_vote)
 
     from src.main import app
     with TestClient(app) as c:

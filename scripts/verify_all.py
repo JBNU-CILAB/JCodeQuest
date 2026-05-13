@@ -29,6 +29,7 @@ from typing import Iterator
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BACKEND_DIR = REPO_ROOT / "backend"
 AUTHORING_DIR = REPO_ROOT / "authoring_engine"
+JUDGE_DIR = REPO_ROOT / "judge_engine"
 
 # 채점 큐 / sandbox / 시드 데이터를 직접 호출하려면 src.* 가 임포트 가능해야 한다.
 sys.path.insert(0, str(BACKEND_DIR))
@@ -93,14 +94,28 @@ def _managed_servers(
     *,
     backend_port: int,
     authoring_port: int,
+    judge_port: int,
     start_backend: bool,
     start_authoring: bool,
+    start_judge: bool,
     common_env: dict[str, str],
-) -> Iterator[tuple[subprocess.Popen | None, subprocess.Popen | None]]:
+) -> Iterator[tuple[subprocess.Popen | None, subprocess.Popen | None, subprocess.Popen | None]]:
     backend_proc: subprocess.Popen | None = None
     authoring_proc: subprocess.Popen | None = None
+    judge_proc: subprocess.Popen | None = None
     log_dir = REPO_ROOT / ".verify-logs"
     try:
+        # judge가 backend보다 먼저 — backend의 /grade가 즉시 judge HTTP를 호출.
+        if start_judge:
+            if not _free_port(judge_port):
+                raise RuntimeError(f"judge 포트 {judge_port} 이미 사용중 (--external 로 우회)")
+            judge_proc = _spawn(
+                [sys.executable, "-m", "uvicorn", "judge.server:app",
+                 "--host", "127.0.0.1", "--port", str(judge_port)],
+                cwd=JUDGE_DIR,
+                env=_build_subproc_env(common_env),
+                logfile=log_dir / "judge.log",
+            )
         if start_backend:
             if not _free_port(backend_port):
                 raise RuntimeError(f"backend 포트 {backend_port} 이미 사용중 (--external 로 우회)")
@@ -121,9 +136,13 @@ def _managed_servers(
                 env=_build_subproc_env(common_env),
                 logfile=log_dir / "authoring.log",
             )
-        yield backend_proc, authoring_proc
+        yield backend_proc, authoring_proc, judge_proc
     finally:
-        for p, name in ((backend_proc, "backend"), (authoring_proc, "authoring")):
+        for p, name in (
+            (backend_proc, "backend"),
+            (authoring_proc, "authoring"),
+            (judge_proc, "judge"),
+        ):
             if p is None:
                 continue
             try:
@@ -281,12 +300,19 @@ def stage_env(db_url: str) -> bool:
 def stage_health(
     backend_url: str,
     authoring_url: str,
+    judge_url: str,
     *,
     backend_proc: subprocess.Popen | None,
     authoring_proc: subprocess.Popen | None,
+    judge_proc: subprocess.Popen | None,
 ) -> bool:
     section("2. 서버 /health")
     log_dir = REPO_ROOT / ".verify-logs"
+    # judge는 backend가 첫 채점 호출에서 의존하므로 가장 먼저 확인.
+    rj, msg_j = _wait_health(
+        f"{judge_url}/api/health", proc=judge_proc, log_path=log_dir / "judge.log"
+    )
+    (ok if rj else fail)("judge /api/health", msg_j)
     rb, msg_b = _wait_health(
         f"{backend_url}/health", proc=backend_proc, log_path=log_dir / "backend.log"
     )
@@ -297,7 +323,7 @@ def stage_health(
         log_path=log_dir / "authoring.log",
     )
     (ok if ra else fail)("authoring /api/health", msg_a)
-    return rb and ra
+    return rb and ra and rj
 
 
 def stage_grading_sandbox(backend_url: str) -> tuple[bool, int]:
@@ -446,8 +472,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="JCodeQuest 통합 검증")
     ap.add_argument("--backend-url", default="http://127.0.0.1:8000")
     ap.add_argument("--authoring-url", default="http://127.0.0.1:8800")
+    ap.add_argument("--judge-url", default="http://127.0.0.1:8002")
     ap.add_argument("--backend-port", type=int, default=8000)
     ap.add_argument("--authoring-port", type=int, default=8800)
+    ap.add_argument("--judge-port", type=int, default=8002)
     ap.add_argument("--external", action="store_true",
                     help="서버를 새로 띄우지 않고 이미 떠 있는 인스턴스에 붙는다")
     ap.add_argument("--with-llm", action="store_true",
@@ -482,6 +510,8 @@ def main() -> int:
     os.environ["JCQ_DB_URL"] = db_url
     print(f"  [db] {db_source}: {db_url}")
 
+    # backend ↔ judge_engine 양쪽이 webhook 검증에 같은 시크릿을 쓰도록 verify 세션 1회 생성값으로 통일.
+    internal_secret = os.getenv("JCQ_INTERNAL_SECRET") or secrets.token_urlsafe(48)
     common_env: dict[str, str] = {
         "JCQ_DB_URL": db_url,
         "SESSION_SECRET_KEY": os.getenv("SESSION_SECRET_KEY", secrets.token_hex(32)),
@@ -489,6 +519,11 @@ def main() -> int:
         "JCQ_COOKIE_INSECURE": os.getenv("JCQ_COOKIE_INSECURE", "1"),
         "JCQ_SUBMIT_COOLDOWN_S": os.getenv("JCQ_SUBMIT_COOLDOWN_S", "0"),
         "JCQ_QUEUE_CONCURRENCY": os.getenv("JCQ_QUEUE_CONCURRENCY", "1"),
+        # backend가 채점 엔진을 어디로 호출할지 — verify가 띄우든 외부든 동일.
+        "JCQ_JUDGE_URL": args.judge_url,
+        # judge_engine이 webhook을 칠 backend 주소.
+        "JCQ_BACKEND_URL": args.backend_url,
+        "JCQ_INTERNAL_SECRET": internal_secret,
     }
     # 이 프로세스에서도 동일 cooldown=0 / dev-stub을 따라야 시드/제출이 막히지 않음
     os.environ.update(common_env)
@@ -498,28 +533,35 @@ def main() -> int:
 
     start_backend = not args.external
     start_authoring = not args.external
+    start_judge = not args.external
 
     section("0. 서버 기동")
     if args.external:
         skip("backend uvicorn", "외부 인스턴스 사용")
         skip("authoring uvicorn", "외부 인스턴스 사용")
+        skip("judge uvicorn", "외부 인스턴스 사용")
     else:
         print(f"  backend  → {args.backend_url}  (port {args.backend_port})")
         print(f"  authoring→ {args.authoring_url} (port {args.authoring_port})")
+        print(f"  judge    → {args.judge_url}    (port {args.judge_port})")
 
     failures: list[str] = []
     with _managed_servers(
         backend_port=args.backend_port,
         authoring_port=args.authoring_port,
+        judge_port=args.judge_port,
         start_backend=start_backend,
         start_authoring=start_authoring,
+        start_judge=start_judge,
         common_env=common_env,
-    ) as (backend_proc, authoring_proc):
+    ) as (backend_proc, authoring_proc, judge_proc):
         if not stage_health(
             args.backend_url,
             args.authoring_url,
+            args.judge_url,
             backend_proc=backend_proc,
             authoring_proc=authoring_proc,
+            judge_proc=judge_proc,
         ):
             failures.append("health")
             print(_c("31", "\n서버가 떠 있지 않습니다. .verify-logs/ 를 확인하세요."))

@@ -13,11 +13,18 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+# 채점 엔진 모듈(judge.sandbox/judge.ensemble)이 backend venv에는 설치돼 있지 않아
+# 라이브 채점 슈트에서 직접 import하려면 judge_engine/을 sys.path에 끼워야 한다.
+_JUDGE_ENGINE = Path(__file__).resolve().parents[3] / "judge_engine"
+if _JUDGE_ENGINE.is_dir() and str(_JUDGE_ENGINE) not in sys.path:
+    sys.path.insert(0, str(_JUDGE_ENGINE))
 from typing import Any
 
 import pytest

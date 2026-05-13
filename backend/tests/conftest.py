@@ -25,6 +25,12 @@ os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-client-secret")
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
+# 2.5) judge_engine/ 도 path에 — 통합 테스트가 채점 엔진을 띄우지 않고
+# 인-프로세스 샌드박스로 mock 하기 위함. judge.* import용.
+_JUDGE_ENGINE = BACKEND.parent / "judge_engine"
+if _JUDGE_ENGINE.is_dir():
+    sys.path.insert(0, str(_JUDGE_ENGINE))
+
 import pytest  # noqa: E402
 
 from src.schemas import IntentRubric, Problem, TestCase  # noqa: E402
@@ -122,3 +128,84 @@ def make_user():
             return u.id
 
     return _make
+
+
+@pytest.fixture
+def mock_engine(monkeypatch):
+    """채점 엔진 큐잉 호출(`submit_to_engine`)을 인-프로세스 샌드박스 + 직접 webhook 적용으로 대체.
+
+    실제 흐름:
+        POST /grade → submit_to_engine(httpx) → judge_engine 큐 → webhook → apply_grading_event
+    테스트 흐름:
+        POST /grade → submit_to_engine(mock) → asyncio.create_task로
+                       샌드박스 실행 + (옵션) vote → apply_grading_event(running) → apply_grading_event(done)
+
+    사용:
+        def test_x(mock_engine, ...):
+            mock_engine.set_vote(fake_vote_fn)  # 전부 통과 시에만 호출됨
+    """
+    import asyncio as _asyncio
+
+    from judge.sandbox import run_all_tests  # judge_engine/judge — sys.path 부트스트랩됨
+
+    from src.judge.jobs import apply_grading_event
+    from src.schemas import GradeEvent
+
+    state: dict = {"vote_fn": None, "tasks": []}
+
+    async def _simulate_grading(submission_id, problem, code, app):
+        # webhook이 도착하는 순서를 흉내내기 위해 running을 먼저 발행.
+        broker = app.state.events
+        apply_grading_event(
+            GradeEvent(submission_id=submission_id, event="running"),
+            events=broker,
+        )
+
+        try:
+            test_results = await _asyncio.to_thread(
+                run_all_tests,
+                code,
+                problem.test_cases,
+                time_limit_ms=problem.time_limit_ms,
+                memory_limit_mb=problem.memory_limit_mb,
+            )
+            all_passed = bool(test_results) and all(r.passed for r in test_results)
+            ensemble = None
+            if all_passed and state["vote_fn"] is not None:
+                ensemble = await state["vote_fn"](problem, code, test_results)
+            apply_grading_event(
+                GradeEvent(
+                    submission_id=submission_id,
+                    event="done",
+                    test_results=test_results,
+                    all_passed=all_passed,
+                    ensemble=ensemble,
+                ),
+                events=broker,
+            )
+        except Exception as e:  # noqa: BLE001
+            apply_grading_event(
+                GradeEvent(
+                    submission_id=submission_id,
+                    event="failed",
+                    error=f"{type(e).__name__}: {e}",
+                ),
+                events=broker,
+            )
+
+    async def _fake_submit(submission_id, problem, code):
+        # `/grade` 핸들러 컨텍스트에서 app을 얻으려고 현재 task의 컨텍스트를 활용.
+        # TestClient 환경에선 monkeypatch한 app 인스턴스를 직접 끌어옴.
+        from src.main import app
+
+        t = _asyncio.create_task(_simulate_grading(submission_id, problem, code, app))
+        state["tasks"].append(t)
+
+    import src.api.grading as grading_api
+    monkeypatch.setattr(grading_api, "submit_to_engine", _fake_submit)
+
+    class _Handle:
+        def set_vote(self, fn) -> None:
+            state["vote_fn"] = fn
+
+    return _Handle()

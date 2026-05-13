@@ -1,5 +1,5 @@
-from src.judge.sandbox import run_user_code, run_all_tests
-from src.schemas import TestCase
+from jcq_shared.schemas import TestCase
+from judge.sandbox import run_all_tests, run_user_code
 
 
 def test_ok_path():

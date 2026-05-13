@@ -18,8 +18,8 @@ import time
 
 import pytest
 
-from src.judge.ensemble import vote
-from src.judge.sandbox import run_all_tests
+from judge.ensemble import vote
+from judge.sandbox import run_all_tests
 from src.schemas import Problem
 
 from .conftest import GradeOutcome, LiveRunRecorder

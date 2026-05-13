@@ -27,13 +27,12 @@ def _fake_ac():
 
 
 @pytest.fixture
-def client(monkeypatch):
-    # judge.jobs.grading 안에서 import해서 쓰는 vote 심볼을 갈아끼움
-    async def fake_vote(problem, code, test_results, base_url=None):
+def client(mock_engine):
+    # 모든 테스트 통과 시 호출되는 vote는 항상 AC ensemble을 돌려주도록
+    async def fake_vote(problem, code, test_results):
         return _fake_ac()
 
-    import src.judge.jobs.grading as grading_mod
-    monkeypatch.setattr(grading_mod, "vote", fake_vote)
+    mock_engine.set_vote(fake_vote)
 
     from src.main import app
     with TestClient(app) as c:
@@ -77,17 +76,16 @@ def test_happy_path_test_pass_then_llm_ac(
 
 
 def test_test_fail_skips_llm_and_doesnt_count_attempt(
-    client: TestClient, seeded_problem_id: int, monkeypatch, login_as
+    client: TestClient, seeded_problem_id: int, mock_engine, login_as
 ):
     # vote가 호출되면 안 됨을 검증
     called = []
 
-    async def boom_vote(*a, **kw):
+    async def boom_vote(problem, code, test_results):
         called.append(1)
         raise AssertionError("LLM이 호출되면 안 됨")
 
-    import src.judge.jobs.grading as grading_mod
-    monkeypatch.setattr(grading_mod, "vote", boom_vote)
+    mock_engine.set_vote(boom_vote)
 
     login_as(client, "test-fail@example.com")
     r = client.post("/grade", json={

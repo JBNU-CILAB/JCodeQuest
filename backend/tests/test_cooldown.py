@@ -81,16 +81,15 @@ def _fake_ac() -> EnsembleResult:
 
 
 @pytest.fixture
-def client_with_cooldown(monkeypatch):
+def client_with_cooldown(monkeypatch, mock_engine):
     """기본 autouse 쿨다운=0을 다시 켜고, LLM도 mock."""
     # 기본 쿨다운 0 fixture 위에 덮어쓰기 — autouse가 먼저 돌고 이게 나중에 덮음
     monkeypatch.setattr(subs, "SUBMISSION_COOLDOWN_S", 30.0)
 
-    async def fake_vote(problem, code, test_results, base_url=None):
+    async def fake_vote(problem, code, test_results):
         return _fake_ac()
 
-    import src.judge.jobs.grading as grading_mod
-    monkeypatch.setattr(grading_mod, "vote", fake_vote)
+    mock_engine.set_vote(fake_vote)
 
     from src.main import app
     with TestClient(app) as c:

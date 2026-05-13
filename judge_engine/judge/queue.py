@@ -1,3 +1,6 @@
+"""단일 프로세스 내부 잡 큐. asyncio.Queue + 워커 코루틴 N개."""
+from __future__ import annotations
+
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
@@ -9,8 +12,9 @@ _SENTINEL: object = object()
 
 
 class JobQueue:
-    """단일 프로세스 내부 잡 큐. asyncio.Queue + 워커 코루틴 N개.
-    외부 의존(Redis, arq, RabbitMQ) 없음 — 표준 라이브러리만 사용.
+    """외부 의존(Redis, arq, RabbitMQ) 없는 단일 프로세스 큐. 메모리에만 존재 —
+    프로세스가 죽으면 큐의 미처리 작업도 함께 사라진다. (영속 큐로 승격하려면
+    이 자리에 SQLite/Redis 어댑터를 끼우면 됨.)
     """
 
     def __init__(self, *, concurrency: int = 1) -> None:
@@ -22,7 +26,7 @@ class JobQueue:
         if self._workers:
             return
         for i in range(self._concurrency):
-            t = asyncio.create_task(self._worker(i), name=f"jcq-worker-{i}")
+            t = asyncio.create_task(self._worker(i), name=f"jcq-judge-worker-{i}")
             self._workers.append(t)
         log.info("JobQueue started (concurrency=%d)", self._concurrency)
 

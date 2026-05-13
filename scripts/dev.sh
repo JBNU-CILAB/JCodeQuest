@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# JCodeQuest 개발 환경 — backend(:8000) + authoring(:8001) + frontend(:5500)을
+# JCodeQuest 개발 환경 — backend(:8000) + authoring(:8001) + judge(:8002) + frontend(:5500)을
 # 한 번에 띄우고 내리는 진입점.
 #
 # 사용법:
-#   scripts/dev.sh up       # 3개 서버 기동 + 헬스체크
+#   scripts/dev.sh up       # 4개 서버 기동 + 헬스체크
 #   scripts/dev.sh down     # 떠 있는 서버 종료
 #   scripts/dev.sh status   # 현재 상태 (PID, 포트, /health 응답)
-#   scripts/dev.sh logs <backend|authoring|frontend>
+#   scripts/dev.sh logs <backend|authoring|judge|frontend>
 #   scripts/dev.sh restart  # down → up
 set -euo pipefail
 
@@ -14,10 +14,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO_ROOT/.dev-logs"
 mkdir -p "$LOG_DIR"
 
-# 각 서비스가 자기 venv를 쓰도록 분리 — backend와 authoring은 의존성 집합이 달라
-# (예: authoring만 sse-starlette를 요구) 같은 uvicorn으로 띄우면 ModuleNotFoundError.
+# 각 서비스가 자기 venv를 쓰도록 분리 — 의존성 집합이 모두 달라
+# (예: authoring만 sse-starlette, judge만 langchain-ollama) 같은 uvicorn으로 띄우면 ModuleNotFoundError.
 BACKEND_VENV_BIN="$REPO_ROOT/backend/.venv/bin"
 AUTHORING_VENV_BIN="$REPO_ROOT/authoring_engine/.venv/bin"
+JUDGE_VENV_BIN="$REPO_ROOT/judge_engine/.venv/bin"
 
 # 일반 python — migrate.py 실행, frontend의 http.server 등 venv 의존성이 없는 작업용.
 # backend venv를 우선 사용 (sqlmodel 등 migrate.py가 쓰는 모듈을 갖고 있음).
@@ -30,10 +31,13 @@ done
 [[ -z "$PY" ]] && { echo "python을 찾을 수 없습니다"; exit 1; }
 
 # ── 서비스 정의 (이름 / 포트 / 헬스 경로 / cwd / 실행 인자) ──────────────────
-SERVICES=("backend" "authoring" "frontend")
+# judge가 backend보다 먼저 떠야 함 — backend가 첫 채점 요청에서 채점 엔진을 호출.
+# 헬스체크가 막아주긴 하지만 의도적으로 순서를 명시.
+SERVICES=("judge" "backend" "authoring" "frontend")
 
 backend_port=8000;   backend_health="/health"
 authoring_port=8001; authoring_health="/api/health"
+judge_port=8002;     judge_health="/api/health"
 frontend_port=5500;  frontend_health="/index.html"
 
 # ── 출력 유틸 ───────────────────────────────────────────────────────────────
@@ -93,6 +97,14 @@ start_authoring() {
         --host 127.0.0.1 --port "$authoring_port" \
         > "$(logfile authoring)" 2>&1 &
     echo $! > "$(pidfile authoring)"
+}
+
+start_judge() {
+    cd "$REPO_ROOT/judge_engine"
+    nohup "$JUDGE_VENV_BIN/uvicorn" judge.server:app \
+        --host 127.0.0.1 --port "$judge_port" \
+        > "$(logfile judge)" 2>&1 &
+    echo $! > "$(pidfile judge)"
 }
 
 start_frontend() {
@@ -187,6 +199,7 @@ cmd_up() {
         echo "     frontend  http://localhost:${frontend_port}"
         echo "     backend   http://localhost:${backend_port}  (인증: dev-login)"
         echo "     authoring http://localhost:${authoring_port}"
+        echo "     judge     http://localhost:${judge_port}"
     else
         echo "  $(c 31 '✗') 일부 서비스 기동 실패 — 위 로그 참고"
         exit 1
@@ -224,11 +237,11 @@ cmd_status() {
 cmd_logs() {
     local svc="${1:-}"
     if [[ -z "$svc" ]]; then
-        echo "사용법: scripts/dev.sh logs <backend|authoring|frontend>" >&2
+        echo "사용법: scripts/dev.sh logs <backend|authoring|judge|frontend>" >&2
         exit 2
     fi
     case "$svc" in
-        backend|authoring|frontend) ;;
+        backend|authoring|judge|frontend) ;;
         *) echo "알 수 없는 서비스: $svc" >&2; exit 2 ;;
     esac
     local lf

@@ -1,4 +1,3 @@
-from .grading import grade_submission
-from .queue import JobQueue
+from .grading import apply_grading_event
 
-__all__ = ["JobQueue", "grade_submission"]
+__all__ = ["apply_grading_event"]

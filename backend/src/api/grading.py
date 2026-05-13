@@ -1,13 +1,15 @@
 import asyncio
+import logging
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status as http_status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from ..auth.deps import get_current_user
 from ..events import SubmissionEventBroker
-from ..judge.jobs import grade_submission
+from ..judge.client import submit_to_engine
 from ..schemas import (
     EnsembleResult,
     GradeAcceptedResponse,
@@ -25,7 +27,10 @@ from ..storage.submissions import (
     attempt_status,
     create_submission,
     get_submission,
+    set_status,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/grade", tags=["grading"])
 
@@ -122,12 +127,15 @@ async def submit_grade(
             code=req.code,
         )
 
-    queue = request.app.state.queue
-    events: SubmissionEventBroker = request.app.state.events
-    code = req.code
-    await queue.submit(
-        lambda: grade_submission(submission_id, problem, code, events=events)
-    )
+    # judge_engine 큐에 적재 — 결과는 /internal/grade-events webhook으로 회신.
+    # 적재 실패 시 submission을 즉시 failed로 마킹해 영원히 queued로 떠 있지 않게 함.
+    try:
+        await submit_to_engine(submission_id, problem, req.code)
+    except httpx.HTTPError as e:
+        log.error("judge_engine 큐잉 실패 submission=%d err=%s", submission_id, e)
+        with get_session() as session:
+            set_status(session, submission_id, "failed")
+        raise HTTPException(503, "채점 엔진이 응답하지 않습니다") from e
 
     return GradeAcceptedResponse(submission_id=submission_id, status="queued")
 

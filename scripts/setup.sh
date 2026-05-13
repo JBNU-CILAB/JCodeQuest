@@ -3,9 +3,9 @@
 #
 # 무엇을 하는가:
 #   1) python3 확인 (3.10+ 필요)
-#   2) backend/.venv, authoring_engine/.venv 생성
-#   3) backend/requirements.txt, authoring_engine(editable) 설치 — jcq-shared도 함께 설치됨
-#   4) backend/.env, authoring_engine/.env가 없으면 .env.example에서 복사
+#   2) backend/.venv, authoring_engine/.venv, judge_engine/.venv 생성
+#   3) backend/requirements.txt, authoring_engine/judge_engine(editable) 설치 — jcq-shared도 함께 설치됨
+#   4) backend/.env, authoring_engine/.env, judge_engine/.env가 없으면 .env.example에서 복사
 #   5) backend/data/ 디렉터리 + DB 마이그레이션 실행
 #   6) 다음 단계 안내 (값 채우기 → scripts/dev.sh up)
 #
@@ -73,13 +73,16 @@ else
     section "2. venv 생성"
     create_venv "$REPO_ROOT/backend"
     create_venv "$REPO_ROOT/authoring_engine"
+    create_venv "$REPO_ROOT/judge_engine"
 fi
 
 BACKEND_PY="$REPO_ROOT/backend/.venv/bin/python"
 AUTHORING_PY="$REPO_ROOT/authoring_engine/.venv/bin/python"
+JUDGE_PY="$REPO_ROOT/judge_engine/.venv/bin/python"
 
 [[ -x "$BACKEND_PY"   ]] || { fail "backend venv 없음: $BACKEND_PY"; exit 1; }
 [[ -x "$AUTHORING_PY" ]] || { fail "authoring venv 없음: $AUTHORING_PY"; exit 1; }
+[[ -x "$JUDGE_PY"     ]] || { fail "judge venv 없음: $JUDGE_PY"; exit 1; }
 
 # ── 3) 의존성 설치 ─────────────────────────────────────────────────────────
 section "3. 의존성 설치"
@@ -96,6 +99,20 @@ info "authoring_engine: pip + editable install"
 # pyproject.toml의 `jcq-shared @ file:../shared`도 pip CWD 기준이라 같은 cd 트릭 필요.
 (cd "$REPO_ROOT/authoring_engine" && "$AUTHORING_PY" -m pip install -e .)
 ok "authoring_engine 의존성 설치 완료 (jcq-shared 포함)"
+
+info "judge_engine: pip + editable install"
+"$JUDGE_PY" -m pip install --upgrade pip > /dev/null
+(cd "$REPO_ROOT/judge_engine" && "$JUDGE_PY" -m pip install -e .)
+ok "judge_engine 의존성 설치 완료 (jcq-shared 포함)"
+
+# 각 pyproject/requirements는 jcq-shared를 `@ file:../shared`로 끌어다 쓰는데
+# 이건 비-editable 설치라 shared 스키마를 고칠 때마다 force-reinstall이 필요해진다.
+# 모든 venv에 jcq-shared만 editable로 덮어씌워 한 번 build하면 그 뒤로 동기 자동 반영.
+info "jcq-shared를 모든 venv에 editable로 재설치 (스키마 동기화)"
+for PY in "$BACKEND_PY" "$AUTHORING_PY" "$JUDGE_PY"; do
+    "$PY" -m pip install --quiet -e "$REPO_ROOT/shared"
+done
+ok "jcq-shared editable 설치 완료 (3개 venv)"
 
 # ── 4) .env 셋업 ───────────────────────────────────────────────────────────
 section "4. .env 파일 준비"
@@ -116,6 +133,46 @@ copy_env() {
 
 copy_env "$REPO_ROOT/backend/.env"          "$REPO_ROOT/backend/.env.example"
 copy_env "$REPO_ROOT/authoring_engine/.env" "$REPO_ROOT/authoring_engine/.env.example"
+copy_env "$REPO_ROOT/judge_engine/.env"     "$REPO_ROOT/judge_engine/.env.example"
+
+# webhook 공유 시크릿이 비어있으면 자동 생성 후 양쪽 .env에 동일하게 박는다.
+# 한쪽만 채워져 있으면 그 값을 다른 쪽으로 복제 (양쪽 일치 보장).
+sync_internal_secret() {
+    local backend_env="$REPO_ROOT/backend/.env"
+    local judge_env="$REPO_ROOT/judge_engine/.env"
+    [[ -f "$backend_env" && -f "$judge_env" ]] || return 0
+
+    local b j secret
+    b="$(grep -E '^JCQ_INTERNAL_SECRET=' "$backend_env" 2>/dev/null | head -1 | cut -d= -f2-)"
+    j="$(grep -E '^JCQ_INTERNAL_SECRET=' "$judge_env"   2>/dev/null | head -1 | cut -d= -f2-)"
+
+    if [[ -n "$b" && "$b" == "$j" ]]; then
+        ok "JCQ_INTERNAL_SECRET 양쪽 일치"
+        return 0
+    fi
+    if [[ -n "$b" ]]; then
+        secret="$b"
+    elif [[ -n "$j" ]]; then
+        secret="$j"
+    else
+        secret="$("$SYS_PY" -c 'import secrets; print(secrets.token_urlsafe(48))')"
+        info "JCQ_INTERNAL_SECRET 신규 생성"
+    fi
+
+    # backend/.env: export 접두어가 있을 수 있어 두 패턴 모두 처리
+    if grep -qE '^(export[[:space:]]+)?JCQ_INTERNAL_SECRET=' "$backend_env"; then
+        sed -i -E "s|^(export[[:space:]]+)?JCQ_INTERNAL_SECRET=.*|JCQ_INTERNAL_SECRET=${secret}|" "$backend_env"
+    else
+        echo "JCQ_INTERNAL_SECRET=${secret}" >> "$backend_env"
+    fi
+    if grep -qE '^JCQ_INTERNAL_SECRET=' "$judge_env"; then
+        sed -i -E "s|^JCQ_INTERNAL_SECRET=.*|JCQ_INTERNAL_SECRET=${secret}|" "$judge_env"
+    else
+        echo "JCQ_INTERNAL_SECRET=${secret}" >> "$judge_env"
+    fi
+    ok "JCQ_INTERNAL_SECRET 동기화 완료"
+}
+sync_internal_secret
 
 # ── 5) data 디렉터리 + 마이그레이션 ─────────────────────────────────────────
 section "5. DB 마이그레이션"
@@ -132,10 +189,12 @@ fi
 # ── 6) 안내 ────────────────────────────────────────────────────────────────
 section "다음 단계"
 cat <<EOF
-  1) backend/.env, authoring_engine/.env 의 값을 채우세요.
-     - OPENAI_API_KEY, OLLAMA_BASE_URL
-     - JCQ_DB_URL: 두 파일에서 동일한 **절대경로** (예: $REPO_ROOT/backend/data/jcq.db)
-     - 로컬 시연용: SESSION_SECRET_KEY, JCQ_AUTH_ALLOW_DEV_STUB=1, JCQ_COOKIE_INSECURE=1
+  1) backend/.env, authoring_engine/.env, judge_engine/.env 의 값을 채우세요.
+     - backend/.env: OPENAI_API_KEY, SESSION_SECRET_KEY (로컬 시연용으로 JCQ_AUTH_ALLOW_DEV_STUB=1, JCQ_COOKIE_INSECURE=1)
+     - authoring_engine/.env: OPENAI_API_KEY, OLLAMA_BASE_URL
+     - judge_engine/.env: OLLAMA_BASE_URL  (채점 엔진은 DB 비접근)
+     - JCQ_DB_URL: backend·authoring 양쪽에서 동일한 **절대경로** (예: $REPO_ROOT/backend/data/jcq.db)
+     - JCQ_INTERNAL_SECRET: backend·judge_engine 양쪽에 자동 동기화됨 (위 단계 4에서 처리)
 
   2) Ollama가 떠 있고 3개 판사 모델이 pull 되어 있는지 확인 — docs/setup-ollama.md
 

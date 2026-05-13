@@ -7,7 +7,7 @@ import sys
 import tempfile
 import time
 
-from ...schemas import ExecResult, TestCase, TestResult
+from jcq_shared.schemas import ExecResult, TestCase, TestResult
 
 # 한 자식이 워커 메모리를 폭파하지 못하도록 cap. 알고리즘 출력은 통상 수 KB 이하라 64KB로 충분.
 # 초과 시 그룹째 SIGKILL하고 status=RE로 마킹 (stderr에 __JCQ_OUTPUT_LIMIT_EXCEEDED__ 마커).

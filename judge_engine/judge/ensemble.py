@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
+from jcq_shared.schemas import EnsembleResult, JudgeVote, JudgeVotePartial, Problem, TestResult
 from langchain_ollama import ChatOllama
 
-from ..schemas import EnsembleResult, JudgeVote, JudgeVotePartial, Problem, TestResult
 from .prompts import judge_prompt
 
 # 2/3 이상 AC면 AC. 투표는 binary(AC|SUS)이고 판사 3명 → 분포는

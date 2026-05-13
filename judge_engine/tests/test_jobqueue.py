@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from src.judge.jobs import JobQueue
+from judge.queue import JobQueue
 
 
 @pytest.mark.asyncio

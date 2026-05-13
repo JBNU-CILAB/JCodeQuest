@@ -1,13 +1,17 @@
-import asyncio
+"""채점 결과 webhook을 받아 DB·SSE broker에 반영하는 헬퍼.
+
+이전엔 백엔드 내부 워커가 직접 채점을 돌렸지만, 큐가 judge_engine으로 이전된 뒤로는
+판정 자체는 judge_engine이 수행하고 backend는 이 헬퍼를 통해 결과만 영속화한다.
+"""
+from __future__ import annotations
+
 import logging
-import os
 
 from ...events import SubmissionEventBroker
-from ...schemas import Problem, TestResult
+from ...schemas import GradeEvent, TestResult
 from ...storage import get_session
+from ...storage.problems import get_problem
 from ...storage.submissions import save_grading, set_status
-from ..ensemble import vote
-from ..sandbox import run_all_tests
 
 log = logging.getLogger(__name__)
 
@@ -26,58 +30,66 @@ def _efficiency_multiplier(
     return 0.5 + 0.5 * eff
 
 
-async def grade_submission(
-    submission_id: int,
-    problem: Problem,
-    code: str,
+def apply_grading_event(
+    event: GradeEvent,
     *,
     events: SubmissionEventBroker | None = None,
 ) -> None:
-    base_url = os.getenv("OLLAMA_BASE_URL")
+    """judge_engine webhook을 DB에 반영.
+
+    running: status만 갱신
+    done:    test_results/ensemble 저장, AC면 points*efficiency 가산 (첫 AC 한정)
+    failed:  status='failed' 마킹
+    """
+    sid = event.submission_id
+
+    if event.event == "running":
+        with get_session() as s:
+            set_status(s, sid, "running")
+        if events is not None:
+            events.notify(sid)
+        return
+
+    if event.event == "failed":
+        log.warning("grade failed submission=%d err=%s", sid, event.error)
+        with get_session() as s:
+            set_status(s, sid, "failed")
+        if events is not None:
+            events.notify(sid)
+        return
+
+    # event == "done"
+    test_results = event.test_results or []
+    ensemble = event.ensemble
+    all_passed = bool(event.all_passed)
+
+    verdict: str = "SUS"
+    if all_passed and ensemble is not None:
+        verdict = ensemble.final_verdict
 
     with get_session() as s:
-        set_status(s, submission_id, "running")
-    if events is not None:
-        events.notify(submission_id)
+        # 효율 가산점은 problem의 제한값이 필요 — submission으로부터 problem 조회.
+        # judge_engine 페이로드에는 problem 전체가 빠져있으므로 DB에서 재조회.
+        from ...storage.submissions import get_submission
 
-    try:
-        test_results = await asyncio.to_thread(
-            run_all_tests,
-            code,
-            problem.test_cases,
-            time_limit_ms=problem.time_limit_ms,
-            memory_limit_mb=problem.memory_limit_mb,
+        sub = get_submission(s, sid)
+        points = 0
+        if sub is not None and verdict == "AC":
+            problem = get_problem(s, sub.problem_id)
+            if problem is not None:
+                mul = _efficiency_multiplier(
+                    test_results, problem.time_limit_ms, problem.memory_limit_mb
+                )
+                points = int(problem.points * mul)
+
+        save_grading(
+            s,
+            sid,
+            final_verdict=verdict,
+            test_results=test_results,
+            ensemble=ensemble,
+            points_awarded=points,
         )
 
-        all_passed = bool(test_results) and all(r.passed for r in test_results)
-        ensemble = None
-        verdict: str = "SUS"
-        if all_passed:
-            ensemble = await vote(problem, code, test_results, base_url=base_url)
-            verdict = ensemble.final_verdict
-
-        points = 0
-        if verdict == "AC":
-            mul = _efficiency_multiplier(
-                test_results, problem.time_limit_ms, problem.memory_limit_mb
-            )
-            points = int(problem.points * mul)
-
-        with get_session() as s:
-            save_grading(
-                s,
-                submission_id,
-                final_verdict=verdict,
-                test_results=test_results,
-                ensemble=ensemble,
-                points_awarded=points,
-            )
-        if events is not None:
-            events.notify(submission_id)
-    except Exception:
-        log.exception("grading failed for submission %d", submission_id)
-        with get_session() as s:
-            set_status(s, submission_id, "failed")
-        if events is not None:
-            events.notify(submission_id)
-        raise
+    if events is not None:
+        events.notify(sid)
