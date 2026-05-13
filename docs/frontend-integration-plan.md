@@ -2,7 +2,7 @@
 
 > 백엔드 API 10개를 React 프론트엔드(`frontend/`)와 연결하는 작업 계획.
 > 인증은 이미 Supabase JWT로 마이그레이션 완료된 상태에서 출발.
-
+> 필요하다면 api-reference.md를 참고해서 진행.
 ---
 
 ## 1. 현황
