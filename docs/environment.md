@@ -107,6 +107,8 @@ JCodeQuest/
 | `JCQ_BACKEND_URL` | `http://127.0.0.1:8000` | 채점 완료 시 webhook(`/internal/grade-events`)을 칠 backend 주소 |
 | `JCQ_INTERNAL_SECRET` | (필수) | webhook Bearer 인증 토큰. backend `.env`의 같은 변수와 **동일 값**이어야 함. 비어 있으면 backend가 401로 거부 — `scripts/setup.sh`가 양쪽 자동 동기화 |
 | `JCQ_QUEUE_CONCURRENCY` | `1` | 채점 워커 코루틴 수 (backend에서 이전됨) |
+| `LANGSMITH_API_KEY` | (미설정 → 트레이싱 비활성) | LangSmith API 키. 잡혀 있으면 채점 1건당 부모 run + 3개 LLM 자식 run이 자동 기록됨. metadata에 submission_id/problem_id 포함 |
+| `LANGSMITH_PROJECT` | `jcq-judge` | LangSmith 프로젝트명. authoring과 구분하려면 별도 값 권장 |
 | `JCQ_JUDGE_HOST` | `127.0.0.1` | uvicorn 바인드 호스트 (직접 `uvicorn` 인자로 줄 때만) |
 | `JCQ_JUDGE_PORT` | `8002` | uvicorn 바인드 포트 (위와 동일) |
 

@@ -1,0 +1,133 @@
+# JCodeQuest — backend + judge + authoring + frontend 4종 서비스.
+#
+# 사용:
+#   cp .env.docker.example .env.docker
+#   # .env.docker 채우기
+#   docker compose --env-file .env.docker up --build -d
+#
+# 주의:
+#   - frontend/index.html이 BACKEND='http://localhost:8000' / AUTHORING='http://localhost:8001'를
+#     하드코딩하므로, 브라우저가 호스트 머신에서 해당 포트로 접근 가능해야 한다.
+#     (compose에서 host에 8000/8001 노출) — 컨테이너 간 통신은 별도 네트워크로 처리.
+#   - SQLite DB는 backend ↔ authoring이 같은 볼륨을 공유 (judge는 DB 미접근).
+
+x-common-env: &common-env
+  PYTHONUNBUFFERED: "1"
+  JCQ_DB_URL: "sqlite:////data/jcq.db"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: jcq-backend
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      # 채점 엔진 (compose 내부 네트워크)
+      JCQ_JUDGE_URL: "http://judge:8002"
+      JCQ_INTERNAL_SECRET: "${JCQ_INTERNAL_SECRET}"
+      # 튜터 / OpenAI 호환
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-}"
+      # Google OAuth — prod에서는 필수
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+      GOOGLE_REDIRECT_URI: "${GOOGLE_REDIRECT_URI:-}"
+      JCQ_AUTH_ALLOWED_HD: "${JCQ_AUTH_ALLOWED_HD:-jbnu.ac.kr}"
+      JCQ_FRONTEND_REDIRECT_URL: "${JCQ_FRONTEND_REDIRECT_URL:-http://localhost:5500/}"
+      SESSION_SECRET_KEY: "${SESSION_SECRET_KEY}"
+      # 개발 편의 (prod 금지)
+      JCQ_AUTH_ALLOW_DEV_STUB: "${JCQ_AUTH_ALLOW_DEV_STUB:-}"
+      JCQ_SUBMIT_COOLDOWN_S: "${JCQ_SUBMIT_COOLDOWN_S:-10}"
+    volumes:
+      - jcq-data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      judge:
+        condition: service_healthy
+    networks: [jcq]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  judge:
+    build:
+      context: .
+      dockerfile: judge_engine/Dockerfile
+    container_name: jcq-judge
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      # backend webhook (compose 네트워크 내)
+      JCQ_BACKEND_URL: "http://backend:8000"
+      JCQ_INTERNAL_SECRET: "${JCQ_INTERNAL_SECRET}"
+      # Ollama (외부 호스트)
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      JCQ_QUEUE_CONCURRENCY: "${JCQ_QUEUE_CONCURRENCY:-1}"
+      # LangSmith (선택) — judge 전용 키
+      LANGSMITH_API_KEY: "${LANGSMITH_API_KEY_JUDGE:-}"
+      LANGSMITH_PROJECT: "${LANGSMITH_PROJECT_JUDGE:-jcq-judge}"
+    networks: [jcq]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  authoring:
+    build:
+      context: .
+      dockerfile: authoring_engine/Dockerfile
+    container_name: jcq-authoring
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      JCQ_AUTHOR_MODEL: "${JCQ_AUTHOR_MODEL:-qwen2.5-coder:14b-instruct-q5_K_M}"
+      JCQ_VARIANT_COUNT: "${JCQ_VARIANT_COUNT:-5}"
+      JCQ_AUTHOR_RETRIES: "${JCQ_AUTHOR_RETRIES:-2}"
+      JCQ_JUDGE_PASS_THRESHOLD: "${JCQ_JUDGE_PASS_THRESHOLD:-0.7}"
+      JCQ_SOLVER_PASS_MIN_AC: "${JCQ_SOLVER_PASS_MIN_AC:-1}"
+      # LangSmith — authoring 전용 키 (judge와 별도)
+      LANGSMITH_API_KEY: "${LANGSMITH_API_KEY_AUTHORING:-}"
+      LANGSMITH_PROJECT: "${LANGSMITH_PROJECT_AUTHORING:-jcq-authoring}"
+      LANGCHAIN_TRACING_V2: "${LANGCHAIN_TRACING_V2:-}"
+      LANGCHAIN_ENDPOINT: "${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}"
+    volumes:
+      - jcq-data:/data
+    ports:
+      - "8001:8001"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [jcq]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: jcq-frontend
+    restart: unless-stopped
+    ports:
+      - "5500:5500"
+    networks: [jcq]
+
+volumes:
+  jcq-data:
+
+networks:
+  jcq:
+    driver: bridge

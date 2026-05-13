@@ -1,0 +1,26 @@
+# 빌드 컨텍스트가 모노레포 루트라 가능한 한 가볍게.
+**/.venv/
+**/.venv-*/
+**/__pycache__/
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.dev-logs/
+
+# 비밀 / 로컬 데이터 — 컨테이너로 새지 않게.
+**/.env
+**/.env.local
+**/env.sh
+backend/data/
+backend/history.md
+
+# IDE / VCS
+.git/
+.gitignore
+.idea/
+.vscode/
+**/.claude/
+
+# 빌드 / 도커 자체 (Dockerfile은 제외하지 말 것 — 빌드에 필요)
+docker-compose*.yml

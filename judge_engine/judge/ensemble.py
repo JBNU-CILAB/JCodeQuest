@@ -30,6 +30,7 @@ async def _ask(
     code: str,
     results: list[TestResult],
     base_url: str | None,
+    submission_id: int | None = None,
 ) -> JudgeVote:
     llm = ChatOllama(
         model=spec.model,
@@ -42,6 +43,16 @@ async def _ask(
     chain = judge_prompt | llm.with_structured_output(JudgeVotePartial, method="json_mode")
     r = problem.intent_rubric
     passed = sum(x.passed for x in results)
+    # 각 판사 호출을 LangSmith에서 개별 run으로 식별 가능하게 라벨링.
+    cfg = {
+        "run_name": f"judge.{spec.judge_id}",
+        "tags": [f"judge:{spec.judge_id}", f"model:{spec.model}"],
+        "metadata": {
+            "judge_id": spec.judge_id,
+            "model": spec.model,
+            "submission_id": submission_id,
+        },
+    }
     partial: JudgeVotePartial = await chain.ainvoke(
         {
             "persona": spec.persona,
@@ -54,7 +65,8 @@ async def _ask(
             "key_insight": r.key_insight,
             "test_summary": f"통과 {passed}/{len(results)}" if results else "테스트 결과 없음",
             "code": code,
-        }
+        },
+        config=cfg,
     )
     return JudgeVote(judge_id=spec.judge_id, **partial.model_dump())
 
@@ -64,8 +76,12 @@ async def vote(
     code: str,
     test_results: list[TestResult],
     base_url: str | None = None,
+    submission_id: int | None = None,
 ) -> EnsembleResult:
-    votes = [await _ask(s, problem, code, test_results, base_url) for s in JUDGES]
+    votes = [
+        await _ask(s, problem, code, test_results, base_url, submission_id)
+        for s in JUDGES
+    ]
     n_ac = sum(1 for v in votes if v.verdict == "AC")
     total = len(votes)
     final = "AC" if n_ac / total >= AC_RATIO_THRESHOLD else "SUS"

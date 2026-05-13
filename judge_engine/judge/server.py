@@ -21,6 +21,14 @@ from dotenv import load_dotenv
 # .env가 있으면 로드 — 없으면 OS env에 의존
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+# LangSmith — 키가 잡혀 있을 때만 활성. LangChain은 import 시점에 LANGCHAIN_* 를 보므로
+# .ensemble import보다 반드시 먼저 설정해야 자동 트레이싱이 켜진다.
+if os.getenv("LANGSMITH_API_KEY"):
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    os.environ.setdefault("LANGCHAIN_API_KEY", os.environ["LANGSMITH_API_KEY"])
+    os.environ.setdefault("LANGCHAIN_PROJECT", os.getenv("LANGSMITH_PROJECT", "jcq-judge"))
+
 from fastapi import FastAPI, Request, status as http_status
 from jcq_shared.schemas import GradeSubmitRequest
 
