@@ -11,15 +11,12 @@ _db_fd, _db_path = tempfile.mkstemp(prefix="jcq_test_", suffix=".db")
 os.close(_db_fd)
 os.environ["JCQ_DB_URL"] = f"sqlite:///{_db_path}"
 
-# 1.5) auth 관련 env — src.main의 SessionMiddleware 마운트, JWT 인코드/디코드,
-# dev-login 라우트 등록이 모두 module import 시점에 env를 읽으므로 여기서 미리 주입.
-os.environ.setdefault("SESSION_SECRET_KEY", "x" * 32)
+# 1.5) auth 관련 env — dev-login 라우트 등록이 module import 시점에 env를 읽으므로 여기서 미리 주입.
 os.environ.setdefault("JCQ_AUTH_ALLOW_DEV_STUB", "1")
 # TestClient는 http로 붙으므로 Secure 쿠키는 클라이언트가 실어주지 않는다 — 끄지 않으면 /me에서 401.
 os.environ.setdefault("JCQ_COOKIE_INSECURE", "1")
-# Google OAuth는 콜백 테스트에서 monkeypatch로 갈아끼우므로 더미 값으로 충분.
-os.environ.setdefault("GOOGLE_CLIENT_ID", "test-client-id")
-os.environ.setdefault("GOOGLE_CLIENT_SECRET", "test-client-secret")
+# 테스트용 JWT 시크릿 (Bearer JWT를 이용하는 테스트에서 사용)
+os.environ.setdefault("SUPABASE_JWT_SECRET", "test-supabase-jwt-secret-32chars!!")
 
 # 2) backend/ 를 sys.path에 추가 — src.* 임포트용
 BACKEND = Path(__file__).resolve().parents[1]

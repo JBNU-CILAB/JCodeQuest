@@ -1,35 +1,18 @@
-"""Google OAuth 로그인 라우터.
+"""서버 측 세션 관리 라우터.
 
-흐름:
-  GET  /auth/login    → 302 Google (state/nonce는 Starlette SessionMiddleware의 임시 쿠키로)
-  GET  /auth/callback → ID token 검증 + hd 검증 + get_or_create_user + 세션 발급 + 302 frontend
-  POST /auth/logout   → SessionRow 삭제 + 쿠키 clear
-
-dev stub (JCQ_AUTH_ALLOW_DEV_STUB=1일 때만 등록):
-  POST /auth/dev-login?email=foo@example.com&name=Foo → 세션 발급
+Supabase가 Google OAuth를 담당하므로, 이 라우터는 logout과 dev stub만 처리한다.
+실제 인증은 frontend의 supabase.auth.signInWithOAuth 와 Bearer JWT로 이뤄진다.
 """
 import os
 
-from authlib.integrations.starlette_client import OAuthError
-from fastapi import APIRouter, Cookie, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Cookie, Response
 
 from ..auth.deps import SESSION_COOKIE
-from ..auth.google import get_oauth
 from ..storage import get_session
 from ..storage.sessions import create_session, delete_session
 from ..storage.users import get_or_create_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def _frontend_redirect() -> str:
-    return os.getenv("JCQ_FRONTEND_REDIRECT_URL", "/")
-
-
-def _allowed_hd() -> str | None:
-    hd = os.getenv("JCQ_AUTH_ALLOWED_HD", "jbnu.ac.kr")
-    return hd or None  # 빈 문자열은 "제한 없음"으로 해석
 
 
 def _ttl_days() -> int:
@@ -41,11 +24,8 @@ def _is_truthy(v: str | None) -> bool:
 
 
 def _issue_session_cookie(response: Response, user_id: int) -> None:
-    """SessionRow 생성 + 쿠키에 token set."""
     with get_session() as s:
-        token, _expires_at = create_session(
-            s, user_id=user_id, ttl_days=_ttl_days()
-        )
+        token, _expires_at = create_session(s, user_id=user_id, ttl_days=_ttl_days())
     secure = not _is_truthy(os.getenv("JCQ_COOKIE_INSECURE"))
     response.set_cookie(
         key=SESSION_COOKIE,
@@ -58,60 +38,12 @@ def _issue_session_cookie(response: Response, user_id: int) -> None:
     )
 
 
-@router.get("/login")
-async def login(request: Request):
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or str(
-        request.url_for("auth_callback")
-    )
-    return await get_oauth().google.authorize_redirect(request, redirect_uri)
-
-
-@router.get("/callback", name="auth_callback")
-async def callback(request: Request):
-    try:
-        token = await get_oauth().google.authorize_access_token(request)
-    except OAuthError as e:
-        raise HTTPException(400, f"OAuth error: {e.error}") from e
-
-    userinfo = token.get("userinfo")
-    if userinfo is None:
-        raise HTTPException(400, "ID token에 userinfo 없음")
-
-    sub = userinfo.get("sub")
-    email = userinfo.get("email")
-    email_verified = userinfo.get("email_verified")
-    name = userinfo.get("name") or email or "(이름 없음)"
-    hd = userinfo.get("hd")
-
-    if not sub or not email:
-        raise HTTPException(400, "ID token에 sub/email 누락")
-    if email_verified is False:
-        raise HTTPException(403, "Google 이메일 미인증 계정")
-
-    allowed = _allowed_hd()
-    if allowed is not None and hd != allowed:
-        # hd 누락(개인 gmail) 또는 다른 도메인 모두 거부
-        raise HTTPException(403, f"허용 도메인이 아님 (요구: @{allowed})")
-
-    with get_session() as s:
-        user = get_or_create_user(
-            s, provider="google", external_id=sub,
-            display_name=name, email=email,
-        )
-        user_id = user.id
-    assert user_id is not None
-
-    response = RedirectResponse(_frontend_redirect(), status_code=302)
-    _issue_session_cookie(response, user_id)
-    return response
-
-
 @router.post("/logout")
 def logout(
     response: Response,
     jcq_session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, str]:
-    """SessionRow를 즉시 삭제 → 같은 토큰을 가진 다른 클라이언트도 그 시점부터 무효."""
+    """dev-login 쿠키 세션을 무효화. Supabase 세션은 frontend에서 signOut()으로 처리."""
     if jcq_session:
         with get_session() as s:
             delete_session(s, jcq_session)
@@ -122,6 +54,7 @@ def logout(
 # ───────────────────────── dev stub ─────────────────────────
 
 if _is_truthy(os.getenv("JCQ_AUTH_ALLOW_DEV_STUB")):
+    from fastapi import Query
 
     @router.post("/dev-login")
     def dev_login(
