@@ -18,6 +18,11 @@ os.environ.setdefault("JCQ_COOKIE_INSECURE", "1")
 # 테스트용 JWT 시크릿 (Bearer JWT를 이용하는 테스트에서 사용)
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-supabase-jwt-secret-32chars!!")
 
+# 1.6) 개발용 앙상블 스킵 플래그가 셸/.env에서 leak되면 ensemble을 monkeypatch하는
+# pipeline 테스트들이 실패한다 — 빈 문자열로 명시 설정 (load_dotenv는 override=False라
+# 이미 set된 env는 덮어쓰지 않음).
+os.environ["JCQ_SKIP_ENSEMBLE"] = ""
+
 # 2) backend/ 를 sys.path에 추가 — src.* 임포트용
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
