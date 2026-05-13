@@ -1,30 +1,37 @@
-import { useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
-import { supabase } from './lib/supabase'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { AuthProvider, useAuth } from './lib/AuthContext'
 import { Header } from './components/Header'
-import { Hero } from './components/Hero'
-import { Dashboard } from './components/Dashboard'
+import { Landing } from './pages/Landing'
+import { Problems } from './pages/Problems'
+import { Solver } from './pages/Solver'
+import { Result } from './pages/Result'
 
-export default function App() {
-  const [session, setSession] = useState<Session | null>(null)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
+function Layout({ children }: { children: React.ReactNode }) {
+  const { session } = useAuth()
   return (
     <div className="min-h-full flex flex-col">
       <Header session={session} />
-      <Hero session={session} />
-      {session && <Dashboard />}
-
+      {children}
       <footer className="mt-auto p-6 text-center text-gray-400 text-xs">
         © 2026 JCodeQuest · 프로토타입
       </footer>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/problems" element={<Problems />} />
+            <Route path="/problems/:id" element={<Solver />} />
+            <Route path="/submissions/:id" element={<Result />} />
+          </Routes>
+        </Layout>
+      </BrowserRouter>
+    </AuthProvider>
   )
 }
