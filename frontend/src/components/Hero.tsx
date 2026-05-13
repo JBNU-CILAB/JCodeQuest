@@ -1,12 +1,9 @@
-import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/AuthContext'
 import { Button } from './Button'
 
-interface HeroProps {
-  session: Session | null
-}
-
-export function Hero({ session }: HeroProps) {
+export function Hero() {
+  const { session } = useAuth()
   const loggedIn = session !== null
 
   const handleLogin = () =>

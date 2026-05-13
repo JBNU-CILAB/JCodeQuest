@@ -6,7 +6,7 @@ export function Landing() {
   const { session } = useAuth()
   return (
     <>
-      <Hero session={session} />
+      <Hero />
       {session && <Dashboard />}
     </>
   )
