@@ -77,6 +77,10 @@ SESSION_SECRET_KEY=nZVfOr4M7L2r2vLYjfu9QG8FPxJOz7Ui6xEPkp-Op5I #아무 문자열
 JCQ_AUTH_ALLOW_DEV_STUB=1
 JCQ_COOKIE_INSECURE=1
 JCQ_AUTH_ALLOWED_HD=
+
+# ─── Supabase ───────────────────────────────────────────────────────
+SUPABASE_URL=https://<>.supabase.co
+VITE_SUPABASE_ANON_KEY=sb~
 ```
 
 `authoring_engine/.env.example`:
@@ -99,6 +103,14 @@ JCQ_DB_URL=sqlite:////absolute/path/to/backend/data/jcq.db
 # JCQ_AUTHOR_RETRIES=2
 # JCQ_JUDGE_PASS_THRESHOLD=0.7
 # JCQ_SOLVER_PASS_MIN_AC=1
+```
+
+`frontend/.env.example`:
+
+```dotenv
+VITE_SUPABASE_URL=https://<>.supabase.co
+VITE_SUPABASE_ANON_KEY=sb~
+VITE_API_BASE_URL=http://localhost:8000
 ```
 
 ## API Docs — Swagger / OpenAPI
