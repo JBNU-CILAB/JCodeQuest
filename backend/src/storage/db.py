@@ -11,7 +11,14 @@ DB_URL = os.environ["JCQ_DB_URL"]
 if DB_URL.startswith("postgresql://"):
     DB_URL = "postgresql+psycopg://" + DB_URL[len("postgresql://") :]
 
-engine = create_engine(DB_URL)
+# Supabase Transaction Pooler(PgBouncer transaction mode)는 서버 연결을 클라이언트
+# 사이에 재사용하므로 psycopg3가 자동 생성하는 prepared statement(`_pg3_0` 등)가
+# 충돌한다(`DuplicatePreparedStatement`). prepare_threshold=None으로 비활성화한다.
+_connect_args: dict[str, object] = {}
+if DB_URL.startswith("postgresql+psycopg://"):
+    _connect_args["prepare_threshold"] = None
+
+engine = create_engine(DB_URL, connect_args=_connect_args)
 
 
 def init_db() -> None:

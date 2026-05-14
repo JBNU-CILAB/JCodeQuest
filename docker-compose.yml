@@ -25,6 +25,8 @@ services:
     restart: unless-stopped
     environment:
       <<: *common-env
+      # DB (Supabase PostgreSQL — Transaction Pooler URL 권장)
+      JCQ_DB_URL: "${JCQ_DB_URL}"
       # 채점 엔진 (compose 내부 네트워크)
       JCQ_JUDGE_URL: "http://judge:8002"
       JCQ_INTERNAL_SECRET: "${JCQ_INTERNAL_SECRET}"
