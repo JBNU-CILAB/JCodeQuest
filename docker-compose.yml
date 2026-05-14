@@ -13,6 +13,7 @@
 
 x-common-env: &common-env
   PYTHONUNBUFFERED: "1"
+  # DB는 backend만 직접 다룬다 (judge·authoring은 HTTP로 위임).
   JCQ_DB_URL: "sqlite:////data/jcq.db"
 
 services:
@@ -88,7 +89,13 @@ services:
     container_name: jcq-authoring
     restart: unless-stopped
     environment:
-      <<: *common-env
+      # DB는 backend만 다루므로 JCQ_DB_URL은 필요 없다 (common-env에서 상속받긴 하지만
+      # authoring은 이 변수를 더 이상 참조하지 않음 — backend_client만 사용).
+      PYTHONUNBUFFERED: "1"
+      # backend·judge 내부 API
+      JCQ_BACKEND_URL: "http://backend:8000"
+      JCQ_JUDGE_URL: "http://judge:8002"
+      JCQ_INTERNAL_SECRET: "${JCQ_INTERNAL_SECRET}"
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       JCQ_AUTHOR_MODEL: "${JCQ_AUTHOR_MODEL:-qwen2.5-coder:14b-instruct-q5_K_M}"
       JCQ_VARIANT_COUNT: "${JCQ_VARIANT_COUNT:-5}"
@@ -100,12 +107,12 @@ services:
       LANGSMITH_PROJECT: "${LANGSMITH_PROJECT_AUTHORING:-jcq-authoring}"
       LANGCHAIN_TRACING_V2: "${LANGCHAIN_TRACING_V2:-}"
       LANGCHAIN_ENDPOINT: "${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}"
-    volumes:
-      - jcq-data:/data
     ports:
       - "8001:8001"
     depends_on:
       backend:
+        condition: service_healthy
+      judge:
         condition: service_healthy
     networks: [jcq]
     healthcheck:
@@ -122,7 +129,7 @@ services:
     container_name: jcq-frontend
     restart: unless-stopped
     ports:
-      - "5500:5500"
+      - "5173:5173"
     networks: [jcq]
 
 volumes:

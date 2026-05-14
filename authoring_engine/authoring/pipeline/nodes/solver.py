@@ -3,7 +3,8 @@ import re
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
-from ...config import OLLAMA_BASE_URL, SOLVER_PASS_MIN_AC, ensure_backend_on_path
+from ...backend_client import sandbox_run
+from ...config import OLLAMA_BASE_URL, SOLVER_PASS_MIN_AC
 from ...schemas import AuthoringState
 from ..prompts import SOLVER_SYSTEM, SOLVER_USER
 
@@ -27,7 +28,6 @@ def _solve_one(
     candidate: dict,
     judge_id: str,
     model: str,
-    run_user_code,  # callable from backend
 ) -> dict:
     """단일 LLM이 문제를 풀고 sandbox에서 검증한다."""
     test_cases = candidate.get("test_cases", [])
@@ -76,7 +76,7 @@ def _solve_one(
     passed = 0
     total = len(test_cases)
     for tc in test_cases:
-        result = run_user_code(
+        result = sandbox_run(
             code,
             tc.get("stdin", ""),
             time_limit_ms=time_limit_ms,
@@ -108,9 +108,6 @@ def solve_candidates(state: AuthoringState) -> dict:
 
     SOLVER_PASS_MIN_AC개 이상 AC면 solvable로 판정.
     """
-    ensure_backend_on_path()
-    from src.judge.sandbox.runner import run_user_code  # type: ignore[import]
-
     updated: list[dict] = []
     for c in state["candidates"]:
         c = dict(c)
@@ -119,7 +116,7 @@ def solve_candidates(state: AuthoringState) -> dict:
             continue
 
         solver_results = [
-            _solve_one(c, judge_id, model, run_user_code)
+            _solve_one(c, judge_id, model)
             for judge_id, model in _SOLVER_MODELS
         ]
         n_ac = sum(1 for r in solver_results if r["verdict"] == "AC")

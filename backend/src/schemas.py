@@ -4,6 +4,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from jcq_shared.schemas import (
+    AuthoringProblemAdmin,
+    AuthoringProblemCreate,
+    AuthoringProblemCreateResponse,
+    AuthoringProblemSummary,
+    AuthoringTestCase,
     EnsembleMode,
     EnsembleResult,
     EnsembleVerdict,
@@ -23,6 +28,11 @@ from jcq_shared.schemas import (
 )
 
 __all__ = [
+    "AuthoringProblemAdmin",
+    "AuthoringProblemCreate",
+    "AuthoringProblemCreateResponse",
+    "AuthoringProblemSummary",
+    "AuthoringTestCase",
     "EnsembleMode",
     "EnsembleResult",
     "EnsembleVerdict",

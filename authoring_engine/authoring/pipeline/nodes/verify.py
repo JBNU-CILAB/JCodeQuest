@@ -3,11 +3,11 @@ import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
+from ...backend_client import sandbox_run
 from ...config import (
     AUTHOR_MODEL,
     MAX_AUTHOR_RETRIES,
     OLLAMA_BASE_URL,
-    ensure_backend_on_path,
 )
 from ...schemas import AuthoringState
 from ..prompts import SOLUTION_SYSTEM, SOLUTION_USER
@@ -17,9 +17,7 @@ _PERF_RATIO = 0.5
 _MIN_TEST_CASES = 4
 
 
-def _run_verification(
-    candidate: dict, run_user_code  # callable imported from backend
-) -> tuple[list[dict], bool, str]:
+def _run_verification(candidate: dict) -> tuple[list[dict], bool, str]:
     """reference_code를 각 test_input에 sandbox 실행해 expected_stdout 채움.
 
     Returns (test_cases, all_ok, error_message)
@@ -40,7 +38,7 @@ def _run_verification(
         if stdin and not stdin.endswith("\n"):
             stdin += "\n"
 
-        result = run_user_code(
+        result = sandbox_run(
             reference_code,
             stdin,
             time_limit_ms=time_limit_ms,
@@ -112,9 +110,6 @@ def verify_candidates(state: AuthoringState) -> dict:
 
     실패 시 author_solution을 최대 MAX_AUTHOR_RETRIES회 재시도한다.
     """
-    ensure_backend_on_path()
-    from src.judge.sandbox.runner import run_user_code  # type: ignore[import]
-
     llm = ChatOllama(
         model=AUTHOR_MODEL,
         temperature=0,
@@ -132,7 +127,7 @@ def verify_candidates(state: AuthoringState) -> dict:
         error = ""
 
         for attempt in range(MAX_AUTHOR_RETRIES + 1):
-            test_cases, passed, error = _run_verification(c, run_user_code)
+            test_cases, passed, error = _run_verification(c)
             if passed:
                 c["verify_attempts"] = attempt + 1
                 break

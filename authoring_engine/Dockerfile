@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# authoring_engine은 backend/src/storage를 sys.path injection으로 import하므로
-# 컨테이너에서도 backend/와 authoring_engine/이 같은 부모(/app) 아래 형제로 놓여야 한다.
+# authoring_engine은 backend의 /internal/* HTTP API와 judge_engine의 /api/sandbox/run을
+# 통해 동작한다. backend/src를 더 이상 import하지 않으므로 shared만 같이 끌어온다.
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -18,10 +18,6 @@ RUN pip install --upgrade "pip>=23.1"
 
 COPY shared/ /app/shared/
 COPY authoring_engine/ /app/authoring_engine/
-
-# authoring이 import하는 backend/src 모듈 — storage / schemas 등.
-# requirements 설치는 하지 않고 소스만 둔다 (authoring의 의존성으로 충분).
-COPY backend/src /app/backend/src
 
 WORKDIR /app/authoring_engine
 RUN pip install -e .

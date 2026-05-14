@@ -1,10 +1,14 @@
 """FastAPI 서버 — 출제 파이프라인 + 문제/스팬 조회 API.
 
+DB는 backend가 단일 소유 — 이 서버는 `/internal/*` 라우트로 backend에 위임한다.
+sandbox 실행도 마찬가지로 judge_engine의 `/api/sandbox/run`을 호출.
+
 주요 엔드포인트:
   POST /api/runs                       파이프라인 실행 시작 → {run_id, trace_id}
   GET  /api/runs/{run_id}/events       SSE: {type:'update'|'done'|'error', ...}
   GET  /api/problems                   원본 문제 리스트 (변형 통계 포함)
   GET  /api/problems/{id}              문제 상세 (intent, test_cases, authoring_meta)
+  POST /api/problems                   시드/원본 문제 직접 등록
   GET  /api/problems/{id}/children     해당 원본의 변형 목록
   GET  /api/spans/{trace_id}           LangSmith 스팬 트리 (prompts/IO/tokens/latency)
 """
@@ -22,14 +26,14 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+import httpx
 from fastapi import FastAPI, HTTPException, Path as PathParam, Query
 from fastapi.middleware.cors import CORSMiddleware
+from jcq_shared.schemas import IntentRubric, Problem, TestCase
 from pydantic import BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
-from .config import ensure_backend_on_path
-
-ensure_backend_on_path()
+from . import backend_client
 
 if os.getenv("LANGSMITH_API_KEY"):
     os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
@@ -48,10 +52,10 @@ tags_metadata = [
 app = FastAPI(
     title="JCodeQuest Authoring Engine",
     description=(
-        "LangGraph 파이프라인으로 원본 문제로부터 변형을 생성하고 같은 SQLite DB에 "
-        "저장하는 출제 엔진. 백엔드와 동일한 `JCQ_DB_URL`을 공유한다."
+        "LangGraph 파이프라인으로 원본 문제로부터 변형을 생성하는 출제 엔진. "
+        "DB·sandbox는 backend·judge_engine에 위임 — 내부 HTTP API로 통신."
     ),
-    version="0.1.0",
+    version="0.2.0",
     openapi_tags=tags_metadata,
 )
 
@@ -99,15 +103,11 @@ class ProblemSummaryOut(BaseModel):
     category: str
     level: str
     status: str = Field(description="approved | draft | rejected ...")
-    parent_id: int | None = Field(
-        default=None, description="원본 문제의 ID. 원본이면 null."
-    )
+    parent_id: int | None = None
     langsmith_trace_id: str | None = None
-    created_at: str | None = Field(default=None, description="ISO 8601")
-    child_count: int = Field(description="이 원본에서 생성된 변형 수")
-    avg_judge_score: float | None = Field(
-        default=None, description="변형들의 평균 judge_score (있는 것만)"
-    )
+    created_at: str | None = None
+    child_count: int = 0
+    avg_judge_score: float | None = None
 
 
 class TestCasePublicOut(BaseModel):
@@ -165,39 +165,11 @@ class CreateOriginalRequest(BaseModel):
         min_length=1, description="최소 1개. expected_stdout 비면 자동 채움."
     )
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "title": "두 배 출력",
-                    "statement": "정수 n이 주어지면 n*2를 출력하라.",
-                    "category": "basic",
-                    "level": "bronze",
-                    "points": 100,
-                    "time_limit_ms": 2000,
-                    "memory_limit_mb": 256,
-                    "reference_code": "n = int(input())\nprint(n * 2)\n",
-                    "one_line_summary": "정수 두 배 출력",
-                    "expected_approach": "입력을 정수로 변환 후 2를 곱한다",
-                    "expected_complexity": "O(1)",
-                    "test_cases": [
-                        {"stdin": "3\n", "expected_stdout": "6", "is_sample": True},
-                        {"stdin": "10\n", "expected_stdout": "", "is_sample": False},
-                    ],
-                }
-            ]
-        }
-    )
-
 
 class CreateOriginalResponse(BaseModel):
     id: int = Field(description="새로 등록된 문제 ID")
     autofill: list[dict[str, Any]] = Field(
         description="자동 채움된 케이스의 메타 (ordinal/elapsed_ms/expected 일부)"
-    )
-    iso_week: str = Field(
-        description="이 등록 시점의 ISO 주차 라벨 'YYYY-Www'",
-        examples=["2026-W19"],
     )
 
 
@@ -289,7 +261,6 @@ async def _capture_loop() -> None:
     "/api/health",
     tags=["health"],
     summary="Liveness probe",
-    description="서버가 떠 있는지 확인하는 단순 핑.",
 )
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -300,15 +271,10 @@ async def health() -> dict[str, str]:
     response_model=RunResponse,
     tags=["runs"],
     summary="출제 파이프라인 실행 시작",
-    description=(
-        "LangGraph DAG `fetch_problem → generate_variants → verify_candidates → "
-        "judge_candidates → solve_candidates → persist_approved`를 백그라운드 스레드로 실행. "
-        "즉시 `run_id`/`trace_id`를 반환하고, 진행 상황은 `/api/runs/{run_id}/events`로 추적."
-    ),
 )
 async def create_run(req: RunRequest) -> RunResponse:
     run_id = uuid.uuid4().hex
-    trace_id = str(uuid.uuid4())  # LangSmith는 UUID 형식 요구
+    trace_id = str(uuid.uuid4())
     _runs[run_id] = asyncio.Queue()
     _run_traces[run_id] = trace_id
     threading.Thread(
@@ -323,24 +289,6 @@ async def create_run(req: RunRequest) -> RunResponse:
     "/api/runs/{run_id}/events",
     tags=["runs"],
     summary="파이프라인 진행 SSE 스트림",
-    description=(
-        "Server-Sent Events. payload 형식:\n"
-        "- `{type: 'update', data: <langgraph chunk>}`\n"
-        "- `{type: 'done', trace_id: '...'}`\n"
-        "- `{type: 'error', message: '...'}`\n\n"
-        "type이 done/error면 스트림 종료 + 서버측에서 run_id 해제."
-    ),
-    responses={
-        200: {
-            "description": "SSE 스트림 (text/event-stream)",
-            "content": {
-                "text/event-stream": {
-                    "schema": {"type": "string", "format": "binary"}
-                }
-            },
-        },
-        404: {"description": "run_id 없음 (이미 종료됐거나 존재하지 않음)"},
-    },
 )
 async def stream_events(
     run_id: Annotated[str, PathParam(description="POST /api/runs가 반환한 run_id")]
@@ -362,46 +310,46 @@ async def stream_events(
     return EventSourceResponse(generator())
 
 
-# ── 문제 조회 (DB) ────────────────────────────────────────────────────────
-def _row_to_summary(row, child_stats: dict[int, dict[str, Any]] | None = None) -> dict[str, Any]:
-    stats = (child_stats or {}).get(row.id, {"count": 0, "avg_judge_score": None})
+# ── 문제 조회 (backend로 위임) ─────────────────────────────────────────────
+def _admin_to_summary(admin: dict[str, Any]) -> dict[str, Any]:
+    """backend AuthoringProblemSummary/Admin 응답을 viewer 응답 모델로 매핑."""
     return {
-        "id": row.id,
-        "title": row.title,
-        "category": row.category,
-        "level": row.level,
-        "status": row.status,
-        "parent_id": row.parent_id,
-        "langsmith_trace_id": row.langsmith_trace_id,
-        "created_at": row.created_at.isoformat() if row.created_at else None,
-        "child_count": stats["count"],
-        "avg_judge_score": stats["avg_judge_score"],
+        "id": admin["id"],
+        "title": admin["title"],
+        "category": admin["category"],
+        "level": admin["level"],
+        "status": admin["status"],
+        "parent_id": admin.get("parent_id"),
+        "langsmith_trace_id": admin.get("langsmith_trace_id"),
+        "created_at": admin.get("created_at"),
+        "child_count": admin.get("child_count", 0),
+        "avg_judge_score": admin.get("avg_judge_score"),
     }
 
 
-def _row_to_detail(row) -> dict[str, Any]:
-    base = _row_to_summary(row)
+def _admin_to_detail(admin: dict[str, Any]) -> dict[str, Any]:
+    base = _admin_to_summary(admin)
     base.update(
         {
-            "statement": row.statement,
-            "reference_code": row.reference_code,
-            "intent_rubric": row.intent_rubric,
-            "authoring_meta": row.authoring_meta,
-            "points": row.points,
-            "time_limit_ms": row.time_limit_ms,
-            "memory_limit_mb": row.memory_limit_mb,
-            "test_cases": [
-                {
-                    "ordinal": t.ordinal,
-                    "stdin": t.stdin,
-                    "expected_stdout": t.expected_stdout,
-                    "is_sample": t.is_sample,
-                }
-                for t in row.test_cases
-            ],
+            "statement": admin["statement"],
+            "reference_code": admin["reference_code"],
+            "intent_rubric": admin.get("intent_rubric"),
+            "authoring_meta": admin.get("authoring_meta"),
+            "points": admin["points"],
+            "time_limit_ms": admin["time_limit_ms"],
+            "memory_limit_mb": admin["memory_limit_mb"],
+            "test_cases": admin.get("test_cases", []),
         }
     )
     return base
+
+
+def _backend_error(e: httpx.HTTPStatusError) -> HTTPException:
+    """backend가 돌려준 4xx/5xx를 그대로 transport — 메시지에 원본 status 포함."""
+    return HTTPException(
+        status_code=e.response.status_code,
+        detail=f"backend: {e.response.text[:200]}",
+    )
 
 
 @app.get(
@@ -409,43 +357,17 @@ def _row_to_detail(row) -> dict[str, Any]:
     response_model=list[ProblemSummaryOut],
     tags=["problems"],
     summary="문제 목록 (변형 통계 포함)",
-    description="기본값은 원본(parent_id IS NULL)만. 각 원본에 대해 변형 수와 평균 judge_score를 포함한다.",
 )
 async def list_problems(
     originals_only: Annotated[
         bool, Query(description="false면 변형까지 모두 포함")
     ] = True,
 ) -> list[dict[str, Any]]:
-    from sqlmodel import select
-
-    from src.storage.db import get_session  # type: ignore[import]
-    from src.storage.models import ProblemRow  # type: ignore[import]
-
-    with get_session() as session:
-        stmt = select(ProblemRow)
-        if originals_only:
-            stmt = stmt.where(ProblemRow.parent_id.is_(None))  # type: ignore[union-attr]
-        rows = list(session.exec(stmt).all())
-
-        # 자식 통계 한 번에 집계
-        all_children = list(
-            session.exec(select(ProblemRow).where(ProblemRow.parent_id.is_not(None))).all()  # type: ignore[union-attr]
-        )
-        child_stats: dict[int, dict[str, Any]] = {}
-        for row in all_children:
-            pid = row.parent_id
-            if pid is None:
-                continue
-            bucket = child_stats.setdefault(pid, {"count": 0, "scores": []})
-            bucket["count"] += 1
-            score = (row.authoring_meta or {}).get("judge_score")
-            if isinstance(score, (int, float)):
-                bucket["scores"].append(score)
-        for pid, bucket in child_stats.items():
-            scores = bucket.pop("scores")
-            bucket["avg_judge_score"] = (sum(scores) / len(scores)) if scores else None
-
-        return [_row_to_summary(r, child_stats) for r in rows]
+    try:
+        rows = backend_client.list_problems(originals_only=originals_only)
+    except httpx.HTTPStatusError as e:
+        raise _backend_error(e)
+    return [_admin_to_summary(r.model_dump()) for r in rows]
 
 
 @app.get(
@@ -453,23 +375,16 @@ async def list_problems(
     response_model=ProblemDetailOut,
     tags=["problems"],
     summary="문제 상세 (관리자 시야)",
-    description=(
-        "reference_code, intent_rubric, authoring_meta, 모든 test_cases를 포함한다. "
-        "백엔드의 `/problems/{id}`(학생 시야)와 달리 hidden 정보까지 전부 노출."
-    ),
     responses={404: {"description": "문제 없음"}},
 )
 async def get_problem_detail(
     problem_id: Annotated[int, PathParam(description="문제 ID")]
 ) -> dict[str, Any]:
-    from src.storage.db import get_session  # type: ignore[import]
-    from src.storage.models import ProblemRow  # type: ignore[import]
-
-    with get_session() as session:
-        row = session.get(ProblemRow, problem_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="problem not found")
-        return _row_to_detail(row)
+    try:
+        admin = backend_client.fetch_problem(problem_id)
+    except httpx.HTTPStatusError as e:
+        raise _backend_error(e)
+    return _admin_to_detail(admin.model_dump())
 
 
 @app.post(
@@ -478,8 +393,8 @@ async def get_problem_detail(
     tags=["problems"],
     summary="원본 문제 직접 등록 (출제 엔진 우회)",
     description=(
-        "운영자/시드 용도. `expected_stdout`이 비어 있으면 reference_code를 sandbox에서 "
-        "실행해 자동으로 채운다. 채움 실패(non-zero/TLE/RE) 시 그 케이스 인덱스를 422에 포함."
+        "운영자/시드 용도. `expected_stdout`이 비어 있으면 judge_engine 샌드박스에서 "
+        "reference_code를 실행해 자동으로 채운다. 그 후 backend에 POST해 저장한다."
     ),
     responses={
         400: {"description": "test_cases 비었거나 level 부정"},
@@ -487,14 +402,6 @@ async def get_problem_detail(
     },
 )
 async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
-    from datetime import datetime, timezone
-
-    from jcq_shared.schemas import IntentRubric, Problem, TestCase
-    from src.judge.sandbox.runner import run_user_code  # type: ignore[import]
-    from src.storage.db import get_session  # type: ignore[import]
-    from src.storage.models import iso_week_of  # type: ignore[import]
-    from src.storage.problems import create_problem as _create  # type: ignore[import]
-
     if not req.test_cases:
         raise HTTPException(400, "test_cases 최소 1개 필요")
     if req.level not in ("bronze", "silver", "gold"):
@@ -506,8 +413,7 @@ async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
         stdin = tc.stdin if tc.stdin.endswith("\n") or not tc.stdin else tc.stdin + "\n"
         expected = tc.expected_stdout
         if not expected:
-            # reference_code 실행해서 stdout 채움
-            r = run_user_code(
+            r = backend_client.sandbox_run(
                 req.reference_code,
                 stdin,
                 time_limit_ms=req.time_limit_ms,
@@ -549,22 +455,21 @@ async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
         test_cases=filled,
     )
 
-    issued_week = iso_week_of(datetime.now(timezone.utc))
-    meta: dict[str, Any] = {"source": "manual", "issued_iso_week": issued_week}
+    meta: dict[str, Any] = {"source": "manual"}
     if autofill_log:
         meta["autofill"] = autofill_log
 
-    with get_session() as session:
-        pid = _create(
-            session,
+    try:
+        pid = backend_client.create_problem(
             problem,
             status="approved",
             parent_id=None,
             authoring_meta=meta,
-            iso_week=issued_week,
         )
+    except httpx.HTTPStatusError as e:
+        raise _backend_error(e)
 
-    return {"id": pid, "autofill": autofill_log, "iso_week": issued_week}
+    return {"id": pid, "autofill": autofill_log}
 
 
 @app.get(
@@ -572,23 +477,15 @@ async def create_original(req: CreateOriginalRequest) -> dict[str, Any]:
     response_model=list[ProblemDetailOut],
     tags=["problems"],
     summary="원본의 변형 목록 (상세)",
-    description="parent_id == problem_id 인 변형들의 상세를 모두 반환.",
 )
 async def list_problem_children(
     problem_id: Annotated[int, PathParam(description="원본 문제 ID")]
 ) -> list[dict[str, Any]]:
-    from sqlmodel import select
-
-    from src.storage.db import get_session  # type: ignore[import]
-    from src.storage.models import ProblemRow  # type: ignore[import]
-
-    with get_session() as session:
-        rows = list(
-            session.exec(
-                select(ProblemRow).where(ProblemRow.parent_id == problem_id)  # type: ignore[arg-type]
-            ).all()
-        )
-        return [_row_to_detail(r) for r in rows]
+    try:
+        rows = backend_client.list_children(problem_id)
+    except httpx.HTTPStatusError as e:
+        raise _backend_error(e)
+    return [_admin_to_detail(r.model_dump()) for r in rows]
 
 
 # ── LangSmith 스팬 ───────────────────────────────────────────────────────
@@ -597,10 +494,6 @@ async def list_problem_children(
     response_model=SpansResponse,
     tags=["spans"],
     summary="LangSmith 트레이스 스팬 트리",
-    description=(
-        "trace_id에 묶인 모든 LangSmith run을 가져와 prompts/IO/tokens/latency/cost를 정리. "
-        "`LANGSMITH_API_KEY`가 설정되어 있어야 한다."
-    ),
     responses={
         404: {"description": "해당 trace_id의 run이 LangSmith에 없음"},
         500: {"description": "langsmith 클라이언트 import 실패"},
@@ -635,7 +528,6 @@ async def get_spans(
         usage = getattr(run, "total_tokens", None)
         prompt_t = getattr(run, "prompt_tokens", None)
         comp_t = getattr(run, "completion_tokens", None)
-        # 비용 (있는 경우)
         cost = getattr(run, "total_cost", None)
         return {
             "id": str(run.id),
@@ -646,11 +538,7 @@ async def get_spans(
             "start_time": run.start_time.isoformat() if run.start_time else None,
             "end_time": run.end_time.isoformat() if run.end_time else None,
             "latency_seconds": latency,
-            "tokens": {
-                "prompt": prompt_t,
-                "completion": comp_t,
-                "total": usage,
-            },
+            "tokens": {"prompt": prompt_t, "completion": comp_t, "total": usage},
             "cost": cost,
             "inputs": run.inputs,
             "outputs": run.outputs,
@@ -662,11 +550,14 @@ async def get_spans(
     serialized = [_serialize(r) for r in runs]
     serialized.sort(key=lambda r: r["start_time"] or "")
 
-    # 토큰/시간 집계
     total_tokens = sum((s["tokens"]["total"] or 0) for s in serialized)
     total_prompt = sum((s["tokens"]["prompt"] or 0) for s in serialized)
     total_completion = sum((s["tokens"]["completion"] or 0) for s in serialized)
-    total_latency = sum((s["latency_seconds"] or 0) for s in serialized if s["parent_run_id"] is None)
+    total_latency = sum(
+        (s["latency_seconds"] or 0)
+        for s in serialized
+        if s["parent_run_id"] is None
+    )
 
     return {
         "trace_id": trace_id,

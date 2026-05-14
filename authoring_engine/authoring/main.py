@@ -10,13 +10,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# 백엔드 src.storage.db가 모듈 임포트 시점에 JCQ_DB_URL을 읽으므로
-# 다른 모든 임포트보다 먼저 실행되어야 한다.
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 import argparse
 import os
 
+import httpx
 from rich.console import Console
 from rich.table import Table
 
@@ -25,32 +24,41 @@ console = Console()
 
 def _preflight_check() -> None:
     """실행 전 필수 조건을 점검하고 문제가 있으면 명확한 메시지를 출력한다."""
-    import os
-    from pathlib import Path
-    from .config import BACKEND_PATH, ensure_backend_on_path
+    from .config import BACKEND_URL, JUDGE_URL
 
-    # JCQ_DB_URL 절대경로 주입 (미설정 시)
-    ensure_backend_on_path()
+    if not os.environ.get("JCQ_INTERNAL_SECRET"):
+        console.print(
+            "[bold red]오류: JCQ_INTERNAL_SECRET이 설정되지 않았습니다.[/bold red]\n"
+            "  backend·judge·authoring 모두 같은 값으로 공유해야 합니다."
+        )
+        raise SystemExit(1)
 
-    db_url = os.environ.get("JCQ_DB_URL", "")
-    if db_url.startswith("sqlite:///"):
-        db_path = Path(db_url.removeprefix("sqlite:///"))
-        if not db_path.is_absolute():
-            console.print(
-                f"[yellow]경고: JCQ_DB_URL이 상대경로입니다 ({db_url}). "
-                "CWD에 따라 다른 DB를 가리킬 수 있습니다.[/yellow]"
-            )
-        elif not db_path.exists():
-            console.print(
-                f"[bold red]오류: DB 파일이 없습니다 → {db_path}[/bold red]\n"
-                f"  백엔드를 한 번 실행해 init_db()로 DB를 생성하거나,\n"
-                f"  env.sh에서 JCQ_DB_URL을 올바른 절대경로로 설정하세요.\n"
-                f"  현재 기본값: sqlite:///{BACKEND_PATH / 'data' / 'jcq.db'}"
-            )
-            raise SystemExit(1)
+    # backend 헬스 — DB 책임을 위임하므로 backend가 떠 있어야 한다.
+    try:
+        r = httpx.get(f"{BACKEND_URL.rstrip('/')}/health", timeout=3.0)
+        r.raise_for_status()
+    except Exception as e:
+        console.print(
+            f"[bold red]오류: backend에 연결할 수 없습니다 ({BACKEND_URL}): {e}[/bold red]\n"
+            "  JCQ_BACKEND_URL이 올바른지, backend가 실행 중인지 확인하세요."
+        )
+        raise SystemExit(1)
+
+    try:
+        r = httpx.get(f"{JUDGE_URL.rstrip('/')}/api/health", timeout=3.0)
+        r.raise_for_status()
+    except Exception as e:
+        console.print(
+            f"[bold red]오류: judge_engine에 연결할 수 없습니다 ({JUDGE_URL}): {e}[/bold red]\n"
+            "  JCQ_JUDGE_URL이 올바른지, judge_engine이 실행 중인지 확인하세요."
+        )
+        raise SystemExit(1)
 
     if not os.environ.get("OLLAMA_BASE_URL"):
-        console.print("[yellow]경고: OLLAMA_BASE_URL이 설정되지 않았습니다. 기본값 http://localhost:11434 사용[/yellow]")
+        console.print(
+            "[yellow]경고: OLLAMA_BASE_URL이 설정되지 않았습니다. "
+            "기본값 http://localhost:11434 사용[/yellow]"
+        )
 
 
 def _setup_langsmith() -> None:

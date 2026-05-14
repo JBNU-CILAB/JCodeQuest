@@ -135,3 +135,88 @@ class GradeEvent(BaseModel):
     all_passed: bool | None = None
     ensemble: EnsembleResult | None = None
     error: str | None = None
+
+
+# ── authoring_engine ↔ backend HTTP 페이로드 ───────────────────────────────
+# 출제 엔진은 backend의 /internal/* 라우트로 문제를 조회·저장한다 (Bearer 인증 동일).
+# 코드 실행이 필요한 경우 judge_engine의 /api/sandbox/run을 호출 — backend는 DB·전송만.
+
+ProblemStatus = Literal["draft", "approved", "rejected"]
+
+
+class AuthoringProblemCreate(BaseModel):
+    """authoring_engine → backend. 변형 또는 시드 문제 생성 요청."""
+
+    problem: Problem = Field(description="신규 문제 (id 필드는 무시됨)")
+    status: ProblemStatus = Field(default="approved")
+    parent_id: int | None = Field(
+        default=None, description="원본 문제 ID. 시드/수동 등록 시 None."
+    )
+    langsmith_trace_id: str | None = Field(
+        default=None, description="LangSmith 트레이스 UUID — 출제 파이프라인 추적용."
+    )
+    authoring_meta: dict | None = Field(
+        default=None,
+        description="judge_score, solver_results 등 출제 파이프라인의 부산물.",
+    )
+    iso_week: str | None = Field(
+        default=None,
+        description="'YYYY-Www' 라벨. 비우면 backend가 현재 UTC 주차로 채움.",
+    )
+
+
+class AuthoringProblemCreateResponse(BaseModel):
+    id: int = Field(description="새로 저장된 ProblemRow.id")
+
+
+class AuthoringTestCase(BaseModel):
+    ordinal: int
+    stdin: str
+    expected_stdout: str
+    is_sample: bool
+
+
+class AuthoringProblemAdmin(BaseModel):
+    """backend → authoring_engine. 관리자 시야의 문제 상세 (히든 필드까지 노출)."""
+
+    id: int
+    title: str
+    statement: str
+    category: str
+    level: ProblemLevel
+    points: int
+    time_limit_ms: int
+    memory_limit_mb: int
+    reference_code: str
+    intent_rubric: IntentRubric
+    test_cases: list[AuthoringTestCase]
+    status: str
+    parent_id: int | None = None
+    langsmith_trace_id: str | None = None
+    authoring_meta: dict | None = None
+    iso_week: str | None = None
+    created_at: str | None = None
+
+
+class AuthoringProblemSummary(BaseModel):
+    """원본 목록용 — 변형 통계 포함."""
+
+    id: int
+    title: str
+    category: str
+    level: ProblemLevel
+    status: str
+    parent_id: int | None = None
+    langsmith_trace_id: str | None = None
+    created_at: str | None = None
+    child_count: int = 0
+    avg_judge_score: float | None = None
+
+
+class SandboxRunRequest(BaseModel):
+    """authoring_engine → judge_engine. 일회성 동기 sandbox 실행."""
+
+    code: str
+    stdin: str = ""
+    time_limit_ms: int = Field(default=2000, ge=100, le=60000)
+    memory_limit_mb: int = Field(default=256, ge=16, le=2048)

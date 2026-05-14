@@ -1,18 +1,20 @@
+from datetime import datetime, timezone
+
 from jcq_shared.schemas import IntentRubric, Problem, TestCase
 
-from ...config import ensure_backend_on_path
+from ...backend_client import create_problem
 from ...schemas import AuthoringState
 
 
+def _iso_week_of(dt: datetime) -> str:
+    """backend의 iso_week_of와 동일 — HTTP를 거치지 않고도 같은 라벨을 생성하기 위해 중복 정의.
+    실제 저장 시점에 backend가 비어 있는 경우 다시 채우므로 일관성 보장."""
+    y, w, _ = dt.isocalendar()
+    return f"{y:04d}-W{w:02d}"
+
+
 def persist_approved(state: AuthoringState) -> dict:
-    """solver_passed된 문제를 status='approved'로 DB에 저장한다."""
-    ensure_backend_on_path()
-    from datetime import datetime, timezone
-
-    from src.storage.db import get_session  # type: ignore[import]
-    from src.storage.models import iso_week_of  # type: ignore[import]
-    from src.storage.problems import create_problem  # type: ignore[import]
-
+    """solver_passed된 변형 후보를 backend /internal/problems API로 저장한다."""
     saved_ids: list[int] = list(state.get("saved_problem_ids", []))
     errors: list[str] = list(state.get("errors", []))
     updated: list[dict] = []
@@ -21,7 +23,7 @@ def persist_approved(state: AuthoringState) -> dict:
     trace_id = state.get("langsmith_trace_id")
     # 같은 배치(같은 파이프라인 실행)의 모든 변종은 한 주차로 묶는다 — 파이프라인이
     # 자정/주차 경계를 가로지르더라도 일관된 라벨을 갖도록 노드 진입 시점에 한 번 계산.
-    issued_week = iso_week_of(datetime.now(timezone.utc))
+    issued_week = _iso_week_of(datetime.now(timezone.utc))
 
     for c in state["candidates"]:
         c = dict(c)
@@ -40,7 +42,7 @@ def persist_approved(state: AuthoringState) -> dict:
                 )
                 for tc in c["test_cases"]
             ]
-            # id=0 은 create_problem이 무시하고 DB가 auto-assign한다
+            # id=0은 backend가 무시하고 auto-assign
             problem = Problem(
                 id=0,
                 title=c["title"],
@@ -68,16 +70,14 @@ def persist_approved(state: AuthoringState) -> dict:
                 # 사후에 trace만 봐도 '몇 주차 출제분'인지 확인 가능하도록 함께 저장.
                 "issued_iso_week": issued_week,
             }
-            with get_session() as session:
-                pid = create_problem(
-                    session,
-                    problem,
-                    status="approved",
-                    parent_id=parent_id,
-                    langsmith_trace_id=trace_id,
-                    authoring_meta=authoring_meta,
-                    iso_week=issued_week,
-                )
+            pid = create_problem(
+                problem,
+                status="approved",
+                parent_id=parent_id,
+                langsmith_trace_id=trace_id,
+                authoring_meta=authoring_meta,
+                iso_week=issued_week,
+            )
             c["saved_id"] = pid
             saved_ids.append(pid)
         except Exception as exc:

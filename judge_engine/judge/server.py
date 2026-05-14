@@ -1,9 +1,10 @@
 """채점 엔진 FastAPI 서버 — 큐잉 + webhook 채점 서비스.
 
 엔드포인트:
-  POST /api/grade   {submission_id, problem, code} 를 내부 큐에 적재, 즉시 202 반환.
-                    워커가 처리 후 backend의 /internal/grade-events 로 결과를 push.
-  GET  /api/health  liveness probe
+  POST /api/grade        {submission_id, problem, code} 를 내부 큐에 적재, 즉시 202 반환.
+                         워커가 처리 후 backend의 /internal/grade-events 로 결과를 push.
+  POST /api/sandbox/run  1회성 동기 sandbox 실행 (authoring_engine의 verify/solver 용).
+  GET  /api/health       liveness probe
 
 채점 라이프사이클 (backend가 받게 되는 webhook 순서):
   running → done    (테스트/앙상블 정상 완료)
@@ -11,6 +12,8 @@
 """
 from __future__ import annotations
 
+import asyncio
+import hmac
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -29,11 +32,12 @@ if os.getenv("LANGSMITH_API_KEY"):
     os.environ.setdefault("LANGCHAIN_API_KEY", os.environ["LANGSMITH_API_KEY"])
     os.environ.setdefault("LANGCHAIN_PROJECT", os.getenv("LANGSMITH_PROJECT", "jcq-judge"))
 
-from fastapi import FastAPI, Request, status as http_status
-from jcq_shared.schemas import GradeSubmitRequest
+from fastapi import FastAPI, Header, HTTPException, Request, status as http_status
+from jcq_shared.schemas import ExecResult, GradeSubmitRequest, SandboxRunRequest
 
 from .jobs import grade_job
 from .queue import JobQueue
+from .sandbox import run_user_code
 
 log = logging.getLogger(__name__)
 
@@ -82,3 +86,41 @@ async def submit(req: GradeSubmitRequest, request: Request) -> dict[str, object]
 
     await queue.submit(_job)
     return {"status": "queued", "submission_id": submission_id, "pending": queue.pending}
+
+
+def _require_internal_auth(authorization: str | None) -> None:
+    """authoring_engine ↔ judge_engine 통신용 — backend와 동일한 시크릿 공유."""
+    secret = os.getenv("JCQ_INTERNAL_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "internal endpoint disabled (JCQ_INTERNAL_SECRET unset)")
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "missing bearer token")
+    token = authorization.split(None, 1)[1].strip()
+    if not hmac.compare_digest(token, secret):
+        raise HTTPException(401, "invalid token")
+
+
+@app.post(
+    "/api/sandbox/run",
+    response_model=ExecResult,
+    summary="1회성 동기 sandbox 실행 (authoring_engine 전용)",
+    description=(
+        "큐를 거치지 않고 호출 즉시 코드를 실행하고 ExecResult를 반환한다. "
+        "출제 엔진의 verify(reference_code 동작 확인)와 solver(LLM 풀이 채점) 용도. "
+        "`Authorization: Bearer <JCQ_INTERNAL_SECRET>` 필요."
+    ),
+    include_in_schema=False,
+)
+async def run_sandbox(
+    req: SandboxRunRequest,
+    authorization: str | None = Header(default=None),
+) -> ExecResult:
+    _require_internal_auth(authorization)
+    # sandbox는 subprocess 기반 동기 — 워커 스레드로 디스패치해 이벤트 루프 미차단
+    return await asyncio.to_thread(
+        run_user_code,
+        req.code,
+        req.stdin,
+        time_limit_ms=req.time_limit_ms,
+        memory_limit_mb=req.memory_limit_mb,
+    )
