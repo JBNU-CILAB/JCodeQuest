@@ -176,6 +176,7 @@ copy_env() {
 copy_env "$REPO_ROOT/backend/.env"          "$REPO_ROOT/backend/.env.example"
 copy_env "$REPO_ROOT/authoring_engine/.env" "$REPO_ROOT/authoring_engine/.env.example"
 copy_env "$REPO_ROOT/judge_engine/.env"     "$REPO_ROOT/judge_engine/.env.example"
+copy_env "$REPO_ROOT/frontend/.env"         "$REPO_ROOT/frontend/.env.example"
 
 # webhook 공유 시크릿이 비어있으면 자동 생성 후 양쪽 .env에 동일하게 박는다.
 # 한쪽만 채워져 있으면 그 값을 다른 쪽으로 복제 (양쪽 일치 보장).
@@ -216,35 +217,59 @@ sync_internal_secret() {
 }
 sync_internal_secret
 
-# ── 6) data 디렉터리 + 마이그레이션 ─────────────────────────────────────────
+# ── 6) 마이그레이션 ──────────────────────────────────────────────────────────
 section "6. DB 마이그레이션"
-mkdir -p "$REPO_ROOT/backend/data"
-ok "backend/data/ 준비"
 
-if (cd "$REPO_ROOT/backend" && "$BACKEND_PY" migrate.py); then
-    ok "migrate.py 실행 완료"
+# JCQ_DB_URL이 설정돼 있으면 그 값을 사용, 없으면 backend/.env에서 읽기
+_db_url="${JCQ_DB_URL:-}"
+if [[ -z "$_db_url" && -f "$REPO_ROOT/backend/.env" ]]; then
+    _db_url="$(grep -E '^JCQ_DB_URL=' "$REPO_ROOT/backend/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
+fi
+
+if [[ "$_db_url" == postgresql://* ]]; then
+    info "Supabase PostgreSQL 감지 — migrate.py 스킵"
+    info "스키마 변경은 Supabase 대시보드 또는 supabase CLI(supabase db push)로 관리하세요."
 else
-    fail "migrate.py 실패 — backend/.env의 JCQ_DB_URL이 절대경로인지 확인"
-    exit 1
+    mkdir -p "$REPO_ROOT/backend/data"
+    ok "backend/data/ 준비"
+    if (cd "$REPO_ROOT/backend" && "$BACKEND_PY" migrate.py); then
+        ok "migrate.py 실행 완료"
+    else
+        fail "migrate.py 실패 — backend/.env의 JCQ_DB_URL을 확인하세요"
+        exit 1
+    fi
 fi
 
 # ── 7) 안내 ────────────────────────────────────────────────────────────────
 section "다음 단계"
 cat <<EOF
-  1) backend/.env, authoring_engine/.env, judge_engine/.env 의 값을 채우세요.
-     - backend/.env: OPENAI_API_KEY, SESSION_SECRET_KEY (로컬 시연용으로 JCQ_AUTH_ALLOW_DEV_STUB=1, JCQ_COOKIE_INSECURE=1)
-     - authoring_engine/.env: OPENAI_API_KEY, OLLAMA_BASE_URL
-     - judge_engine/.env: OLLAMA_BASE_URL  (채점 엔진은 DB 비접근)
-     - JCQ_DB_URL: backend·authoring 양쪽에서 동일한 **절대경로** (예: $REPO_ROOT/backend/data/jcq.db)
-     - JCQ_INTERNAL_SECRET: backend·judge_engine 양쪽에 자동 동기화됨 (위 단계 4에서 처리)
+  1) 각 .env 파일에 실제 값을 채우세요.
+
+     backend/.env
+       - OPENAI_API_KEY        : OpenAI API 키
+       - JCQ_DB_URL            : Supabase PostgreSQL Transaction Pooler URL
+                                 (대시보드 → Project Settings → Database → Connection string)
+       - SUPABASE_URL          : https://<project>.supabase.co
+       - JCQ_INTERNAL_SECRET   : setup.sh에서 자동 생성됨 (judge_engine과 동기화)
+       - 로컬 개발 시 추가:    JCQ_AUTH_ALLOW_DEV_STUB=1, JCQ_COOKIE_INSECURE=1
+
+     authoring_engine/.env
+       - OPENAI_API_KEY, OLLAMA_BASE_URL
+
+     judge_engine/.env
+       - OLLAMA_BASE_URL  (채점 엔진은 DB 직접 미접근)
+       - JCQ_INTERNAL_SECRET : backend와 자동 동기화됨
+
+     frontend/.env
+       - VITE_SUPABASE_URL     : https://<project>.supabase.co
+       - VITE_SUPABASE_ANON_KEY: 대시보드 → Project Settings → API → anon key
+       - VITE_API_BASE_URL     : http://localhost:8000 (로컬) 또는 배포 URL
 
   2) Ollama가 떠 있고 3개 판사 모델이 pull 되어 있는지 확인 — docs/setup-ollama.md
 
   3) 개발 서버 일괄 기동:
-        scripts/dev.sh up
-
-  4) 프런트엔드만 단독으로 띄우려면:
-        cd frontend && npm run dev          # http://localhost:5173
+        scripts/dev.sh up                  # 전체 기동
+        scripts/dev.sh up --no-authoring   # 출제 엔진 제외
 
   $(c 32 '✓') 셋업 완료
 EOF

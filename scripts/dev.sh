@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# JCodeQuest 개발 환경 — backend(:8000) + authoring(:8001) + judge(:8002) + frontend(:5500)을
+# JCodeQuest 개발 환경 — backend(:8000) + authoring(:8001) + judge(:8002) + frontend(:5173)을
 # 한 번에 띄우고 내리는 진입점.
 #
 # 사용법:
-#   scripts/dev.sh up       # 4개 서버 기동 + 헬스체크
-#   scripts/dev.sh down     # 떠 있는 서버 종료
-#   scripts/dev.sh status   # 현재 상태 (PID, 포트, /health 응답)
+#   scripts/dev.sh up                               # 4개 서버 기동 + 헬스체크
+#   scripts/dev.sh up --no-authoring               # 출제 엔진 제외하고 기동
+#   scripts/dev.sh up --no-llm                     # Ollama 앙상블 스킵 (JCQ_SKIP_ENSEMBLE=1 주입)
+#   scripts/dev.sh up --no-authoring --no-llm      # 둘 다
+#   scripts/dev.sh down                            # 떠 있는 서버 종료
+#   scripts/dev.sh status                          # 현재 상태 (PID, 포트, /health 응답)
 #   scripts/dev.sh logs <backend|authoring|judge|frontend>
-#   scripts/dev.sh restart  # down → up
+#   scripts/dev.sh restart [--no-authoring] [--no-llm]  # down → up
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,7 +41,7 @@ SERVICES=("judge" "backend" "authoring" "frontend")
 backend_port=8000;   backend_health="/health"
 authoring_port=8001; authoring_health="/api/health"
 judge_port=8002;     judge_health="/api/health"
-frontend_port=5500;  frontend_health="/index.html"
+frontend_port=5173;  frontend_health="/"
 
 # ── 출력 유틸 ───────────────────────────────────────────────────────────────
 _use_color=$([[ -t 1 ]] && echo 1 || echo 0)
@@ -109,7 +112,7 @@ start_judge() {
 
 start_frontend() {
     cd "$REPO_ROOT/frontend"
-    nohup "$PY" -m http.server "$frontend_port" --bind 127.0.0.1 \
+    nohup npm run dev -- --host 127.0.0.1 --port "$frontend_port" \
         > "$(logfile frontend)" 2>&1 &
     echo $! > "$(pidfile frontend)"
 }
@@ -141,6 +144,13 @@ start_one() {
 
 # ── 마이그레이션 ────────────────────────────────────────────────────────────
 run_migrations() {
+    # JCQ_DB_URL이 postgresql:// 이면 Supabase 관리 DB → migrate.py 스킵.
+    # SQLite 환경(로컬 테스트 등)에서만 실행.
+    local db_url="${JCQ_DB_URL:-}"
+    if [[ "$db_url" == postgresql://* ]]; then
+        info "Supabase PostgreSQL 감지 — migrate.py 스킵 (스키마는 Supabase 대시보드/CLI로 관리)"
+        return 0
+    fi
     local mlog="$LOG_DIR/migrate.log"
     info "DB 마이그레이션 실행 중 (backend/migrate.py)..."
     if (cd "$REPO_ROOT/backend" && "$PY" migrate.py) > "$mlog" 2>&1; then
@@ -185,21 +195,44 @@ stop_one() {
 
 # ── 서브커맨드 ─────────────────────────────────────────────────────────────
 cmd_up() {
+    local skip_authoring=0 skip_llm=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --no-authoring) skip_authoring=1; shift ;;
+            --no-llm)       skip_llm=1; shift ;;
+            *) echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
+        esac
+    done
+
+    local services=("${SERVICES[@]}")
+    if [[ $skip_authoring = 1 ]]; then
+        services=("judge" "backend" "frontend")
+    fi
+
+    # judge 프로세스가 상속할 수 있도록 export — nohup은 부모 환경을 그대로 가져감.
+    if [[ $skip_llm = 1 ]]; then
+        export JCQ_SKIP_ENSEMBLE=1
+    else
+        unset JCQ_SKIP_ENSEMBLE
+    fi
+
     section "JCodeQuest dev — 기동"
+    [[ $skip_authoring = 1 ]] && info "출제 엔진(authoring) 스킵"
+    [[ $skip_llm = 1 ]]       && info "LLM 앙상블 스킵 (JCQ_SKIP_ENSEMBLE=1)"
     info "python: $PY"
     info "log dir: $LOG_DIR"
     run_migrations || exit 1
     local rc=0
-    for s in "${SERVICES[@]}"; do
+    for s in "${services[@]}"; do
         start_one "$s" || rc=1
     done
     echo
     if [[ $rc = 0 ]]; then
         echo "  $(c 32 '✓') 모두 떠있음"
-        echo "     frontend  http://localhost:${frontend_port}"
-        echo "     backend   http://localhost:${backend_port}  (인증: dev-login)"
-        echo "     authoring http://localhost:${authoring_port}"
-        echo "     judge     http://localhost:${judge_port}"
+        echo "     frontend  http://localhost:${frontend_port}  (Vite dev)"
+        echo "     backend   http://localhost:${backend_port}   (Supabase JWT 인증)"
+        [[ $skip_authoring = 0 ]] && echo "     authoring http://localhost:${authoring_port}"
+        echo "     judge     http://localhost:${judge_port}$([ $skip_llm = 1 ] && echo "  (LLM 스킵)")"
     else
         echo "  $(c 31 '✗') 일부 서비스 기동 실패 — 위 로그 참고"
         exit 1
@@ -252,16 +285,16 @@ cmd_logs() {
 
 cmd_restart() {
     cmd_down
-    cmd_up
+    cmd_up "$@"
 }
 
 # ── 디스패치 ───────────────────────────────────────────────────────────────
 case "${1:-up}" in
-    up)      cmd_up ;;
+    up)      shift; cmd_up "$@" ;;
     down)    cmd_down ;;
     status)  cmd_status ;;
     logs)    shift; cmd_logs "${1:-}" ;;
-    restart) cmd_restart ;;
+    restart) shift; cmd_restart "$@" ;;
     -h|--help|help)
         sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
         ;;

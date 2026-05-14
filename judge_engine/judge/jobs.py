@@ -11,14 +11,34 @@ import asyncio
 import logging
 import os
 
-from jcq_shared.schemas import GradeEvent, Problem
+from jcq_shared.schemas import EnsembleResult, GradeEvent, JudgeVote, Problem
 from langsmith import traceable
 
 from .callback import send_event
-from .ensemble import vote
+from .ensemble import JUDGES, vote
 from .sandbox import run_all_tests
 
 log = logging.getLogger(__name__)
+
+_SKIP_ENSEMBLE = os.getenv("JCQ_SKIP_ENSEMBLE", "").strip() in ("1", "true", "yes")
+
+
+def _stub_ensemble() -> EnsembleResult:
+    """JCQ_SKIP_ENSEMBLE=1 시 Ollama 없이 즉시 AC를 반환하는 stub."""
+    return EnsembleResult(
+        final_verdict="AC",
+        mode="unanimous",
+        votes=[
+            JudgeVote(
+                judge_id=s.judge_id,
+                verdict="AC",
+                intent_match=True,
+                rationale="[JCQ_SKIP_ENSEMBLE — LLM 호출 생략]",
+                confidence=1.0,
+            )
+            for s in JUDGES
+        ],
+    )
 
 
 # @traceable은 LANGSMITH_API_KEY가 없으면 no-op이라 비활성 시에도 안전.
@@ -41,11 +61,15 @@ async def _graded(
     all_passed = bool(test_results) and all(r.passed for r in test_results)
     ensemble = None
     if all_passed:
-        ensemble = await vote(
-            problem, code, test_results,
-            base_url=base_url,
-            submission_id=submission_id,
-        )
+        if _SKIP_ENSEMBLE:
+            log.info("JCQ_SKIP_ENSEMBLE=1 — 앙상블 생략, stub AC 반환")
+            ensemble = _stub_ensemble()
+        else:
+            ensemble = await vote(
+                problem, code, test_results,
+                base_url=base_url,
+                submission_id=submission_id,
+            )
     return test_results, all_passed, ensemble
 
 
