@@ -31,6 +31,11 @@ def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="유효하지 않거나 만료된 토큰입니다.",
             )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"JWT 검증 실패: {e}",
+            )
 
         sub = payload.get("sub")
         email = payload.get("email")

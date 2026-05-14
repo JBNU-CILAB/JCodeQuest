@@ -242,7 +242,7 @@ class MeResponse(BaseModel):
     id: int = Field(examples=[1])
     display_name: str = Field(examples=["김민석"])
     email: str = Field(examples=["foo@jbnu.ac.kr"])
-    provider: Literal["google", "dev_stub"] = Field(
+    provider: Literal["google", "dev_stub", "supabase"] = Field(
         description="인증 공급자"
     )
     exp: int = Field(description="누적 경험치", examples=[1500])
