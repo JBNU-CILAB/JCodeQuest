@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JCodeQuest — 홈</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --header-bg: #2b4a7c;
+      --header-bg-2: #1e3a64;
+      --page-bg: #f4f6fa;
+      --card: #ffffff;
+      --card-border: #e6e8ee;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --muted-2: #9ca3af;
+      --primary: #4ea36b;
+      --primary-dark: #3f8856;
+      --primary-soft: #e7f3ec;
+      --accent: #f59e0b;
+      --pink: #ec4899;
+      --sky-1: #b6e0f7;
+      --sky-2: #d6eef9;
+      --grass-1: #a7d893;
+      --grass-2: #7ec46f;
+    }
+
+    body {
+      background: var(--page-bg);
+      color: var(--text);
+      font-family: 'Pretendard', system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Prototype toggle ── */
+    .proto-toggle {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 100;
+      background: #111827;
+      color: #fff;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    }
+    .proto-toggle:hover { background: #1f2937; }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(180deg, var(--header-bg) 0%, var(--header-bg-2) 100%);
+      height: 72px;
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .logo {
+      width: 90px;
+      height: 48px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      font-family: 'Brush Script MT', 'Snell Roundhand', cursive;
+      font-size: 32px;
+      font-style: italic;
+      font-weight: 600;
+      color: #1f2937;
+      letter-spacing: -2px;
+      user-select: none;
+    }
+    nav.main-nav {
+      margin-left: auto;
+      display: flex;
+      gap: 40px;
+      align-items: center;
+    }
+    nav.main-nav a {
+      color: #e5e7eb;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 500;
+      padding: 6px 4px;
+      border-bottom: 2px solid transparent;
+      transition: color .12s, border-color .12s;
+    }
+    nav.main-nav a:hover { color: #fff; border-bottom-color: rgba(255,255,255,.4); }
+
+    .header-user {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      margin-left: 28px;
+    }
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #cbd5e1;
+      background-image: linear-gradient(135deg, #cbd5e1, #94a3b8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 18px;
+      cursor: pointer;
+      border: 2px solid rgba(255,255,255,.4);
+    }
+    .header-user .links {
+      font-size: 9px;
+      color: rgba(255,255,255,.7);
+      letter-spacing: -0.3px;
+    }
+    .header-user .links a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .header-user .links a:hover { color: #fff; }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative;
+      height: 380px;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 55%, #e8f4d8 70%, var(--grass-1) 100%);
+    }
+    /* Decorative clouds */
+    .cloud {
+      position: absolute;
+      background: #fff;
+      border-radius: 50%;
+      opacity: .85;
+      filter: blur(.4px);
+    }
+    .cloud.c1 { width: 110px; height: 36px; top: 60px; left: 15%; box-shadow: 30px -10px 0 -2px #fff, 60px 4px 0 -4px #fff; }
+    .cloud.c2 { width: 90px; height: 28px; top: 100px; right: 22%; box-shadow: 25px -8px 0 -2px #fff, 50px 2px 0 -4px #fff; }
+    .cloud.c3 { width: 70px; height: 22px; top: 40px; right: 12%; }
+
+    /* Leaves on corners */
+    .leaf {
+      position: absolute;
+      font-size: 56px;
+      line-height: 1;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,.1));
+    }
+    .leaf.tl { top: -8px; left: -8px; transform: rotate(-25deg); }
+    .leaf.tr { top: -8px; right: -8px; transform: rotate(25deg) scaleX(-1); }
+
+    /* Grass strip with flowers */
+    .grass {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 90px;
+      background: linear-gradient(180deg, transparent 0%, var(--grass-1) 30%, var(--grass-2) 100%);
+    }
+    .flower {
+      position: absolute;
+      bottom: 18px;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    /* Speech bubble */
+    .bubble-wrap {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 460px;
+      max-width: 90%;
+    }
+    .cat {
+      position: absolute;
+      top: -88px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 130px;
+      height: 110px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      font-size: 96px;
+      line-height: 1;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,.15));
+      z-index: 2;
+    }
+    .bubble {
+      background: #fff;
+      border-radius: 28px;
+      padding: 56px 40px 36px;
+      text-align: center;
+      box-shadow: 0 12px 40px rgba(31,41,55,.12);
+      position: relative;
+    }
+    .bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -14px;
+      left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+      width: 28px;
+      height: 28px;
+      background: #fff;
+      box-shadow: 4px 4px 8px rgba(31,41,55,.04);
+    }
+    .bubble h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      line-height: 1.35;
+      color: #1f2937;
+    }
+    .bubble .sub {
+      margin-top: 14px;
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .bubble .actions {
+      margin-top: 22px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    /* Sparkles */
+    .sparkle { position: absolute; font-size: 16px; opacity: .8; }
+    .sparkle.s1 { top: 12%; left: 28%; }
+    .sparkle.s2 { top: 70%; left: 30%; }
+    .sparkle.s3 { top: 18%; right: 26%; }
+    .sparkle.s4 { top: 62%; right: 30%; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 22px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: transform .08s, background .12s, color .12s, border-color .12s;
+      font-family: inherit;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-outline { background: #fff; color: var(--primary); border-color: var(--primary); }
+    .btn-outline:hover { background: var(--primary-soft); }
+    .btn-sm { padding: 6px 14px; font-size: 12.5px; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--card-border); }
+    .btn-ghost:hover { background: #f3f4f6; }
+    .btn-disabled { background: #e5e7eb; color: #9ca3af; cursor: default; }
+
+    /* ── Main content (logged in only) ── */
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 32px 32px 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 880px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 22px 24px;
+      box-shadow: 0 1px 2px rgba(31,41,55,.03);
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #1f2937;
+    }
+    .card-title .ico { color: var(--muted-2); font-size: 16px; }
+    .card-link {
+      color: var(--muted);
+      font-size: 12.5px;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .card-link:hover { color: var(--primary); }
+
+    /* Toggle pill */
+    .pill-toggle {
+      display: inline-flex;
+      background: #f3f4f6;
+      border-radius: 999px;
+      padding: 3px;
+    }
+    .pill-toggle button {
+      border: none;
+      background: transparent;
+      padding: 5px 14px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .pill-toggle button.active {
+      background: #fff;
+      color: #1f2937;
+      box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    }
+
+    /* Ranking list */
+    .rank-list { display: flex; flex-direction: column; }
+    .rank-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .rank-row:last-child { border-bottom: none; }
+    .rank-medal {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .rank-medal.gold { background: #fff4d4; }
+    .rank-medal.silver { background: #eef0f3; }
+    .rank-medal.bronze { background: #fae7d3; }
+    .rank-medal.plain {
+      background: #f3f4f6;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .rank-info { flex: 1; min-width: 0; }
+    .rank-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+    .rank-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .rank-score {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #f5f0ff;
+      color: #7c3aed;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+
+    /* Weekly problems */
+    .week-list { display: flex; flex-direction: column; gap: 18px; }
+    .week-row {
+      display: grid;
+      grid-template-columns: 90px 1fr auto;
+      align-items: center;
+      gap: 16px;
+    }
+    .week-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1f2937;
+    }
+    .week-label .sub {
+      display: block;
+      font-size: 11.5px;
+      color: var(--muted);
+      font-weight: 500;
+      margin-top: 2px;
+    }
+    .bar {
+      position: relative;
+      height: 10px;
+      background: #f3f4f6;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      background: linear-gradient(90deg, #6ec48e, #4ea36b);
+      border-radius: 999px;
+    }
+    .bar.done .bar-fill { background: linear-gradient(90deg, #4ea36b, #3f8856); }
+
+    /* Submissions table */
+    table.subs {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.subs th, table.subs td {
+      padding: 12px 8px;
+      text-align: left;
+    }
+    table.subs th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom: 1px solid #f3f4f6;
+    }
+    table.subs td { border-bottom: 1px solid #f9fafb; }
+    table.subs tr:last-child td { border-bottom: none; }
+    .verdict { font-weight: 700; }
+    .verdict.ac { color: var(--primary); }
+    .verdict.wa { color: #dc2626; }
+    .verdict.tle { color: #d97706; }
+
+    /* Hidden state utility */
+    .hidden { display: none !important; }
+
+    footer {
+      margin-top: auto;
+      padding: 24px;
+      text-align: center;
+      color: var(--muted-2);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Prototype state toggle (dev only) -->
+  <button class="proto-toggle" id="protoToggle">로그인 상태 전환</button>
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">cd</div>
+    <nav class="main-nav" id="navMain">
+      <a href="#">공지</a>
+      <a href="#">문제페이지</a>
+      <a href="#">랭킹</a>
+    </nav>
+    <div class="header-user" id="headerUser">
+      <div class="avatar">🙂</div>
+      <div class="links">
+        <a href="#">로그아웃</a>/<a href="#">마이페이지</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Hero ── -->
+  <section class="hero">
+    <span class="leaf tl">🌿</span>
+    <span class="leaf tr">🌿</span>
+    <div class="cloud c1"></div>
+    <div class="cloud c2"></div>
+    <div class="cloud c3"></div>
+
+    <span class="sparkle s1">✨</span>
+    <span class="sparkle s2">✨</span>
+    <span class="sparkle s3">✨</span>
+    <span class="sparkle s4">✨</span>
+
+    <div class="grass">
+      <span class="flower" style="left: 8%;">🌼</span>
+      <span class="flower" style="left: 22%;">🌷</span>
+      <span class="flower" style="left: 78%;">🌸</span>
+      <span class="flower" style="right: 8%;">🌻</span>
+    </div>
+
+    <!-- Logged-out bubble -->
+    <div class="bubble-wrap" id="bubbleOut">
+      <div class="cat">🐱</div>
+      <div class="bubble">
+        <h1>로그인하고<br>문제를 풀어보세요!</h1>
+        <p class="sub">AI 튜터와 함께 실력을 키우고,<br>랭킹에 도전해보세요.</p>
+        <div class="actions">
+          <button class="btn btn-primary">로그인</button>
+          <button class="btn btn-outline">회원가입</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logged-in bubble -->
+    <div class="bubble-wrap hidden" id="bubbleIn">
+      <div class="cat">😸</div>
+      <div class="bubble">
+        <h1>환영합니다!<br>로그인 되었습니다 <span style="color:#ec4899;">♥</span></h1>
+        <p class="sub">즐거운 코딩 라이프를 시작해보세요!<br>오늘도 좋은 하루 되세요 😊</p>
+        <div class="actions">
+          <button class="btn btn-primary">문제 풀러가기</button>
+          <button class="btn btn-outline">마이페이지</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Main (visible when logged in) ── -->
+  <main id="dashboard">
+    <div class="grid-2">
+      <!-- Weekly ranking -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="ico">🏆</span> 이번주 랭킹</div>
+          <div class="pill-toggle" id="rankToggle">
+            <button class="active" data-rank="all">전체</button>
+            <button data-rank="friends">친구</button>
+          </div>
+        </div>
+        <div class="rank-list">
+          <div class="rank-row">
+            <div class="rank-medal gold">🥇</div>
+            <div class="rank-info">
+              <div class="rank-name">Gaurav Kumar</div>
+              <div class="rank-meta">7 Solved · 7 Day streak</div>
+            </div>
+            <div class="rank-score">💎 678</div>
+          </div>
+          <div class="rank-row">
+            <div class="rank-medal silver">🥈</div>
+            <div class="rank-info">
+              <div class="rank-name">Chirag Manjar</div>
+              <div class="rank-meta">7 Solved · 7 Day streak</div>
+            </div>
+            <div class="rank-score">💎 675</div>
+          </div>
+          <div class="rank-row">
+            <div class="rank-medal bronze">🥉</div>
+            <div class="rank-info">
+              <div class="rank-name">Lukas T</div>
+              <div class="rank-meta">7 Solved · 7 Day streak</div>
+            </div>
+            <div class="rank-score">💎 675</div>
+          </div>
+          <div class="rank-row">
+            <div class="rank-medal plain">4</div>
+            <div class="rank-info">
+              <div class="rank-name">C. Kevin Chen</div>
+              <div class="rank-meta">6 Solved · 5 Day streak</div>
+            </div>
+            <div class="rank-score">💎 673</div>
+          </div>
+          <div class="rank-row">
+            <div class="rank-medal plain">5</div>
+            <div class="rank-info">
+              <div class="rank-name">Jiawei Zhang</div>
+              <div class="rank-meta">6 Solved · 5 Day streak</div>
+            </div>
+            <div class="rank-score">💎 668</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weekly problems -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="ico">📅</span> 주차별 문제</div>
+          <a class="card-link" href="#">전체 보기 ›</a>
+        </div>
+        <div class="week-list">
+          <div class="week-row">
+            <div class="week-label">5월 2주차<span class="sub">5 / 10 문제 해결</span></div>
+            <div class="bar"><div class="bar-fill" style="width:50%"></div></div>
+            <button class="btn btn-outline btn-sm">문제 풀기</button>
+          </div>
+          <div class="week-row">
+            <div class="week-label">5월 1주차<span class="sub">8 / 10 문제 해결</span></div>
+            <div class="bar"><div class="bar-fill" style="width:80%"></div></div>
+            <button class="btn btn-outline btn-sm">문제 풀기</button>
+          </div>
+          <div class="week-row">
+            <div class="week-label">4월 4주차<span class="sub">10 / 10 문제 해결</span></div>
+            <div class="bar done"><div class="bar-fill" style="width:100%"></div></div>
+            <button class="btn btn-disabled btn-sm">완료</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent submissions -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><span class="ico">‹/›</span> 최근 제출</div>
+        <a class="card-link" href="#">전체 보기 ›</a>
+      </div>
+      <table class="subs">
+        <thead>
+          <tr>
+            <th>문제</th>
+            <th>결과</th>
+            <th>메모리</th>
+            <th>시간</th>
+            <th>언어</th>
+            <th>제출 시간</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Two Sum</td>
+            <td><span class="verdict ac">맞았습니다</span></td>
+            <td>12.4 MB</td>
+            <td>124 ms</td>
+            <td>Python 3</td>
+            <td>2분 전</td>
+          </tr>
+          <tr>
+            <td>Reverse Linked List</td>
+            <td><span class="verdict wa">틀렸습니다</span></td>
+            <td>13.1 MB</td>
+            <td>96 ms</td>
+            <td>Python 3</td>
+            <td>14분 전</td>
+          </tr>
+          <tr>
+            <td>Valid Parentheses</td>
+            <td><span class="verdict ac">맞았습니다</span></td>
+            <td>11.8 MB</td>
+            <td>52 ms</td>
+            <td>C++17</td>
+            <td>1시간 전</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer>© 2026 JCodeQuest · 프로토타입</footer>
+
+  <script>
+    // ── Prototype state toggle ────────────────────────────────────────
+    const STATES = ['out', 'in'];
+    let state = 'out';
+
+    const navMain    = document.getElementById('navMain');
+    const headerUser = document.getElementById('headerUser');
+    const bubbleOut  = document.getElementById('bubbleOut');
+    const bubbleIn   = document.getElementById('bubbleIn');
+    const dashboard  = document.getElementById('dashboard');
+    const toggleBtn  = document.getElementById('protoToggle');
+
+    function applyState() {
+      const loggedIn = state === 'in';
+      navMain.classList.toggle('hidden', !loggedIn);
+      headerUser.classList.toggle('hidden', !loggedIn);
+      bubbleOut.classList.toggle('hidden', loggedIn);
+      bubbleIn.classList.toggle('hidden', !loggedIn);
+      dashboard.classList.toggle('hidden', !loggedIn);
+      toggleBtn.textContent = loggedIn ? '로그아웃 화면 보기' : '로그인 화면 보기';
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      state = state === 'out' ? 'in' : 'out';
+      applyState();
+    });
+
+    // ── Ranking tab toggle ────────────────────────────────────────────
+    document.querySelectorAll('#rankToggle button').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('#rankToggle button').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+      });
+    });
+
+    applyState();
+  </script>
+</body>
+</html>

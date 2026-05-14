@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
 
 from .api.auth import router as auth_router
 from .api.grading import router as grading_router
@@ -36,25 +35,13 @@ app = FastAPI(title="JCodeQuest Backend", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "http://localhost:5173", "http://127.0.0.1:5173",
         "http://localhost:5500", "http://127.0.0.1:5500",
         "http://localhost:8001", "http://127.0.0.1:8001",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
-
-# OAuth 핸드셰이크의 state/nonce 저장용 임시 쿠키. 사용자 세션은 SessionRow(DB) 기반의
-# jcq_session 쿠키로 별도 발급. SESSION_SECRET_KEY 미설정 시 시작 단계에서 fail-fast.
-_session_secret = os.getenv("SESSION_SECRET_KEY")
-if not _session_secret:
-    raise RuntimeError("SESSION_SECRET_KEY is not set")
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=_session_secret,
-    max_age=300,  # OAuth 왕복은 분 단위면 충분
-    same_site="lax",
-    https_only=False,  # 개발 편의 — prod 배포 시 reverse proxy 단에서 강제
 )
 
 app.include_router(auth_router)

@@ -80,17 +80,30 @@ finally:
 
 
 def _make_preexec(memory_bytes: int, cpu_seconds: int):
+    # macOS는 RLIMIT_AS/NPROC 설정 시 EINVAL을 던지는 케이스가 많아
+    # preexec_fn이 통째로 실패하면 subprocess.Popen이 깨진다.
+    # Linux(프로덕션)에서는 모두 강제, macOS(개발 편의)에서는 best-effort.
+    is_darwin = sys.platform == "darwin"
+
     def fn() -> None:
         # 새 process group으로 분리해서 타임아웃 시 그룹째 SIGKILL 가능
         os.setsid()
-        # 메모리(주소 공간) 상한
-        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
-        # CPU 시간 — wall-clock 타임아웃과 별도로 폭주 방지
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
-        # fork 폭탄 방지 (os.fork 무력화의 OS 레벨 백스톱)
-        resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
-        # 디스크 쓰기 1MB까지
-        resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, 1 << 20))
+        limits = (
+            # 메모리(주소 공간) 상한 — macOS는 자주 EINVAL
+            (resource.RLIMIT_AS, memory_bytes, memory_bytes),
+            # CPU 시간 — wall-clock 타임아웃과 별도로 폭주 방지
+            (resource.RLIMIT_CPU, cpu_seconds, cpu_seconds + 1),
+            # fork 폭탄 방지 (os.fork 무력화의 OS 레벨 백스톱)
+            (resource.RLIMIT_NPROC, 64, 64),
+            # 디스크 쓰기 1MB까지
+            (resource.RLIMIT_FSIZE, 1 << 20, 1 << 20),
+        )
+        for which, soft, hard in limits:
+            try:
+                resource.setrlimit(which, (soft, hard))
+            except (ValueError, OSError):
+                if not is_darwin:
+                    raise
 
     return fn
 
