@@ -24,8 +24,11 @@ def get_current_user(
     if credentials is not None:
         try:
             payload = verify_supabase_jwt(credentials.credentials)
-        except Exception as e:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Invalid token: {e}")
+        except jwt.InvalidTokenError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="유효하지 않거나 만료된 토큰입니다.",
+            )
 
         sub = payload.get("sub")
         email = payload.get("email")
