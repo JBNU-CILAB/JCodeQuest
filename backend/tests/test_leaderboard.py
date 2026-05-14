@@ -142,14 +142,14 @@ def test_leaderboard_week_sums_points_in_current_iso_week(
     client: TestClient, make_user, seeded_problem_id
 ):
     user = make_user("weekly")
-    sid = _ac_submission(user, seeded_problem_id, points=150)
+    sid = _ac_submission(user, seeded_problem_id, points=1500)
     # created_at은 default로 '지금' — 이번 주에 들어옴
     body = client.get("/leaderboard", params={"period": "week"}).json()
     assert body["period"] == "week"
     assert body["week"] == iso_week_of(datetime.now(timezone.utc))
 
     entry = next(e for e in body["entries"] if e["user_id"] == user)
-    assert entry["points"] == 150
+    assert entry["points"] == 1500
     assert entry["rank"] >= 1
 
     # 응답 형태

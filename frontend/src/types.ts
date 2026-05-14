@@ -8,6 +8,7 @@ export interface UserMe {
   provider: string
   exp: number
   tier: string
+  has_api_key?: boolean
 }
 
 export type ProblemLevel = 'bronze' | 'silver' | 'gold'

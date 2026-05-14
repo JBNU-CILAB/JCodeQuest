@@ -24,7 +24,7 @@ scripts/setup.sh --force-env # 기존 .env를 .env.example로 덮어쓰기
 
 ## Quick Start — 로컬 개발 서버 일괄 기동
 
-`scripts/dev.sh`로 백엔드(:8000) + 출제 엔진(:8001) + 프론트엔드(:5500) 세 프로세스를 한 번에 띄울 수 있다. PID/로그는 `.dev-logs/`에 보관되며 깔끔하게 종료된다.
+`scripts/dev.sh`로 백엔드(:8000) + 출제 엔진(:8001) + 프론트엔드(:5173) 세 프로세스를 한 번에 띄울 수 있다. PID/로그는 `.dev-logs/`에 보관되며 깔끔하게 종료된다.
 
 ```bash
 scripts/dev.sh up        # 기동 + 헬스체크
@@ -40,7 +40,7 @@ scripts/dev.sh down      # 모두 종료
 |--------|------|------|------|
 | backend | 8000 | `/health` | 채점 + 학습용 학생 API. dev-login은 `JCQ_AUTH_ALLOW_DEV_STUB=1`일 때만 |
 | authoring | 8001 | `/api/health` | 원본/변형 조회 + 출제 파이프라인 트리거 |
-| frontend | 5500 | `/index.html` | (테스트)정적 HTML 한 장. 브라우저로 `http://localhost:5500` 접속 |
+| frontend | 5173 | `/index.html` | (테스트)정적 HTML 한 장. 브라우저로 `http://localhost:5173` 접속 |
 
 사전 조건:
 - `backend/.env` — `SESSION_SECRET_KEY`, `JCQ_DB_URL`(절대경로), `OPENAI_API_KEY`, `OLLAMA_BASE_URL`. dev-login으로 채점까지 시연하려면 `JCQ_AUTH_ALLOW_DEV_STUB=1`, `JCQ_COOKIE_INSECURE=1` 추가. 자세히는 `docs/environment.md`.

@@ -25,6 +25,7 @@ export default function App() {
         <Layout>
           <Routes>
             <Route path="/" element={<Landing />} />
+            <Route path="/settings/api-key" element={<Landing />} />
             <Route path="/problems" element={<Problems />} />
             <Route path="/problems/:id" element={<Solver />} />
             <Route path="/submissions/:id" element={<Result />} />
