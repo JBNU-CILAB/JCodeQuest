@@ -8,6 +8,8 @@ from ..storage.models import UserRow
 from ..storage.sessions import get_session_user
 from ..storage.users import get_or_create_user
 
+import jwt
+
 SESSION_COOKIE = "jcq_session"
 _bearer = HTTPBearer(auto_error=False)
 
