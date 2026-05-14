@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { SlideModal } from './SlideModal'
 
 interface Slide {
   title: string
@@ -9,23 +9,29 @@ interface Slide {
 
 const SLIDES: Slide[] = [
   {
-    title: '1. OpenAI 콘솔 접속',
-    description: 'platform.openai.com에 로그인하고 우측 상단 프로필 메뉴를 엽니다.',
+    title: '1. 교내 AI 서비스 이용하기!',
+    description: 'https://gpt.jbnu.ai/에 접속하여 로그인 해주세요!',
     image: '/guide/api-key/step1.png',
   },
   {
-    title: '2. API Keys 메뉴 이동',
-    description: '"View API keys" 항목을 선택해 키 관리 페이지로 이동합니다.',
+    title: '2. API GateWay 클릭!',
+    description: '화면 좌측 하단에 API GateWay를 클릭해주세요!',
     image: '/guide/api-key/step2.png',
   },
   {
-    title: '3. 새 시크릿 키 생성',
-    description: '"Create new secret key" 버튼을 눌러 키를 발급받고 복사합니다.',
+    title: '3. 새 API 키 생성!',
+    description: '"API 키 생성"을 클릭하면 본인의 API 키를 생성해주세요!',
     image: '/guide/api-key/step3.png',
   },
   {
-    title: '4. JCodeQuest에 등록',
-    description: '복사한 키를 입력란에 붙여넣고 저장하면 AI 튜터가 활성화됩니다.',
+    title: '4. 생성된 API 키 복사',
+    description:
+      '복사한 키는 "복사 완료" 버튼을 누른 이후 재확인이 불가하니 반드시 "복사"버튼을 눌러 복사해주시길 바랍니다.',
+    image: '/guide/api-key/step4.png',
+  },
+  {
+    title: '5. J-CodeQueset 튜터에 등록',
+    description: '복사한 API키를 J-CodeQuest 튜터에 등록합니다.',
     image: '/guide/api-key/step4.png',
   },
 ]
@@ -33,137 +39,75 @@ const SLIDES: Slide[] = [
 interface Props {
   open: boolean
   onClose: () => void
+  onSubmit?: (apiKey: string) => Promise<void> | void
 }
 
-export function ApiKeyGuideModal({ open, onClose }: Props) {
-  const [index, setIndex] = useState(0)
-  const total = SLIDES.length
-
-  const goPrev = useCallback(
-    () => setIndex((i) => Math.max(0, i - 1)),
-    [],
-  )
-  const goNext = useCallback(
-    () => setIndex((i) => Math.min(total - 1, i + 1)),
-    [total],
-  )
+export function ApiKeyGuideModal({ open, onClose, onSubmit }: Props) {
+  const [apiKey, setApiKey] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (!open) {
-      setIndex(0)
-      return
+      setApiKey('')
+      setSubmitting(false)
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft') goPrev()
-      else if (e.key === 'ArrowRight') goNext()
+  }, [open])
+
+  const handleSubmit = useCallback(async () => {
+    const trimmed = apiKey.trim()
+    if (!trimmed || submitting) return
+    try {
+      setSubmitting(true)
+      await onSubmit?.(trimmed)
+      setApiKey('')
+      onClose()
+    } finally {
+      setSubmitting(false)
     }
-    document.addEventListener('keydown', onKey)
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prevOverflow
-    }
-  }, [open, onClose, goPrev, goNext])
+  }, [apiKey, submitting, onSubmit, onClose])
 
-  if (!open) return null
+  const slides = SLIDES.map((slide, i) => (
+    <SlidePanel
+      key={i}
+      slide={slide}
+      isApiKeyStep={i === SLIDES.length - 1}
+      apiKey={apiKey}
+      onApiKeyChange={setApiKey}
+      onSubmit={handleSubmit}
+      submitting={submitting}
+    />
+  ))
 
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="api-key-guide-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-[640px] bg-white rounded-2xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-black/10">
-          <h2
-            id="api-key-guide-title"
-            className="text-base font-semibold text-gray-900"
-          >
-            API 키 등록 가이드
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="닫기"
-            className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center text-gray-500 hover:text-gray-900 transition"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Slide track */}
-        <div className="relative">
-          <div className="overflow-hidden">
-            <div
-              className="flex transition-transform duration-300 ease-out"
-              style={{ transform: `translateX(-${index * 100}%)` }}
-            >
-              {SLIDES.map((slide, i) => (
-                <SlidePanel key={i} slide={slide} />
-              ))}
-            </div>
-          </div>
-
-          {/* Prev / Next */}
-          <button
-            type="button"
-            onClick={goPrev}
-            disabled={index === 0}
-            aria-label="이전"
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white border border-black/10 shadow-md text-gray-700 flex items-center justify-center text-2xl leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            onClick={goNext}
-            disabled={index === total - 1}
-            aria-label="다음"
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white border border-black/10 shadow-md text-gray-700 flex items-center justify-center text-2xl leading-none hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
-          >
-            ›
-          </button>
-        </div>
-
-        {/* Footer (dots + counter) */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-black/10 bg-gray-50/50">
-          <div className="flex items-center gap-1.5">
-            {SLIDES.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setIndex(i)}
-                aria-label={`${i + 1}번째 슬라이드로 이동`}
-                className={`h-2 rounded-full transition-all ${
-                  i === index
-                    ? 'w-5 bg-gray-800'
-                    : 'w-2 bg-gray-300 hover:bg-gray-400'
-                }`}
-              />
-            ))}
-          </div>
-          <div className="text-xs text-gray-400 tabular-nums">
-            {index + 1} / {total}
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <SlideModal
+      open={open}
+      onClose={onClose}
+      title="API 키 등록 가이드"
+      slides={slides}
+    />
   )
 }
 
-function SlidePanel({ slide }: { slide: Slide }) {
+interface SlidePanelProps {
+  slide: Slide
+  isApiKeyStep: boolean
+  apiKey: string
+  onApiKeyChange: (value: string) => void
+  onSubmit: () => void
+  submitting: boolean
+}
+
+function SlidePanel({
+  slide,
+  isApiKeyStep,
+  apiKey,
+  onApiKeyChange,
+  onSubmit,
+  submitting,
+}: SlidePanelProps) {
   const [errored, setErrored] = useState(false)
   return (
-    <div className="w-full shrink-0 px-12 py-6">
+    <div className="px-12 py-6">
       <div className="aspect-[16/9] w-full bg-gray-50 border border-black/5 rounded-lg overflow-hidden flex items-center justify-center">
         {errored ? (
           <div className="flex flex-col items-center gap-1 text-gray-400 text-sm">
@@ -185,6 +129,32 @@ function SlidePanel({ slide }: { slide: Slide }) {
           {slide.description}
         </p>
       </div>
+      {isApiKeyStep && (
+        <form
+          className="mt-4 flex items-stretch gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onSubmit()
+          }}
+        >
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => onApiKeyChange(e.target.value)}
+            placeholder="API 키를 붙여넣어 주세요"
+            autoComplete="off"
+            spellCheck={false}
+            className="flex-1 min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-800/30 focus:border-gray-800/40"
+          />
+          <button
+            type="submit"
+            disabled={!apiKey.trim() || submitting}
+            className="shrink-0 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+          >
+            {submitting ? '저장 중…' : '저장'}
+          </button>
+        </form>
+      )}
     </div>
   )
 }

@@ -41,6 +41,11 @@ class UserRow(SQLModel, table=True):
     # 컬럼만 두고 산정 룰은 미정. 추후 bump_user_exp 안에서 같이 갱신할 자리.
     tier: str = Field(default="bronze", index=True)
 
+    # 학내 GPT(gpt.jbnu.ai) API 키 — Supabase Vault에 암호화 저장하고
+    # 여기엔 vault.secrets의 UUID만 보관. 키 자체는 vault.decrypted_secrets로만 조회.
+    # SQLite 테스트에선 vault가 없어 plaintext가 들어가는데, storage.vault가 동일 인터페이스로 흡수.
+    api_key_secret_id: str | None = None
+
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 

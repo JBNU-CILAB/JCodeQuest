@@ -55,6 +55,13 @@ export const apiPost = <T>(path: string, body?: unknown, init?: RequestInit) =>
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
+export const apiPut = <T>(path: string, body?: unknown, init?: RequestInit) =>
+  request<T>(path, {
+    ...init,
+    method: 'PUT',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+
 export interface SseHandlers<T> {
   onMessage: (data: T) => void
   onError?: (err: Event) => void

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { ProfileSetupModal } from './ProfileSetupModal'
 
 const LOGO_FRAMES = Array.from({ length: 8 }, (_, i) => `/logo/image${i + 1}.png`)
 const LOGO_FRAME_MS = 250
@@ -38,12 +39,25 @@ export function Header() {
     avatar_url?: string
     picture?: string
     full_name?: string
+    grade?: number
+    department?: string
+    nickname?: string
+    anonymous?: boolean
   }
   const avatarUrl = metadata.avatar_url ?? metadata.picture
   const displayName = profile?.display_name ?? metadata.full_name ?? session?.user.email ?? ''
   const tier = profile?.tier ?? 'bronze'
   const exp = profile?.exp ?? 0
   const needsApiKey = loggedIn && !profile?.has_api_key
+  const needsProfile =
+    loggedIn &&
+    (!metadata.grade ||
+      !metadata.department ||
+      !metadata.nickname ||
+      typeof metadata.anonymous !== 'boolean')
+  const showBadge = needsApiKey || needsProfile
+
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
 
   return (
     <header className="h-[72px] px-10 flex items-center gap-6 text-black bg-white border-b border-black/10">
@@ -110,9 +124,9 @@ export function Header() {
                 </div>
               )}
 
-              {needsApiKey && (
+              {showBadge && (
                 <span
-                  aria-label="API 키 미등록"
+                  aria-label="설정 필요 알림"
                   className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white animate-pulse pointer-events-none"
                 />
               )}
@@ -136,6 +150,25 @@ export function Header() {
                     </div>
                   </div>
 
+                  {needsProfile && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 border-b border-amber-200 bg-amber-50 text-amber-900">
+                      <span className="text-base leading-none mt-0.5">🪪</span>
+                      <div className="flex flex-col gap-1.5 min-w-0">
+                        <p className="text-[11px] leading-snug">
+                          학년·학과·닉네임을 등록하면<br />
+                          <strong className="font-semibold">랭킹에 정확히 표시</strong>됩니다.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setProfileModalOpen(true)}
+                          className="self-start text-[11px] font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2"
+                        >
+                          프로필 설정하기 →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {needsApiKey && (
                     <div className="flex items-start gap-2 px-3 py-2.5 border-b border-amber-200 bg-amber-50 text-amber-900">
                       <span className="text-base leading-none mt-0.5">⚠️</span>
@@ -155,6 +188,13 @@ export function Header() {
                   )}
 
                   <div className="flex flex-col py-1">
+                    <button
+                      type="button"
+                      onClick={() => setProfileModalOpen(true)}
+                      className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
+                    >
+                      프로필 설정
+                    </button>
                     <a
                       href="#"
                       className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
@@ -174,6 +214,17 @@ export function Header() {
           </div>
         </>
       )}
+
+      <ProfileSetupModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        initial={{
+          grade: metadata.grade,
+          department: metadata.department,
+          nickname: metadata.nickname,
+          anonymous: metadata.anonymous,
+        }}
+      />
     </header>
   )
 }

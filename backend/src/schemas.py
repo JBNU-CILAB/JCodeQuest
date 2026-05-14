@@ -247,6 +247,24 @@ class MeResponse(BaseModel):
     )
     exp: int = Field(description="누적 경험치", examples=[1500])
     tier: str = Field(description="현재 티어 (exp 기반 산출)")
+    has_api_key: bool = Field(
+        default=False,
+        description="본인 학내 GPT API 키 등록 여부. 키 값 자체는 응답에 포함하지 않는다.",
+    )
+
+
+class ApiKeyUpdateRequest(BaseModel):
+    """PUT /me/api-key — 학내 GPT API 키 등록/갱신."""
+
+    api_key: str = Field(
+        min_length=1,
+        max_length=512,
+        description="등록할 API 키 (학내 GPT 게이트웨이 발급)",
+    )
+
+
+class ApiKeyUpdateResponse(BaseModel):
+    has_api_key: bool = Field(description="등록 후 키 보유 여부 — 항상 true")
 
 
 LeaderboardPeriod = Literal["all", "week"]

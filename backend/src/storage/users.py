@@ -1,5 +1,6 @@
 from sqlmodel import Session, select
 
+from . import vault
 from .models import UserRow, _utcnow
 
 
@@ -34,6 +35,40 @@ def get_or_create_user(
     session.commit()
     session.refresh(row)
     return row
+
+
+def set_user_api_key(
+    session: Session, user_id: int, *, api_key: str | None
+) -> UserRow | None:
+    """본인 학내 GPT API 키를 Supabase Vault에 저장하고 UserRow엔 UUID만 박는다.
+    빈 값으로 호출하면 Vault 행을 지우고 UUID도 비운다."""
+    row = session.get(UserRow, user_id)
+    if row is None:
+        return None
+
+    if not api_key:
+        vault.delete_secret(session, row.api_key_secret_id)
+        row.api_key_secret_id = None
+    else:
+        row.api_key_secret_id = vault.store_secret(
+            session,
+            name=f"jcq_user_{user_id}_api_key",
+            value=api_key,
+            existing_id=row.api_key_secret_id,
+        )
+    row.updated_at = _utcnow()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def get_user_api_key(session: Session, user_id: int) -> str | None:
+    """튜터 호출 시 사용. Vault에서 복호화해서 평문 키를 돌려준다."""
+    row = session.get(UserRow, user_id)
+    if row is None:
+        return None
+    return vault.read_secret(session, row.api_key_secret_id)
 
 
 def bump_user_exp(session: Session, user_id: int, *, delta: int) -> None:

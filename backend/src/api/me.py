@@ -1,10 +1,12 @@
 """인증된 본인 프로필 + 본인 제출 이력."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth.deps import get_current_user
 from ..schemas import (
+    ApiKeyUpdateRequest,
+    ApiKeyUpdateResponse,
     EnsembleVerdict,
     MeResponse,
     SubmissionListItem,
@@ -13,6 +15,7 @@ from ..schemas import (
 from ..storage import get_session
 from ..storage.models import UserRow
 from ..storage.submissions import list_user_submissions
+from ..storage.users import set_user_api_key
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -32,7 +35,33 @@ def me(user: UserRow = Depends(get_current_user)) -> MeResponse:
         provider=user.provider,  # type: ignore[arg-type]
         exp=user.exp,
         tier=user.tier,
+        has_api_key=bool(user.api_key_secret_id),
     )
+
+
+@router.put(
+    "/api-key",
+    response_model=ApiKeyUpdateResponse,
+    summary="내 학내 GPT API 키 등록/갱신",
+    description=(
+        "현재 사용자의 학내 GPT(gpt.jbnu.ai) API 키를 저장한다. "
+        "키 값은 응답에 포함되지 않는다."
+    ),
+    responses={401: {"description": "유효한 세션 쿠키/토큰 없음"}},
+)
+def update_my_api_key(
+    payload: ApiKeyUpdateRequest,
+    user: UserRow = Depends(get_current_user),
+) -> ApiKeyUpdateResponse:
+    assert user.id is not None
+    api_key = payload.api_key.strip()
+    if not api_key:
+        raise HTTPException(status_code=422, detail="api_key가 비어 있다")
+    with get_session() as session:
+        updated = set_user_api_key(session, user.id, api_key=api_key)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="user not found")
+    return ApiKeyUpdateResponse(has_api_key=True)
 
 
 def _to_submission_item(row) -> SubmissionListItem:
