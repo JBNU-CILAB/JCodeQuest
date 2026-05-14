@@ -2,19 +2,19 @@
 #
 # 사용:
 #   cp .env.docker.example .env.docker
-#   # .env.docker 채우기
+#   # .env.docker 채우기 (JCQ_DB_URL, SUPABASE_URL, JCQ_INTERNAL_SECRET 등)
 #   docker compose --env-file .env.docker up --build -d
 #
 # 주의:
-#   - frontend/index.html이 BACKEND='http://localhost:8000' / AUTHORING='http://localhost:8001'를
-#     하드코딩하므로, 브라우저가 호스트 머신에서 해당 포트로 접근 가능해야 한다.
-#     (compose에서 host에 8000/8001 노출) — 컨테이너 간 통신은 별도 네트워크로 처리.
-#   - SQLite DB는 backend ↔ authoring이 같은 볼륨을 공유 (judge는 DB 미접근).
+#   - DB는 Supabase PostgreSQL (외부) — JCQ_DB_URL 환경변수로 연결.
+#     backend·authoring 모두 같은 Supabase 프로젝트를 바라보지만,
+#     authoring은 backend HTTP API를 통해 접근하므로 JCQ_DB_URL은 backend만 사용.
+#   - 인증은 Supabase Auth(Google OIDC) — JWT는 backend가 검증, OAuth 흐름은
+#     프런트엔드(@supabase/supabase-js)가 직접 처리.
+#   - frontend는 Vite 빌드 결과를 nginx로 서빙. VITE_* 변수는 빌드 타임에 주입돼야 한다.
 
 x-common-env: &common-env
   PYTHONUNBUFFERED: "1"
-  # DB는 backend만 직접 다룬다 (judge·authoring은 HTTP로 위임).
-  JCQ_DB_URL: "sqlite:////data/jcq.db"
 
 services:
   backend:
@@ -32,18 +32,13 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENAI_BASE_URL: "${OPENAI_BASE_URL:-}"
       OPENAI_MODEL: "${OPENAI_MODEL:-}"
-      # Google OAuth — prod에서는 필수
-      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
-      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
-      GOOGLE_REDIRECT_URI: "${GOOGLE_REDIRECT_URI:-}"
-      JCQ_AUTH_ALLOWED_HD: "${JCQ_AUTH_ALLOWED_HD:-jbnu.ac.kr}"
-      JCQ_FRONTEND_REDIRECT_URL: "${JCQ_FRONTEND_REDIRECT_URL:-http://localhost:5500/}"
-      SESSION_SECRET_KEY: "${SESSION_SECRET_KEY}"
+      # Supabase Auth (JWT 검증) — prod에서는 SUPABASE_URL 필수
+      SUPABASE_URL: "${SUPABASE_URL:-}"
+      SUPABASE_JWT_SECRET: "${SUPABASE_JWT_SECRET:-}"
       # 개발 편의 (prod 금지)
       JCQ_AUTH_ALLOW_DEV_STUB: "${JCQ_AUTH_ALLOW_DEV_STUB:-}"
+      JCQ_COOKIE_INSECURE: "${JCQ_COOKIE_INSECURE:-}"
       JCQ_SUBMIT_COOLDOWN_S: "${JCQ_SUBMIT_COOLDOWN_S:-10}"
-    volumes:
-      - jcq-data:/data
     ports:
       - "8000:8000"
     depends_on:
@@ -71,6 +66,8 @@ services:
       # Ollama (외부 호스트)
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       JCQ_QUEUE_CONCURRENCY: "${JCQ_QUEUE_CONCURRENCY:-1}"
+      # DEV ONLY — 3-LLM 앙상블 스킵 (Ollama 없이 개발할 때). prod 금지.
+      JCQ_SKIP_ENSEMBLE: "${JCQ_SKIP_ENSEMBLE:-}"
       # LangSmith (선택) — judge 전용 키
       LANGSMITH_API_KEY: "${LANGSMITH_API_KEY_JUDGE:-}"
       LANGSMITH_PROJECT: "${LANGSMITH_PROJECT_JUDGE:-jcq-judge}"
@@ -89,9 +86,8 @@ services:
     container_name: jcq-authoring
     restart: unless-stopped
     environment:
-      # DB는 backend만 다루므로 JCQ_DB_URL은 필요 없다 (common-env에서 상속받긴 하지만
-      # authoring은 이 변수를 더 이상 참조하지 않음 — backend_client만 사용).
-      PYTHONUNBUFFERED: "1"
+      <<: *common-env
+      # DB는 backend HTTP API로 위임 — authoring은 JCQ_DB_URL을 직접 참조하지 않음.
       # backend·judge 내부 API
       JCQ_BACKEND_URL: "http://backend:8000"
       JCQ_JUDGE_URL: "http://judge:8002"
@@ -126,14 +122,16 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      # Vite는 빌드 타임에 import.meta.env를 인라인 — build args로 주입.
+      args:
+        VITE_SUPABASE_URL: "${VITE_SUPABASE_URL:-}"
+        VITE_SUPABASE_ANON_KEY: "${VITE_SUPABASE_ANON_KEY:-}"
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:8000}"
     container_name: jcq-frontend
     restart: unless-stopped
     ports:
       - "5173:5173"
     networks: [jcq]
-
-volumes:
-  jcq-data:
 
 networks:
   jcq:

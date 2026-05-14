@@ -26,6 +26,8 @@ COPY backend/ /app/backend/
 
 EXPOSE 8000
 
-# init_db()로 새 DB 부트스트랩(있으면 no-op) → migrate.py로 incremental ALTER 적용 → uvicorn.
-# JCQ_DB_URL은 compose에서 /data/jcq.db (마운트된 볼륨)로 주입.
-CMD ["sh", "-c", "python -c 'from src.storage import init_db; init_db()' && python migrate.py && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"]
+# init_db()로 ORM 기준 테이블을 보장 (idempotent — Supabase에도 안전).
+# migrate.py는 SQLite 한정 ALTER 스크립트이므로 postgres URL이면 스킵.
+COPY backend/docker-entrypoint.sh /usr/local/bin/jcq-entrypoint.sh
+RUN chmod +x /usr/local/bin/jcq-entrypoint.sh
+CMD ["jcq-entrypoint.sh"]

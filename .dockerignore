@@ -8,6 +8,11 @@
 **/.ruff_cache/
 **/.dev-logs/
 
+# Node — Dockerfile이 컨테이너 안에서 npm ci로 새로 받음.
+**/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
 # 비밀 / 로컬 데이터 — 컨테이너로 새지 않게.
 **/.env
 **/.env.local
