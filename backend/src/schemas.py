@@ -259,6 +259,50 @@ class MeResponse(BaseModel):
         default=False,
         description="본인 학내 GPT API 키 등록 여부. 키 값 자체는 응답에 포함하지 않는다.",
     )
+    nickname: str | None = Field(
+        default=None,
+        description="사용자가 직접 설정한 별명. 미설정이면 null.",
+        examples=["민석"],
+    )
+    grade: int | None = Field(
+        default=None,
+        ge=1,
+        le=6,
+        description="학년 (1~6). 미설정이면 null.",
+        examples=[3],
+    )
+    department: str | None = Field(
+        default=None,
+        description="학과/전공. 미설정이면 null.",
+        examples=["컴퓨터공학부"],
+    )
+
+
+class ProfileUpdateRequest(BaseModel):
+    """PATCH /me — 학년/학과/닉네임 부분 갱신.
+    필드를 생략하면 미변경, null을 명시하면 해당 필드를 비운다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nickname: str | None = Field(
+        default=None,
+        max_length=32,
+        description="별명 (최대 32자). null이면 기존 값을 비운다.",
+        examples=["민석"],
+    )
+    grade: int | None = Field(
+        default=None,
+        ge=1,
+        le=6,
+        description="학년 1~6. null이면 기존 값을 비운다.",
+        examples=[3],
+    )
+    department: str | None = Field(
+        default=None,
+        max_length=100,
+        description="학과/전공 (최대 100자). null이면 기존 값을 비운다.",
+        examples=["컴퓨터공학부"],
+    )
 
 
 class ApiKeyUpdateRequest(BaseModel):

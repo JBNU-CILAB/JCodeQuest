@@ -9,15 +9,31 @@ from ..schemas import (
     ApiKeyUpdateResponse,
     EnsembleVerdict,
     MeResponse,
+    ProfileUpdateRequest,
     SubmissionListItem,
     SubmissionListResponse,
 )
 from ..storage import get_session
 from ..storage.models import UserRow
 from ..storage.submissions import list_user_submissions
-from ..storage.users import set_user_api_key
+from ..storage.users import set_user_api_key, update_user_profile
 
 router = APIRouter(prefix="/me", tags=["me"])
+
+
+def _to_me_response(user: UserRow) -> MeResponse:
+    return MeResponse(
+        id=user.id,  # type: ignore[arg-type]
+        display_name=user.display_name,
+        email=user.email,
+        provider=user.provider,  # type: ignore[arg-type]
+        exp=user.exp,
+        tier=user.tier,
+        has_api_key=bool(user.api_key_secret_id),
+        nickname=user.nickname,
+        grade=user.grade,
+        department=user.department,
+    )
 
 
 @router.get(
@@ -28,15 +44,39 @@ router = APIRouter(prefix="/me", tags=["me"])
     responses={401: {"description": "유효한 세션 쿠키 없음"}},
 )
 def me(user: UserRow = Depends(get_current_user)) -> MeResponse:
-    return MeResponse(
-        id=user.id,  # type: ignore[arg-type]
-        display_name=user.display_name,
-        email=user.email,
-        provider=user.provider,  # type: ignore[arg-type]
-        exp=user.exp,
-        tier=user.tier,
-        has_api_key=bool(user.api_key_secret_id),
-    )
+    return _to_me_response(user)
+
+
+@router.patch(
+    "",
+    response_model=MeResponse,
+    summary="내 프로필 수정 (학년/학과/닉네임)",
+    description=(
+        "학년, 학과, 닉네임을 부분 갱신한다. 본문에서 생략한 필드는 미변경, "
+        "null을 명시하면 해당 필드를 비운다."
+    ),
+    responses={
+        401: {"description": "유효한 세션 쿠키/토큰 없음"},
+        404: {"description": "user not found"},
+    },
+)
+def update_my_profile(
+    payload: ProfileUpdateRequest,
+    user: UserRow = Depends(get_current_user),
+) -> MeResponse:
+    assert user.id is not None
+    # exclude_unset: 본문에서 생략된 필드는 dict에 없음 → 그 필드는 미변경.
+    # null로 명시된 필드는 None 값으로 들어옴 → 해당 컬럼을 비운다.
+    fields = payload.model_dump(exclude_unset=True)
+    if isinstance(fields.get("nickname"), str):
+        fields["nickname"] = fields["nickname"].strip() or None
+    if isinstance(fields.get("department"), str):
+        fields["department"] = fields["department"].strip() or None
+    with get_session() as session:
+        updated = update_user_profile(session, user.id, **fields)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="user not found")
+    return _to_me_response(updated)
 
 
 @router.put(

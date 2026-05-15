@@ -37,6 +37,37 @@ def get_or_create_user(
     return row
 
 
+_UNSET: object = object()
+
+
+def update_user_profile(
+    session: Session,
+    user_id: int,
+    *,
+    nickname: str | None | object = _UNSET,
+    grade: int | None | object = _UNSET,
+    department: str | None | object = _UNSET,
+) -> UserRow | None:
+    """학년/학과/닉네임을 부분 갱신. 인자 미전달(_UNSET)이면 그 필드는 안 건드림.
+    None을 명시적으로 넘기면 해당 필드를 NULL로 비운다."""
+    row = session.get(UserRow, user_id)
+    if row is None:
+        return None
+
+    if nickname is not _UNSET:
+        row.nickname = nickname  # type: ignore[assignment]
+    if grade is not _UNSET:
+        row.grade = grade  # type: ignore[assignment]
+    if department is not _UNSET:
+        row.department = department  # type: ignore[assignment]
+
+    row.updated_at = _utcnow()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
 def set_user_api_key(
     session: Session, user_id: int, *, api_key: str | None
 ) -> UserRow | None:

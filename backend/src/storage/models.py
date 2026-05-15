@@ -35,6 +35,12 @@ class UserRow(SQLModel, table=True):
     external_id: str = Field(index=True)
     email: str | None = None
 
+    # 사용자 커스터마이즈 필드 — OAuth 가입 직후엔 모두 NULL, /me PATCH로 채움.
+    # nickname은 display_name(IdP 제공)과 별개의 표시 별명.
+    nickname: str | None = None
+    grade: int | None = None        # 학년 (1~6)
+    department: str | None = None   # 학과/전공
+
     # 게임 상태 — 누적 AC points (효율성 multiplier 적용된 값의 합).
     # save_grading에서 첫 AC 시점에만 가산 → SubmissionRow 풀스캔 없이 리더보드 정렬 가능.
     exp: int = Field(default=0, index=True)
