@@ -34,11 +34,20 @@ from ..schemas import (
     AuthoringProblemSummary,
     AuthoringTestCase,
     GradeEvent,
+    Notice,
+    NoticeCreateRequest,
+    NoticeUpdateRequest,
     ProblemDeleteCascade,
     ProblemDeleteResponse,
 )
 from ..storage import get_session
-from ..storage.models import ProblemRow, SubmissionRow, UserRow, iso_week_of
+from ..storage.models import NoticeRow, ProblemRow, SubmissionRow, UserRow, iso_week_of
+from ..storage.notices import (
+    create_notice,
+    delete_notice,
+    list_notices,
+    update_notice,
+)
 from ..storage.problems import create_problem, delete_problem
 
 log = logging.getLogger(__name__)
@@ -357,3 +366,89 @@ def get_submission_admin(
             votes=s.votes,
             test_results=s.test_results,
         )
+
+
+# ── notices ──────────────────────────────────────────────────────────────
+def _notice_to_dto(row: NoticeRow) -> Notice:
+    assert row.id is not None
+    return Notice(
+        id=row.id,
+        title=row.title,
+        body=row.body,
+        pinned=row.pinned,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@router.get(
+    "/notices",
+    response_model=list[Notice],
+    summary="공지 목록 (admin)",
+)
+def list_notices_admin(
+    authorization: Annotated[str | None, Header()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> list[Notice]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        return [_notice_to_dto(r) for r in list_notices(session, limit=limit)]
+
+
+@router.post(
+    "/notices",
+    response_model=Notice,
+    summary="공지 등록 (admin)",
+)
+def create_notice_admin(
+    req: NoticeCreateRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> Notice:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = create_notice(
+            session, title=req.title, body=req.body, pinned=req.pinned
+        )
+    return _notice_to_dto(row)
+
+
+@router.patch(
+    "/notices/{notice_id}",
+    response_model=Notice,
+    summary="공지 수정 (admin)",
+    responses={404: {"description": "공지 없음"}},
+)
+def update_notice_admin(
+    notice_id: Annotated[int, Path()],
+    req: NoticeUpdateRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> Notice:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = update_notice(
+            session,
+            notice_id,
+            title=req.title,
+            body=req.body,
+            pinned=req.pinned,
+        )
+    if row is None:
+        raise HTTPException(404, f"notice {notice_id} not found")
+    return _notice_to_dto(row)
+
+
+@router.delete(
+    "/notices/{notice_id}",
+    summary="공지 삭제 (admin)",
+    responses={404: {"description": "공지 없음"}},
+)
+def delete_notice_admin(
+    notice_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, int]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        ok = delete_notice(session, notice_id)
+    if not ok:
+        raise HTTPException(404, f"notice {notice_id} not found")
+    return {"id": notice_id}

@@ -488,6 +488,9 @@
         <a href="#/submissions" data-route="submissions">
           <span>풀이 기록</span>
         </a>
+        <a href="#/notices" data-route="notices">
+          <span>공지</span>
+        </a>
         <a class="disabled" title="추후 추가">
           <span>사용자</span>
           <span class="hint">준비 중</span>
@@ -774,6 +777,58 @@
       <div id="sub-detail" class="detail-card hidden"></div>
     </section>
 
+    <!-- ── View: 공지 ────────────────────────────────────────────── -->
+    <section id="view-notices" class="hidden">
+      <h2 class="section-title">공지</h2>
+      <p class="section-desc">유저에게 노출되는 공지를 작성/수정/삭제한다. 백엔드 `/notices`로 누구나 읽을 수 있다.</p>
+
+      <section class="card">
+        <h3 id="notice-form-title">새 공지 작성</h3>
+        <form id="notice-form">
+          <input type="hidden" id="notice-id" />
+          <div class="field">
+            <label>제목</label>
+            <input id="notice-title" required maxlength="200" placeholder="예: 5월 2주차 출제 안내" />
+          </div>
+          <div class="field">
+            <label>본문</label>
+            <textarea id="notice-body" required maxlength="20000" placeholder="공지 내용..."></textarea>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="notice-pinned" />
+            <label style="margin:0">상단 고정 (pinned)</label>
+          </div>
+          <div class="actions-row">
+            <button type="button" id="btn-notice-reset">초기화</button>
+            <button type="submit" class="primary" id="btn-notice-submit">등록</button>
+          </div>
+        </form>
+        <pre id="notice-output" class="output-panel"></pre>
+      </section>
+
+      <section class="card">
+        <div class="actions-row" style="margin-top: 0">
+          <strong style="margin-right:auto;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">공지 목록</strong>
+          <button type="button" id="btn-notice-reload">새로고침</button>
+        </div>
+        <table class="data" style="margin-top: 8px">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>제목</th>
+              <th>고정</th>
+              <th>생성</th>
+              <th>수정</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="notices-tbody">
+            <tr><td colspan="6" class="empty">목록을 불러오는 중...</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+
   </main>
 
 </div>
@@ -825,7 +880,7 @@ async function pingHealth() {
 }
 
 // ── 라우팅 ─────────────────────────────────────────────────────
-const VIEWS = { problems: "view-problems", submissions: "view-submissions" };
+const VIEWS = { problems: "view-problems", submissions: "view-submissions", notices: "view-notices" };
 function applyRoute() {
   const hash = location.hash || "#/problems";
   const route = (hash.match(/^#\/(\w+)/) || [])[1] || "problems";
@@ -841,6 +896,11 @@ function applyRoute() {
   if (route === "submissions" && !window._subsLoaded) {
     window._subsLoaded = true;
     loadSubmissions();
+  }
+  // 공지로 들어오면 자동 첫 조회
+  if (route === "notices" && !window._noticesLoaded) {
+    window._noticesLoaded = true;
+    loadNotices();
   }
 }
 window.addEventListener("hashchange", applyRoute);
@@ -1352,6 +1412,129 @@ $("#btn-sub-next").addEventListener("click", () => {
   _subOffset += _subLimit;
   loadSubmissions(false);
 });
+
+// ── 공지 (notices) ──────────────────────────────────────────────
+function resetNoticeForm() {
+  $("#notice-id").value = "";
+  $("#notice-title").value = "";
+  $("#notice-body").value = "";
+  $("#notice-pinned").checked = false;
+  $("#notice-form-title").textContent = "새 공지 작성";
+  $("#btn-notice-submit").textContent = "등록";
+  $("#notice-output").classList.remove("show");
+}
+
+async function loadNotices() {
+  const tbody = $("#notices-tbody");
+  tbody.innerHTML = `<tr><td colspan="6" class="empty">불러오는 중...</td></tr>`;
+  try {
+    const r = await adminFetch("/api/notices?limit=200");
+    if (!r.ok) {
+      const body = await r.text();
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">[${r.status}] ${escapeHtml(body.slice(0, 200))}</td></tr>`;
+      return;
+    }
+    const rows = await r.json();
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">등록된 공지가 없습니다</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = "";
+    for (const n of rows) {
+      const tr = document.createElement("tr");
+      const created = n.created_at ? n.created_at.replace("T", " ").slice(0, 19) : "—";
+      const updated = n.updated_at ? n.updated_at.replace("T", " ").slice(0, 19) : "—";
+      tr.innerHTML = `
+        <td class="num">${n.id}</td>
+        <td>${escapeHtml(n.title)}</td>
+        <td>${n.pinned ? "📌" : ""}</td>
+        <td>${created}</td>
+        <td>${updated}</td>
+        <td class="actions">
+          <button class="sm" data-action="edit">수정</button>
+          <button class="danger sm" data-action="delete">삭제</button>
+        </td>
+      `;
+      tr.querySelector('[data-action="edit"]').addEventListener("click", () => editNotice(n));
+      tr.querySelector('[data-action="delete"]').addEventListener("click", () => deleteNotice(n.id, n.title));
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function editNotice(n) {
+  $("#notice-id").value = n.id;
+  $("#notice-title").value = n.title;
+  $("#notice-body").value = n.body;
+  $("#notice-pinned").checked = !!n.pinned;
+  $("#notice-form-title").textContent = `공지 #${n.id} 수정`;
+  $("#btn-notice-submit").textContent = "수정 저장";
+  $("#notice-output").classList.remove("show");
+  $("#notice-title").focus();
+}
+
+async function deleteNotice(nid, title) {
+  if (!confirm(`공지 #${nid} "${title}"을(를) 삭제할까요?`)) return;
+  const out = $("#notice-output");
+  out.textContent = `DELETE /api/notices/${nid} ...`;
+  out.className = "output-panel show";
+  try {
+    const r = await adminFetch(`/api/notices/${nid}`, { method: "DELETE" });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) {
+      out.className = "output-panel show ok";
+      out.textContent = `✓ 삭제 완료 — id=${nid}`;
+      // 수정 중이던 게 지워졌다면 폼 비우기
+      if (String($("#notice-id").value) === String(nid)) resetNoticeForm();
+      loadNotices();
+    } else {
+      out.className = "output-panel show err";
+      out.textContent = `[${r.status}] ${JSON.stringify(body, null, 2)}`;
+    }
+  } catch (err) {
+    out.className = "output-panel show err";
+    out.textContent = `네트워크 오류: ${err.message}`;
+  }
+}
+
+async function submitNotice(e) {
+  e.preventDefault();
+  const id = $("#notice-id").value.trim();
+  const payload = {
+    title: $("#notice-title").value.trim(),
+    body: $("#notice-body").value,
+    pinned: $("#notice-pinned").checked,
+  };
+  if (!payload.title || !payload.body) {
+    showOutput("#notice-output", "err", "제목과 본문은 필수입니다");
+    return;
+  }
+  $("#btn-notice-submit").disabled = true;
+  showOutput("#notice-output", "ok", id ? "수정 중..." : "등록 중...");
+  try {
+    const path = id ? `/api/notices/${id}` : "/api/notices";
+    const method = id ? "PATCH" : "POST";
+    const r = await adminFetch(path, { method, body: JSON.stringify(payload) });
+    const body = await r.text();
+    let pretty = body;
+    try { pretty = JSON.stringify(JSON.parse(body), null, 2); } catch {}
+    showOutput("#notice-output", r.ok ? "ok" : "err", `[${r.status}] ${r.ok ? "성공" : "실패"}\n\n${pretty}`);
+    if (r.ok) {
+      resetNoticeForm();
+      loadNotices();
+    }
+  } catch (err) {
+    showOutput("#notice-output", "err", `네트워크 오류: ${err.message}`);
+  } finally {
+    $("#btn-notice-submit").disabled = false;
+  }
+}
+
+$("#notice-form").addEventListener("submit", submitNotice);
+$("#btn-notice-reset").addEventListener("click", resetNoticeForm);
+$("#btn-notice-reload").addEventListener("click", loadNotices);
 
 // ── 초기화 ─────────────────────────────────────────────────────
 loadConn();

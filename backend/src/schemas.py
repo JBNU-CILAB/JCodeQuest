@@ -322,3 +322,25 @@ class TutorHistoryResponse(BaseModel):
     messages: list[TutorHistoryItem] = Field(
         description="생성 시각 오름차순"
     )
+
+
+# ── Notices ──────────────────────────────────────────────────────────────
+class Notice(BaseModel):
+    id: int
+    title: str
+    body: str
+    pinned: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class NoticeCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=20_000)
+    pinned: bool = False
+
+
+class NoticeUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    body: str | None = Field(default=None, min_length=1, max_length=20_000)
+    pinned: bool | None = None

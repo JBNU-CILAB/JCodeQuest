@@ -137,3 +137,17 @@ class TutorMessageRow(SQLModel, table=True):
     submission_id: int = Field(foreign_key="submission.id", index=True)
     message: str
     created_at: datetime = Field(default_factory=_utcnow)
+
+
+class NoticeRow(SQLModel, table=True):
+    """운영자 공지. 공개 read는 누구나, write/delete는 admin 토큰 보유자만."""
+
+    __tablename__ = "notice"
+
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    body: str
+    # 상단 고정 여부 — true면 created_at 무관하게 위에 노출.
+    pinned: bool = Field(default=False, index=True)
+    created_at: datetime = Field(default_factory=_utcnow, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow)

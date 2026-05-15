@@ -157,6 +157,41 @@ def get_submission(submission_id: int) -> AdminSubmissionDetail:
         return AdminSubmissionDetail.model_validate(r.json())
 
 
+# ── backend (/internal/notices) ──────────────────────────────────────────
+def list_notices(*, limit: int = 100) -> list[dict]:
+    with _client() as cli:
+        r = cli.get(
+            f"{_backend_url()}/internal/notices",
+            params={"limit": limit},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+def create_notice(payload: dict) -> dict:
+    with _client() as cli:
+        r = cli.post(f"{_backend_url()}/internal/notices", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+
+def update_notice(notice_id: int, payload: dict) -> dict:
+    with _client() as cli:
+        r = cli.patch(
+            f"{_backend_url()}/internal/notices/{notice_id}",
+            json=payload,
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+def delete_notice(notice_id: int) -> dict:
+    with _client() as cli:
+        r = cli.delete(f"{_backend_url()}/internal/notices/{notice_id}")
+        r.raise_for_status()
+        return r.json()
+
+
 # ── judge_engine (/api/sandbox/run) ──────────────────────────────────────
 def sandbox_run(
     code: str,
