@@ -13,8 +13,9 @@
 #     프런트엔드(@supabase/supabase-js)가 직접 처리.
 #   - frontend는 Vite 빌드 결과를 nginx로 서빙. VITE_* 변수는 빌드 타임에 주입돼야 한다.
 #   - admin dashboard는 단일 정적 HTML을 nginx로 :6010에 서빙. 브라우저가 host로
-#     매핑된 authoring(:8001)으로 직접 호출하므로 authoring의 JCQ_DASHBOARD_ORIGIN과
-#     이 대시보드 origin을 일치시켜야 CORS preflight가 통과한다.
+#     매핑된 authoring(:8001)과 judge(:8002)에 직접 호출하므로 두 서비스의
+#     JCQ_DASHBOARD_ORIGIN과 이 대시보드 origin을 일치시켜야 CORS preflight가 통과한다.
+#     /api/submissions* 는 judge_engine 담당 — authoring은 문제/공지/runs만 처리.
 
 x-common-env: &common-env
   PYTHONUNBUFFERED: "1"
@@ -76,6 +77,13 @@ services:
       # LangSmith (선택) — judge 전용 키
       LANGSMITH_API_KEY: "${LANGSMITH_API_KEY_JUDGE:-}"
       LANGSMITH_PROJECT: "${LANGSMITH_PROJECT_JUDGE:-jcq-judge}"
+      # Admin 대시보드 — /api/submissions* 가 judge로 옮겨왔으므로 authoring과 동일하게
+      # Bearer 토큰 + CORS origin이 필요. 토큰은 authoring과 같은 값.
+      JCQ_ADMIN_TOKEN: "${JCQ_ADMIN_TOKEN}"
+      JCQ_DASHBOARD_ORIGIN: "${JCQ_DASHBOARD_ORIGIN:-http://localhost:6010}"
+    ports:
+      # 대시보드가 브라우저에서 직접 호출 — 호스트로 노출 필요.
+      - "8002:8002"
     networks: [jcq]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/api/health"]

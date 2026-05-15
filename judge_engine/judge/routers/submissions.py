@@ -1,4 +1,7 @@
-"""제출(풀이 기록) 조회 라우터 — backend /internal/submissions 위임."""
+"""제출(풀이 기록) 조회 라우터 — backend /internal/submissions 위임.
+
+채점 결과를 admin_dashboard에 노출하는 엔드포인트. authoring_engine에서 옮겨옴.
+"""
 from __future__ import annotations
 
 from typing import Annotated

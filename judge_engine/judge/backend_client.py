@@ -1,0 +1,64 @@
+"""backend ↔ judge_engine 내부 API 클라이언트 (submissions 조회 전용).
+
+backend의 `/internal/*` 라우트는 `Authorization: Bearer <JCQ_INTERNAL_SECRET>`로
+인증한다. DB 접근은 전부 backend가 담당 — judge_engine은 HTTP로만 통신.
+"""
+from __future__ import annotations
+
+import logging
+import os
+
+import httpx
+from jcq_shared.schemas import AdminSubmissionDetail, AdminSubmissionSummary
+
+log = logging.getLogger(__name__)
+
+_DEFAULT_TIMEOUT_S = 30.0
+
+
+def _backend_url() -> str:
+    return os.getenv("JCQ_BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+
+
+def _auth_headers() -> dict[str, str]:
+    secret = os.getenv("JCQ_INTERNAL_SECRET", "")
+    if not secret:
+        log.warning(
+            "JCQ_INTERNAL_SECRET 미설정 — backend가 503으로 거부할 것입니다"
+        )
+    return {"Authorization": f"Bearer {secret}"}
+
+
+def _client(timeout_s: float = _DEFAULT_TIMEOUT_S) -> httpx.Client:
+    return httpx.Client(timeout=httpx.Timeout(timeout_s), headers=_auth_headers())
+
+
+def list_submissions(
+    *,
+    user_id: int | None = None,
+    problem_id: int | None = None,
+    verdict: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[AdminSubmissionSummary]:
+    params: dict[str, str | int] = {"limit": limit, "offset": offset}
+    if user_id is not None:
+        params["user_id"] = user_id
+    if problem_id is not None:
+        params["problem_id"] = problem_id
+    if verdict is not None:
+        params["verdict"] = verdict
+    if status is not None:
+        params["status"] = status
+    with _client() as cli:
+        r = cli.get(f"{_backend_url()}/internal/submissions", params=params)
+        r.raise_for_status()
+        return [AdminSubmissionSummary.model_validate(x) for x in r.json()]
+
+
+def get_submission(submission_id: int) -> AdminSubmissionDetail:
+    with _client() as cli:
+        r = cli.get(f"{_backend_url()}/internal/submissions/{submission_id}")
+        r.raise_for_status()
+        return AdminSubmissionDetail.model_validate(r.json())

@@ -1,9 +1,11 @@
-"""채점 엔진 FastAPI 서버 — 큐잉 + webhook 채점 서비스.
+"""채점 엔진 FastAPI 서버 — 큐잉 + webhook 채점 + 제출 조회 서비스.
 
 엔드포인트:
   POST /api/grade        {submission_id, problem, code} 를 내부 큐에 적재, 즉시 202 반환.
                          워커가 처리 후 backend의 /internal/grade-events 로 결과를 push.
   POST /api/sandbox/run  1회성 동기 sandbox 실행 (authoring_engine의 verify/solver 용).
+  GET  /api/submissions  채점 결과 목록 (admin_dashboard 노출 — Bearer admin 토큰 필요).
+  GET  /api/submissions/{id}  채점 결과 상세 (코드/votes/test_results 포함).
   GET  /api/health       liveness probe
 
 채점 라이프사이클 (backend가 받게 되는 webhook 순서):
@@ -33,10 +35,12 @@ if os.getenv("LANGSMITH_API_KEY"):
     os.environ.setdefault("LANGCHAIN_PROJECT", os.getenv("LANGSMITH_PROJECT", "jcq-judge"))
 
 from fastapi import FastAPI, Header, HTTPException, Request, status as http_status
+from fastapi.middleware.cors import CORSMiddleware
 from jcq_shared.schemas import ExecResult, GradeSubmitRequest, SandboxRunRequest
 
 from .jobs import grade_job
 from .queue import JobQueue
+from .routers import submissions as submissions_router
 from .sandbox import run_user_code
 
 log = logging.getLogger(__name__)
@@ -54,6 +58,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="JCodeQuest Judge Engine", lifespan=lifespan)
+
+
+# CORS — admin_dashboard origin은 환경변수로 주입. 미설정이면 동일 origin만 허용.
+_origins = [o.strip() for o in os.getenv("JCQ_DASHBOARD_ORIGIN", "").split(",") if o.strip()]
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+app.include_router(submissions_router.router)
 
 
 @app.get(

@@ -519,9 +519,14 @@
           <div class="hint">authoring_engine 서버의 루트. 기본은 dev.sh가 띄우는 :8001.</div>
         </div>
         <div class="field">
+          <label>Judge base URL</label>
+          <input id="judge-url" type="text" placeholder="http://localhost:8002" />
+          <div class="hint">judge_engine 서버의 루트. /api/submissions* 가 여기로 간다.</div>
+        </div>
+        <div class="field">
           <label>Admin token (JCQ_ADMIN_TOKEN)</label>
-          <input id="admin-token" type="password" placeholder="authoring_engine/.env 의 값" />
-          <div class="hint">/api/health 외 모든 라우트가 이 Bearer 토큰을 요구.</div>
+          <input id="admin-token" type="password" placeholder="authoring/judge 공통 토큰" />
+          <div class="hint">authoring/judge 양쪽이 같은 Bearer 토큰을 검사한다.</div>
         </div>
       </div>
       <div class="actions-row">
@@ -843,14 +848,17 @@ function loadConn() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     $("#base-url").value = saved.baseUrl || "http://localhost:8001";
+    $("#judge-url").value = saved.judgeUrl || "http://localhost:8002";
     $("#admin-token").value = saved.token || "";
   } catch {
     $("#base-url").value = "http://localhost:8001";
+    $("#judge-url").value = "http://localhost:8002";
   }
 }
 function saveConn() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     baseUrl: $("#base-url").value.trim().replace(/\/$/, ""),
+    judgeUrl: $("#judge-url").value.trim().replace(/\/$/, ""),
     token: $("#admin-token").value,
   }));
   setBadge("idle", "저장됨");
@@ -859,6 +867,7 @@ function saveConn() {
 function getConn() {
   return {
     baseUrl: $("#base-url").value.trim().replace(/\/$/, ""),
+    judgeUrl: $("#judge-url").value.trim().replace(/\/$/, ""),
     token: $("#admin-token").value,
   };
 }
@@ -934,6 +943,23 @@ async function adminFetch(path, init = {}) {
   );
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const r = await fetch(baseUrl + path, { ...init, headers });
+  return r;
+}
+
+// ── 공통: judge fetch (제출/채점 결과 — judge_engine 호출) ────
+async function judgeFetch(path, init = {}) {
+  const { judgeUrl, token } = getConn();
+  if (!judgeUrl || !token) {
+    const err = new Error("Judge URL/토큰 설정이 비어있음 (⚙ 설정에서 입력)");
+    err.code = "NO_CONN";
+    throw err;
+  }
+  const headers = Object.assign(
+    { "Authorization": `Bearer ${token}` },
+    init.headers || {},
+  );
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const r = await fetch(judgeUrl + path, { ...init, headers });
   return r;
 }
 
@@ -1314,7 +1340,7 @@ async function loadSubmissions(resetOffset = true) {
 
   tbody.innerHTML = `<tr><td colspan="8" class="empty">불러오는 중...</td></tr>`;
   try {
-    const r = await adminFetch(`/api/submissions?${qs}`);
+    const r = await judgeFetch(`/api/submissions?${qs}`);
     if (!r.ok) {
       const body = await r.text();
       tbody.innerHTML = `<tr><td colspan="8" class="empty">[${r.status}] ${escapeHtml(body.slice(0, 200))}</td></tr>`;
@@ -1361,7 +1387,7 @@ async function showSubmissionDetail(sid) {
   $("#btn-close-detail").addEventListener("click", () => card.classList.add("hidden"));
 
   try {
-    const r = await adminFetch(`/api/submissions/${sid}`);
+    const r = await judgeFetch(`/api/submissions/${sid}`);
     if (!r.ok) {
       const body = await r.text();
       card.innerHTML += `<div class="json-block">[${r.status}] ${escapeHtml(body.slice(0, 400))}</div>`;

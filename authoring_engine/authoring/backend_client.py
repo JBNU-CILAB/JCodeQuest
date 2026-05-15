@@ -10,8 +10,6 @@ import os
 
 import httpx
 from jcq_shared.schemas import (
-    AdminSubmissionDetail,
-    AdminSubmissionSummary,
     AuthoringProblemAdmin,
     AuthoringProblemCreate,
     AuthoringProblemCreateResponse,
@@ -123,38 +121,6 @@ def delete_problem(
         )
         r.raise_for_status()
         return ProblemDeleteResponse.model_validate(r.json())
-
-
-# ── backend (/internal/submissions) ──────────────────────────────────────
-def list_submissions(
-    *,
-    user_id: int | None = None,
-    problem_id: int | None = None,
-    verdict: str | None = None,
-    status: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> list[AdminSubmissionSummary]:
-    params: dict[str, str | int] = {"limit": limit, "offset": offset}
-    if user_id is not None:
-        params["user_id"] = user_id
-    if problem_id is not None:
-        params["problem_id"] = problem_id
-    if verdict is not None:
-        params["verdict"] = verdict
-    if status is not None:
-        params["status"] = status
-    with _client() as cli:
-        r = cli.get(f"{_backend_url()}/internal/submissions", params=params)
-        r.raise_for_status()
-        return [AdminSubmissionSummary.model_validate(x) for x in r.json()]
-
-
-def get_submission(submission_id: int) -> AdminSubmissionDetail:
-    with _client() as cli:
-        r = cli.get(f"{_backend_url()}/internal/submissions/{submission_id}")
-        r.raise_for_status()
-        return AdminSubmissionDetail.model_validate(r.json())
 
 
 # ── backend (/internal/notices) ──────────────────────────────────────────
