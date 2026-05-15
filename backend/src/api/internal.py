@@ -39,6 +39,11 @@ from ..schemas import (
     NoticeUpdateRequest,
     ProblemDeleteCascade,
     ProblemDeleteResponse,
+    StatsJudgeBucket,
+    StatsJudgeBucketEntry,
+    StatsJudgeResponse,
+    StatsVerdictBucket,
+    StatsVerdictResponse,
 )
 from ..storage import get_session
 from ..storage.models import NoticeRow, ProblemRow, SubmissionRow, UserRow, iso_week_of
@@ -366,6 +371,248 @@ def get_submission_admin(
             votes=s.votes,
             test_results=s.test_results,
         )
+
+
+# ── stats (admin_dashboard 그래프용) ──────────────────────────────────
+# 시계열은 Python 측에서 bucket key 계산 + zero-fill해서 응답한다.
+# 이유: SQLite(테스트)와 PostgreSQL(운영)에서 date_trunc/strftime이 갈리는데,
+# 우리 submissions 볼륨(목표: 수십만 행 미만)에선 raw fetch + Python aggregation이
+# 충분히 빠르고 dialect 분기가 사라진다. 무거워지면 SQL aggregation으로 이동.
+
+_VERDICT_RANGE_CAPS_DAYS = {"hour": 14, "day": 180, "week": 730}
+
+
+def _bucket_key(dt: datetime, bucket: str) -> str:
+    if bucket == "hour":
+        return dt.strftime("%Y-%m-%dT%H:00Z")
+    if bucket == "day":
+        return dt.strftime("%Y-%m-%d")
+    if bucket == "week":
+        y, w, _ = dt.isocalendar()
+        return f"{y}-W{w:02d}"
+    raise ValueError(f"invalid bucket: {bucket}")
+
+
+def _iter_bucket_keys(since: datetime, until: datetime, bucket: str) -> list[str]:
+    """[since, until] 구간을 bucket 단위로 끊어 키 시퀀스 생성 (zero-fill용)."""
+    from datetime import timedelta
+
+    keys: list[str] = []
+    seen: set[str] = set()
+    if bucket == "hour":
+        step = timedelta(hours=1)
+        cur = since.replace(minute=0, second=0, microsecond=0)
+    elif bucket == "day":
+        step = timedelta(days=1)
+        cur = since.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif bucket == "week":
+        step = timedelta(days=1)  # 일 단위로 진행하며 key dedup
+        cur = since.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        raise ValueError(f"invalid bucket: {bucket}")
+
+    while cur <= until:
+        k = _bucket_key(cur, bucket)
+        if k not in seen:
+            keys.append(k)
+            seen.add(k)
+        cur = cur + step
+    return keys
+
+
+def _parse_range(
+    since: datetime | None, until: datetime | None, bucket: str
+) -> tuple[datetime, datetime]:
+    """query param 정규화 — naïve를 UTC로 보고, 기본 범위 = 최근 14일."""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    if until is None:
+        until = now
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    if since is None:
+        since = until - timedelta(days=14)
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    if since > until:
+        raise HTTPException(400, "since > until")
+    cap_days = _VERDICT_RANGE_CAPS_DAYS.get(bucket, 30)
+    span_days = (until - since).total_seconds() / 86400
+    if span_days > cap_days:
+        raise HTTPException(
+            400,
+            f"range too wide: {span_days:.1f}d > cap {cap_days}d for bucket={bucket}",
+        )
+    return since, until
+
+
+@router.get(
+    "/stats/verdicts",
+    response_model=StatsVerdictResponse,
+    summary="시계열 판정 카운트 (A — admin 그래프용)",
+    description=(
+        "버킷별로 AC / SUS / failed / pending(queued+running) / total을 집계한다. "
+        "기본 범위는 최근 14일, until=now (UTC). zero-fill되어 series 길이는 "
+        "bucket 단위의 [since, until] 길이와 동일."
+    ),
+)
+def stats_verdicts(
+    authorization: Annotated[str | None, Header()] = None,
+    bucket: Annotated[str, Query(pattern="^(hour|day|week)$")] = "day",
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    problem_id: Annotated[int | None, Query()] = None,
+    user_id: Annotated[int | None, Query()] = None,
+) -> StatsVerdictResponse:
+    _require_internal_auth(authorization)
+    since_dt, until_dt = _parse_range(since, until, bucket)
+
+    with get_session() as session:
+        stmt = (
+            select(
+                SubmissionRow.created_at,
+                SubmissionRow.final_verdict,
+                SubmissionRow.status,
+            )
+            .where(SubmissionRow.created_at >= since_dt)
+            .where(SubmissionRow.created_at <= until_dt)
+        )
+        if problem_id is not None:
+            stmt = stmt.where(SubmissionRow.problem_id == problem_id)
+        if user_id is not None:
+            stmt = stmt.where(SubmissionRow.user_id == user_id)
+        rows = list(session.exec(stmt).all())
+
+    buckets: dict[str, StatsVerdictBucket] = {
+        k: StatsVerdictBucket(bucket=k)
+        for k in _iter_bucket_keys(since_dt, until_dt, bucket)
+    }
+    for created_at, verdict, status_ in rows:
+        if created_at is None:
+            continue
+        # SQLite는 naïve datetime을 돌려준다 — UTC로 가정.
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        key = _bucket_key(created_at, bucket)
+        b = buckets.get(key)
+        if b is None:
+            # 범위 밖 (clock skew 등) — 생성해 추가.
+            b = StatsVerdictBucket(bucket=key)
+            buckets[key] = b
+        b.total += 1
+        if status_ == "failed":
+            b.failed += 1
+        elif status_ in ("queued", "running"):
+            b.pending += 1
+        elif verdict == "AC":
+            b.ac += 1
+        elif verdict == "SUS":
+            b.sus += 1
+
+    series = sorted(buckets.values(), key=lambda x: x.bucket)
+    return StatsVerdictResponse(
+        bucket=bucket,  # type: ignore[arg-type]
+        since=since_dt.isoformat(),
+        until=until_dt.isoformat(),
+        series=series,
+    )
+
+
+@router.get(
+    "/stats/judges",
+    response_model=StatsJudgeResponse,
+    summary="시계열 모델별 투표 추세 (B — admin 그래프용)",
+    description=(
+        "votes JSON을 펼쳐서 judge_id별 AC/SUS 카운트와 최종 판정과의 동의율을 "
+        "버킷별로 누적한다. ensemble이 돌지 않은 제출(votes=None)은 제외. "
+        "split = 2:1 갈린 제출 수, unanimous = 3:0 합의 제출 수."
+    ),
+)
+def stats_judges(
+    authorization: Annotated[str | None, Header()] = None,
+    bucket: Annotated[str, Query(pattern="^(hour|day|week)$")] = "day",
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    problem_id: Annotated[int | None, Query()] = None,
+) -> StatsJudgeResponse:
+    _require_internal_auth(authorization)
+    since_dt, until_dt = _parse_range(since, until, bucket)
+
+    with get_session() as session:
+        stmt = (
+            select(
+                SubmissionRow.created_at,
+                SubmissionRow.final_verdict,
+                SubmissionRow.votes,
+            )
+            .where(SubmissionRow.created_at >= since_dt)
+            .where(SubmissionRow.created_at <= until_dt)
+            .where(SubmissionRow.votes.is_not(None))  # type: ignore[union-attr]
+        )
+        if problem_id is not None:
+            stmt = stmt.where(SubmissionRow.problem_id == problem_id)
+        rows = list(session.exec(stmt).all())
+
+    buckets: dict[str, StatsJudgeBucket] = {
+        k: StatsJudgeBucket(bucket=k)
+        for k in _iter_bucket_keys(since_dt, until_dt, bucket)
+    }
+    judge_ids: set[str] = set()
+
+    for created_at, final_verdict, votes in rows:
+        if created_at is None or not isinstance(votes, list) or not votes:
+            continue
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        key = _bucket_key(created_at, bucket)
+        b = buckets.get(key)
+        if b is None:
+            b = StatsJudgeBucket(bucket=key)
+            buckets[key] = b
+        b.total_with_votes += 1
+
+        verdicts_seen: list[str] = []
+        for v in votes:
+            if not isinstance(v, dict):
+                continue
+            jid = v.get("judge_id")
+            vd = v.get("verdict")
+            if not isinstance(jid, str) or vd not in ("AC", "SUS"):
+                continue
+            judge_ids.add(jid)
+            entry = b.judges.get(jid)
+            if entry is None:
+                entry = StatsJudgeBucketEntry()
+                b.judges[jid] = entry
+            if vd == "AC":
+                entry.ac += 1
+            else:
+                entry.sus += 1
+            if vd == final_verdict:
+                entry.agree_with_final += 1
+            verdicts_seen.append(vd)
+
+        if verdicts_seen and len(set(verdicts_seen)) == 1:
+            b.unanimous += 1
+        elif verdicts_seen:
+            b.split += 1
+
+    # 각 버킷에 관측된 judge_id가 빠져 있으면 0 엔트리로 채움 — 그래프 dataset 안정성.
+    sorted_ids = sorted(judge_ids)
+    for b in buckets.values():
+        for jid in sorted_ids:
+            if jid not in b.judges:
+                b.judges[jid] = StatsJudgeBucketEntry()
+
+    series = sorted(buckets.values(), key=lambda x: x.bucket)
+    return StatsJudgeResponse(
+        bucket=bucket,  # type: ignore[arg-type]
+        since=since_dt.isoformat(),
+        until=until_dt.isoformat(),
+        judge_ids=sorted_ids,
+        series=series,
+    )
 
 
 # ── notices ──────────────────────────────────────────────────────────────

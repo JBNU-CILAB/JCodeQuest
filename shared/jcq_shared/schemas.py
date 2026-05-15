@@ -260,3 +260,85 @@ class AdminSubmissionDetail(AdminSubmissionSummary):
     code: str
     votes: list | None = None
     test_results: list | None = None
+
+
+# ── 통계 (admin_dashboard 그래프 전용) ─────────────────────────
+# 모든 시계열 응답은 server-side에서 zero-fill해서 보낸다 — 클라이언트
+# (Chart.js)가 gap 처리할 필요 없이 그대로 라벨/데이터셋으로 쓸 수 있도록.
+
+StatsBucket = Literal["hour", "day", "week"]
+
+
+class StatsVerdictBucket(BaseModel):
+    """A: 시간 버킷별 판정 카운트."""
+
+    bucket: str = Field(description="버킷 키 — day=YYYY-MM-DD, hour=YYYY-MM-DDTHH:00Z, week=YYYY-Www")
+    ac: int = 0
+    sus: int = 0
+    failed: int = 0
+    pending: int = 0
+    total: int = 0
+
+
+class StatsVerdictResponse(BaseModel):
+    bucket: StatsBucket
+    since: str
+    until: str
+    series: list[StatsVerdictBucket]
+
+
+class StatsJudgeBucketEntry(BaseModel):
+    """B: 한 버킷 안에서 한 모델(judge)의 누적 카운트."""
+
+    ac: int = 0
+    sus: int = 0
+    agree_with_final: int = 0
+    """votes의 verdict가 최종 final_verdict와 일치한 횟수."""
+
+
+class StatsJudgeBucket(BaseModel):
+    bucket: str
+    total_with_votes: int = 0
+    """votes가 채워진 제출 수 (= ensemble이 돈 제출)."""
+    unanimous: int = 0
+    """3명 모두 같은 verdict였던 제출 수."""
+    split: int = 0
+    """2:1로 갈렸던 제출 수."""
+    judges: dict[str, StatsJudgeBucketEntry] = Field(default_factory=dict)
+
+
+class StatsJudgeResponse(BaseModel):
+    bucket: StatsBucket
+    since: str
+    until: str
+    judge_ids: list[str]
+    """관측된 judge_id 정렬 목록 — 클라이언트가 데이터셋 색 매핑할 때 사용."""
+    series: list[StatsJudgeBucket]
+
+
+# ── 사용자 관리 (admin) ────────────────────────────────────────
+class AdminUserSummary(BaseModel):
+    """admin 목록용 — 키 보유 여부만 노출하고 secret_id/exp/role 같은 내부는 가린다."""
+
+    id: int
+    display_name: str
+    email: str | None = None
+    provider: str
+    nickname: str | None = None
+    exp: int = 0
+    tier: str = "bronze"
+    has_api_key: bool = False
+    submission_count: int = 0
+    """이 유저가 만든 submission row 수 — 삭제 영향 미리보기."""
+    created_at: str | None = None
+
+
+class UserDeleteCascade(BaseModel):
+    submissions: int = 0
+    tutor_messages: int = 0
+    sessions: int = 0
+
+
+class UserDeleteResponse(BaseModel):
+    id: int
+    cascade: UserDeleteCascade

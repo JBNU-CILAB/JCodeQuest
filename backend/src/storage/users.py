@@ -1,7 +1,8 @@
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from . import vault
-from .models import UserRow, _utcnow
+from .models import SessionRow, SubmissionRow, TutorMessageRow, UserRow, _utcnow
 
 
 def get_user(session: Session, user_id: int) -> UserRow | None:
@@ -100,6 +101,117 @@ def get_user_api_key(session: Session, user_id: int) -> str | None:
     if row is None:
         return None
     return vault.read_secret(session, row.api_key_secret_id)
+
+
+def list_users_admin(
+    session: Session,
+    *,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[tuple[UserRow, int]]:
+    """admin 목록 — (UserRow, submission_count) 튜플. submission_count는 cascade 영향
+    크기를 사전 노출하기 위해 같이 계산. search는 display_name/email/nickname의
+    부분 일치(LIKE)."""
+    stmt = (
+        select(UserRow, func.count(SubmissionRow.id))
+        .outerjoin(SubmissionRow, SubmissionRow.user_id == UserRow.id)  # type: ignore[arg-type]
+        .group_by(UserRow.id)
+        .order_by(UserRow.id.desc())  # type: ignore[union-attr]
+    )
+    if search:
+        like = f"%{search}%"
+        stmt = stmt.where(
+            (UserRow.display_name.ilike(like))  # type: ignore[union-attr]
+            | (UserRow.email.ilike(like))  # type: ignore[union-attr]
+            | (UserRow.nickname.ilike(like))  # type: ignore[union-attr]
+        )
+    rows = session.exec(stmt.offset(offset).limit(limit)).all()
+    return [(u, int(c)) for (u, c) in rows]
+
+
+def clear_user_api_key(session: Session, user_id: int) -> bool:
+    """admin이 사용자 동의 없이 강제로 API 키만 제거. vault 행도 같이 삭제.
+    유저는 그대로 보존. 사용자 본인이 다시 등록할 수 있다."""
+    row = session.get(UserRow, user_id)
+    if row is None:
+        return False
+    if row.api_key_secret_id is None:
+        return True  # already cleared — idempotent
+    vault.delete_secret(session, row.api_key_secret_id)
+    row.api_key_secret_id = None
+    row.updated_at = _utcnow()
+    session.add(row)
+    session.commit()
+    return True
+
+
+def delete_user(session: Session, user_id: int) -> dict[str, int] | None:
+    """유저 + 연관 row 전부 cascade 삭제. 단일 트랜잭션, 마지막에 한 번만 commit.
+
+    delete_problem과 동일한 이유로 SQLAlchemy unit-of-work는 FK 순서를 못 잡으므로
+    각 코호트 사이에 `session.flush()`로 SQL 순서를 강제한다.
+    순서: tutor_messages → submissions → sessions → vault.secret → user.
+
+    반환: {submissions, tutor_messages, sessions} 카운트. 유저 없으면 None.
+    """
+    row = session.get(UserRow, user_id)
+    if row is None:
+        return None
+    counts = {"submissions": 0, "tutor_messages": 0, "sessions": 0}
+
+    # 1) 이 유저의 submissions에 묶인 tutor_messages 먼저
+    sub_ids = [
+        s.id for s in session.exec(
+            select(SubmissionRow).where(SubmissionRow.user_id == user_id)
+        ).all() if s.id is not None
+    ]
+    if sub_ids:
+        tms = list(
+            session.exec(
+                select(TutorMessageRow).where(
+                    TutorMessageRow.submission_id.in_(sub_ids)  # type: ignore[attr-defined]
+                )
+            ).all()
+        )
+        for tm in tms:
+            session.delete(tm)
+        if tms:
+            session.flush()
+        counts["tutor_messages"] = len(tms)
+
+    # 2) submissions
+    if sub_ids:
+        for sid in sub_ids:
+            s = session.get(SubmissionRow, sid)
+            if s is not None:
+                session.delete(s)
+        session.flush()
+        counts["submissions"] = len(sub_ids)
+
+    # 3) sessions (서버 측 세션 토큰) — 남아 있으면 dangling FK가 된다.
+    sess_rows = list(
+        session.exec(
+            select(SessionRow).where(SessionRow.user_id == user_id)
+        ).all()
+    )
+    for sr in sess_rows:
+        session.delete(sr)
+    if sess_rows:
+        session.flush()
+    counts["sessions"] = len(sess_rows)
+
+    # 4) vault secret (API 키)
+    if row.api_key_secret_id is not None:
+        vault.delete_secret(session, row.api_key_secret_id)
+        # delete_secret이 자체 commit을 하므로 row를 다시 가져와야 한다.
+        row = session.get(UserRow, user_id)
+        assert row is not None
+
+    # 5) user row
+    session.delete(row)
+    session.commit()
+    return counts
 
 
 def bump_user_exp(session: Session, user_id: int, *, delta: int) -> None:

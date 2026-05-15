@@ -9,7 +9,12 @@ import logging
 import os
 
 import httpx
-from jcq_shared.schemas import AdminSubmissionDetail, AdminSubmissionSummary
+from jcq_shared.schemas import (
+    AdminSubmissionDetail,
+    AdminSubmissionSummary,
+    StatsJudgeResponse,
+    StatsVerdictResponse,
+)
 
 log = logging.getLogger(__name__)
 
@@ -62,3 +67,46 @@ def get_submission(submission_id: int) -> AdminSubmissionDetail:
         r = cli.get(f"{_backend_url()}/internal/submissions/{submission_id}")
         r.raise_for_status()
         return AdminSubmissionDetail.model_validate(r.json())
+
+
+def fetch_verdict_stats(
+    *,
+    bucket: str = "day",
+    since: str | None = None,
+    until: str | None = None,
+    problem_id: int | None = None,
+    user_id: int | None = None,
+) -> StatsVerdictResponse:
+    params: dict[str, str | int] = {"bucket": bucket}
+    if since is not None:
+        params["since"] = since
+    if until is not None:
+        params["until"] = until
+    if problem_id is not None:
+        params["problem_id"] = problem_id
+    if user_id is not None:
+        params["user_id"] = user_id
+    with _client() as cli:
+        r = cli.get(f"{_backend_url()}/internal/stats/verdicts", params=params)
+        r.raise_for_status()
+        return StatsVerdictResponse.model_validate(r.json())
+
+
+def fetch_judge_stats(
+    *,
+    bucket: str = "day",
+    since: str | None = None,
+    until: str | None = None,
+    problem_id: int | None = None,
+) -> StatsJudgeResponse:
+    params: dict[str, str | int] = {"bucket": bucket}
+    if since is not None:
+        params["since"] = since
+    if until is not None:
+        params["until"] = until
+    if problem_id is not None:
+        params["problem_id"] = problem_id
+    with _client() as cli:
+        r = cli.get(f"{_backend_url()}/internal/stats/judges", params=params)
+        r.raise_for_status()
+        return StatsJudgeResponse.model_validate(r.json())

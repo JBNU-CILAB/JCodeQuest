@@ -491,12 +491,11 @@
         <a href="#/notices" data-route="notices">
           <span>공지</span>
         </a>
-        <a class="disabled" title="추후 추가">
-          <span>사용자</span>
-          <span class="hint">준비 중</span>
+        <a href="#/stats" data-route="stats">
+          <span>통계</span>
         </a>
         <a class="disabled" title="추후 추가">
-          <span>통계</span>
+          <span>사용자</span>
           <span class="hint">준비 중</span>
         </a>
         <a class="disabled" title="추후 추가">
@@ -834,10 +833,81 @@
       </section>
     </section>
 
+    <!-- ── View: 통계 ────────────────────────────────────────────── -->
+    <section id="view-stats" class="hidden">
+      <h2 class="section-title">통계</h2>
+      <p class="section-desc">제출 판정 추세와 LLM 심판(Melchior/Balthasar/Casper) 동작을 시계열로 본다. 모든 시각은 UTC 기준.</p>
+
+      <section class="card">
+        <h3>범위 / 필터</h3>
+        <div class="filter-bar">
+          <div class="field">
+            <label>bucket</label>
+            <select id="stats-bucket">
+              <option value="hour">hour</option>
+              <option value="day" selected>day</option>
+              <option value="week">week</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>since (UTC)</label>
+            <input id="stats-since" type="datetime-local" />
+          </div>
+          <div class="field">
+            <label>until (UTC)</label>
+            <input id="stats-until" type="datetime-local" />
+          </div>
+          <div class="field">
+            <label>problem_id (선택)</label>
+            <input id="stats-problem" type="number" min="1" placeholder="모두" />
+          </div>
+          <div class="field">
+            <label>user_id (A만)</label>
+            <input id="stats-user" type="number" min="1" placeholder="모두" />
+          </div>
+          <button type="button" class="primary sm" id="btn-stats-reload">조회</button>
+        </div>
+        <div class="hint" style="margin-top:8px">
+          기본 범위는 최근 14일. bucket=hour는 최대 14일, day는 180일, week는 730일까지.
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>A · 판정 추세 (verdicts)</h3>
+        <div style="position:relative;height:280px">
+          <canvas id="chart-verdicts"></canvas>
+        </div>
+        <div class="hint" style="margin-top:8px" id="chart-verdicts-meta">—</div>
+      </section>
+
+      <section class="card">
+        <h3>B-1 · 모델별 동의율 (agree_with_final / 투표한 제출 수)</h3>
+        <div style="position:relative;height:280px">
+          <canvas id="chart-judge-agree"></canvas>
+        </div>
+        <div class="hint" style="margin-top:8px">
+          최종 판정과 일치한 비율. 한 모델이 지속적으로 낮으면 그 모델 프롬프트/태그를 의심.
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>B-2 · 합의 vs 갈림 (unanimous / split)</h3>
+        <div style="position:relative;height:240px">
+          <canvas id="chart-judge-split"></canvas>
+        </div>
+        <div class="hint" style="margin-top:8px">
+          split 비율이 높을수록 SUS 리뷰 큐에서 우선적으로 사람 라벨링해야 할 후보가 많다.
+        </div>
+      </section>
+
+      <pre id="stats-output" class="output-panel"></pre>
+    </section>
+
   </main>
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -889,7 +959,12 @@ async function pingHealth() {
 }
 
 // ── 라우팅 ─────────────────────────────────────────────────────
-const VIEWS = { problems: "view-problems", submissions: "view-submissions", notices: "view-notices" };
+const VIEWS = {
+  problems: "view-problems",
+  submissions: "view-submissions",
+  notices: "view-notices",
+  stats: "view-stats",
+};
 function applyRoute() {
   const hash = location.hash || "#/problems";
   const route = (hash.match(/^#\/(\w+)/) || [])[1] || "problems";
@@ -910,6 +985,11 @@ function applyRoute() {
   if (route === "notices" && !window._noticesLoaded) {
     window._noticesLoaded = true;
     loadNotices();
+  }
+  // 통계로 들어오면 자동 첫 조회
+  if (route === "stats" && !window._statsLoaded) {
+    window._statsLoaded = true;
+    loadStats();
   }
 }
 window.addEventListener("hashchange", applyRoute);
@@ -1561,6 +1641,196 @@ async function submitNotice(e) {
 $("#notice-form").addEventListener("submit", submitNotice);
 $("#btn-notice-reset").addEventListener("click", resetNoticeForm);
 $("#btn-notice-reload").addEventListener("click", loadNotices);
+
+// ── 통계 (stats) ────────────────────────────────────────────────
+// 차트 인스턴스를 module-level에 두고 reload 시 dataset만 갈아끼움.
+let _chartVerdicts = null;
+let _chartJudgeAgree = null;
+let _chartJudgeSplit = null;
+
+// 모델별 색상 — judge_id에 따라 시각적 일관성 유지.
+const JUDGE_COLORS = {
+  Melchior:  "#2563eb",  // 파랑
+  Balthasar: "#059669",  // 초록
+  Casper:    "#d97706",  // 주황
+};
+function colorFor(jid, idx) {
+  return JUDGE_COLORS[jid] || ["#7c3aed", "#db2777", "#0891b2"][idx % 3];
+}
+
+function getStatsParams() {
+  const p = new URLSearchParams();
+  p.set("bucket", $("#stats-bucket").value);
+  // datetime-local은 timezone이 없는 wall-clock 문자열. UTC 입력이라고 가정하므로 Z를 붙임.
+  const s = $("#stats-since").value;
+  const u = $("#stats-until").value;
+  if (s) p.set("since", s + ":00Z");
+  if (u) p.set("until", u + ":00Z");
+  const pid = $("#stats-problem").value;
+  const uid = $("#stats-user").value;
+  if (pid) p.set("problem_id", pid);
+  if (uid) p.set("user_id", uid);
+  return p;
+}
+
+async function loadStats() {
+  const out = $("#stats-output");
+  out.classList.remove("show");
+  try {
+    const params = getStatsParams();
+    // user_id는 verdicts에만 의미가 있음 (judges는 문제 단위 필터만).
+    const judgeParams = new URLSearchParams(params);
+    judgeParams.delete("user_id");
+    const [rV, rJ] = await Promise.all([
+      judgeFetch(`/api/stats/verdicts?${params}`),
+      judgeFetch(`/api/stats/judges?${judgeParams}`),
+    ]);
+    if (!rV.ok || !rJ.ok) {
+      const tV = await rV.text();
+      const tJ = await rJ.text();
+      out.className = "output-panel show err";
+      out.textContent = `verdicts: [${rV.status}] ${tV.slice(0, 200)}\njudges: [${rJ.status}] ${tJ.slice(0, 200)}`;
+      return;
+    }
+    const dataV = await rV.json();
+    const dataJ = await rJ.json();
+    renderVerdictsChart(dataV);
+    renderJudgeAgreeChart(dataJ);
+    renderJudgeSplitChart(dataJ);
+
+    // meta 텍스트 (총합)
+    const totals = dataV.series.reduce(
+      (a, b) => ({ ac: a.ac + b.ac, sus: a.sus + b.sus, failed: a.failed + b.failed, pending: a.pending + b.pending, total: a.total + b.total }),
+      { ac: 0, sus: 0, failed: 0, pending: 0, total: 0 }
+    );
+    const acRate = totals.total ? ((totals.ac / totals.total) * 100).toFixed(1) : "—";
+    $("#chart-verdicts-meta").textContent =
+      `구간 합계: total=${totals.total}, AC=${totals.ac} (${acRate}%), SUS=${totals.sus}, failed=${totals.failed}, pending=${totals.pending}` +
+      `  ·  since=${dataV.since.slice(0, 16)} → until=${dataV.until.slice(0, 16)}`;
+  } catch (err) {
+    out.className = "output-panel show err";
+    out.textContent = `네트워크 오류: ${err.message}`;
+  }
+}
+
+function renderVerdictsChart(data) {
+  const labels = data.series.map((b) => b.bucket);
+  const ds = [
+    { label: "AC",      data: data.series.map((b) => b.ac),      backgroundColor: "#059669" },
+    { label: "SUS",     data: data.series.map((b) => b.sus),     backgroundColor: "#d97706" },
+    { label: "failed",  data: data.series.map((b) => b.failed),  backgroundColor: "#dc2626" },
+    { label: "pending", data: data.series.map((b) => b.pending), backgroundColor: "#9ca3af" },
+  ];
+  const cfg = {
+    type: "bar",
+    data: { labels, datasets: ds },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "top" },
+        tooltip: { callbacks: {
+          footer: (items) => {
+            const tot = items.reduce((s, it) => s + it.parsed.y, 0);
+            return `total=${tot}`;
+          },
+        } },
+      },
+      scales: {
+        x: { stacked: true, ticks: { autoSkip: true, maxRotation: 0 } },
+        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  };
+  if (_chartVerdicts) {
+    _chartVerdicts.data = cfg.data;
+    _chartVerdicts.update();
+  } else {
+    _chartVerdicts = new Chart($("#chart-verdicts"), cfg);
+  }
+}
+
+function renderJudgeAgreeChart(data) {
+  const labels = data.series.map((b) => b.bucket);
+  const datasets = data.judge_ids.map((jid, i) => ({
+    label: jid,
+    data: data.series.map((b) => {
+      const denom = b.total_with_votes;
+      const entry = b.judges[jid];
+      if (!denom || !entry) return null;
+      return +(entry.agree_with_final / denom).toFixed(4);
+    }),
+    borderColor: colorFor(jid, i),
+    backgroundColor: colorFor(jid, i),
+    tension: 0.25,
+    spanGaps: true,
+  }));
+  const cfg = {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: { ticks: { autoSkip: true, maxRotation: 0 } },
+        y: {
+          min: 0, max: 1,
+          ticks: { callback: (v) => (v * 100).toFixed(0) + "%" },
+        },
+      },
+    },
+  };
+  if (_chartJudgeAgree) {
+    _chartJudgeAgree.data = cfg.data;
+    _chartJudgeAgree.update();
+  } else {
+    _chartJudgeAgree = new Chart($("#chart-judge-agree"), cfg);
+  }
+}
+
+function renderJudgeSplitChart(data) {
+  const labels = data.series.map((b) => b.bucket);
+  const datasets = [
+    {
+      label: "unanimous (3:0)",
+      data: data.series.map((b) => b.unanimous),
+      backgroundColor: "#059669",
+    },
+    {
+      label: "split (2:1)",
+      data: data.series.map((b) => b.split),
+      backgroundColor: "#d97706",
+    },
+  ];
+  const cfg = {
+    type: "bar",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: { stacked: true, ticks: { autoSkip: true, maxRotation: 0 } },
+        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  };
+  if (_chartJudgeSplit) {
+    _chartJudgeSplit.data = cfg.data;
+    _chartJudgeSplit.update();
+  } else {
+    _chartJudgeSplit = new Chart($("#chart-judge-split"), cfg);
+  }
+}
+
+$("#btn-stats-reload").addEventListener("click", loadStats);
+$("#stats-bucket").addEventListener("change", () => {
+  if (window._statsLoaded) loadStats();
+});
 
 // ── 초기화 ─────────────────────────────────────────────────────
 loadConn();

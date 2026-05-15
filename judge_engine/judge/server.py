@@ -6,6 +6,8 @@
   POST /api/sandbox/run  1회성 동기 sandbox 실행 (authoring_engine의 verify/solver 용).
   GET  /api/submissions  채점 결과 목록 (admin_dashboard 노출 — Bearer admin 토큰 필요).
   GET  /api/submissions/{id}  채점 결과 상세 (코드/votes/test_results 포함).
+  GET  /api/stats/verdicts    시계열 판정 카운트 (admin 그래프).
+  GET  /api/stats/judges      시계열 모델별 투표 추세 (admin 그래프).
   GET  /api/health       liveness probe
 
 채점 라이프사이클 (backend가 받게 되는 webhook 순서):
@@ -40,6 +42,7 @@ from jcq_shared.schemas import ExecResult, GradeSubmitRequest, SandboxRunRequest
 
 from .jobs import grade_job
 from .queue import JobQueue
+from .routers import stats as stats_router
 from .routers import submissions as submissions_router
 from .sandbox import run_user_code
 
@@ -73,6 +76,7 @@ if _origins:
 
 
 app.include_router(submissions_router.router)
+app.include_router(stats_router.router)
 
 
 @app.get(
