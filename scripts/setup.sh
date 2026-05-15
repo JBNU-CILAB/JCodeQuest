@@ -217,6 +217,31 @@ sync_internal_secret() {
 }
 sync_internal_secret
 
+# authoring_engine 단독 사용 — admin 대시보드용 Bearer 토큰.
+# 기본 placeholder("change-me-admin-token")이거나 비어 있으면 새로 생성.
+sync_admin_token() {
+    local env_file="$REPO_ROOT/authoring_engine/.env"
+    [[ -f "$env_file" ]] || return 0
+
+    local cur token
+    cur="$(grep -E '^JCQ_ADMIN_TOKEN=' "$env_file" 2>/dev/null | head -1 | cut -d= -f2-)"
+
+    if [[ -n "$cur" && "$cur" != "change-me-admin-token" ]]; then
+        ok "JCQ_ADMIN_TOKEN 이미 설정됨 (authoring_engine/.env)"
+        return 0
+    fi
+
+    token="$("$SYS_PY" -c 'import secrets; print(secrets.token_urlsafe(32))')"
+    if grep -qE '^JCQ_ADMIN_TOKEN=' "$env_file"; then
+        sed -i -E "s|^JCQ_ADMIN_TOKEN=.*|JCQ_ADMIN_TOKEN=${token}|" "$env_file"
+    else
+        echo "JCQ_ADMIN_TOKEN=${token}" >> "$env_file"
+    fi
+    ok "JCQ_ADMIN_TOKEN 신규 생성 → authoring_engine/.env"
+    info "대시보드에 붙여 넣을 토큰: ${token}"
+}
+sync_admin_token
+
 # ── 6) 마이그레이션 ──────────────────────────────────────────────────────────
 section "6. DB 마이그레이션"
 
@@ -255,6 +280,8 @@ cat <<EOF
 
      authoring_engine/.env
        - OPENAI_API_KEY, OLLAMA_BASE_URL
+       - JCQ_ADMIN_TOKEN     : setup.sh가 자동 생성 — admin_dashboard에 붙여 넣어 사용
+       - JCQ_DASHBOARD_ORIGIN: 기본 http://localhost:6010 (dev.sh의 dashboard_port와 동기)
 
      judge_engine/.env
        - OLLAMA_BASE_URL  (채점 엔진은 DB 직접 미접근)
@@ -268,8 +295,16 @@ cat <<EOF
   2) Ollama가 떠 있고 3개 판사 모델이 pull 되어 있는지 확인 — docs/setup-ollama.md
 
   3) 개발 서버 일괄 기동:
-        scripts/dev.sh up                  # 전체 기동
+        scripts/dev.sh up                  # 전체 기동 (admin_dashboard 포함, :6010)
         scripts/dev.sh up --no-authoring   # 출제 엔진 제외
+        scripts/dev.sh up --no-dashboard   # 관리 대시보드 제외
+
+  4) 관리 대시보드 (문제 등록):
+        http://localhost:6010 접속 후
+        - Authoring base URL: http://localhost:8001
+        - Admin token: authoring_engine/.env의 JCQ_ADMIN_TOKEN 값
+        ※ 포트를 옮길 때는 dev.sh의 dashboard_port와 authoring_engine/.env의
+          JCQ_DASHBOARD_ORIGIN을 함께 변경해야 한다 (CORS preflight 매칭).
 
   $(c 32 '✓') 셋업 완료
 EOF

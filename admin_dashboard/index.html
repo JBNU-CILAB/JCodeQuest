@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>JCodeQuest · Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --panel-2: #fafbfc;
+    --border: #e4e7ec;
+    --border-strong: #d1d5db;
+    --muted: #6b7280;
+    --muted-2: #9ca3af;
+    --text: #111827;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-soft: #eff6ff;
+    --danger: #dc2626;
+    --danger-soft: #fef2f2;
+    --ok: #059669;
+    --ok-soft: #d1fae5;
+    --warn: #d97706;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sidebar-w: 220px;
+    --header-h: 52px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* ── Header ────────────────────────────────────────────────── */
+  header {
+    height: var(--header-h);
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  header .brand .tag {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+  header .actions { display: flex; align-items: center; gap: 10px; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
+  .badge.err { background: var(--danger-soft); color: var(--danger); }
+  .badge.idle { background: #f3f4f6; color: var(--muted); }
+
+  /* ── Layout ────────────────────────────────────────────────── */
+  .layout {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    min-height: calc(100vh - var(--header-h));
+  }
+
+  aside.sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+  }
+  aside .group { padding: 0 14px; }
+  aside .group-label {
+    font-size: 10px;
+    color: var(--muted-2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 6px 8px;
+  }
+  aside .nav { display: flex; flex-direction: column; gap: 2px; }
+  aside .nav a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    border-radius: 5px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  aside .nav a:hover { background: var(--panel-2); }
+  aside .nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+  aside .nav a.disabled {
+    color: var(--muted-2);
+    cursor: not-allowed;
+  }
+  aside .nav a.disabled:hover { background: transparent; }
+  aside .nav .hint {
+    font-size: 10px;
+    color: var(--muted-2);
+    padding: 1px 5px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 3px;
+  }
+  aside .footnote {
+    padding: 14px 20px;
+    color: var(--muted-2);
+    font-size: 11px;
+    margin-top: auto;
+  }
+
+  main {
+    padding: 24px 32px 64px;
+    min-width: 0;
+  }
+  main h2.section-title {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  main p.section-desc {
+    margin: 0 0 20px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ── Settings panel (collapsible) ──────────────────────────── */
+  .settings {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 0 0 20px;
+    display: none;
+  }
+  .settings.open { display: block; }
+  .settings h3 {
+    margin: 0 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .row { display: grid; gap: 12px; }
+  .row.cols-2 { grid-template-columns: 1fr 1fr; }
+  .row.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  input, textarea, select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 5px;
+    background: #fff;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+  }
+  input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+  textarea { resize: vertical; min-height: 80px; }
+  textarea.code { font-family: var(--mono); font-size: 12px; min-height: 140px; }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 4px; line-height: 1.45; }
+
+  /* ── Buttons ───────────────────────────────────────────────── */
+  button {
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 5px;
+    border: 1px solid var(--border-strong);
+    background: #fff;
+    color: var(--text);
+  }
+  button:hover { background: var(--panel-2); }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button.primary:hover { background: var(--accent-hover); }
+  button.ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+    padding: 5px 8px;
+  }
+  button.ghost:hover { background: var(--panel-2); color: var(--text); }
+  button.danger {
+    color: var(--danger);
+    border-color: #fecaca;
+  }
+  button.danger:hover { background: var(--danger-soft); }
+  button.sm { padding: 4px 10px; font-size: 12px; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Tabs ──────────────────────────────────────────────────── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 9px 16px;
+    color: var(--muted);
+    font-weight: 500;
+    margin-bottom: -1px;
+  }
+  .tab:hover { background: var(--panel-2); color: var(--text); }
+  .tab.active {
+    border-bottom-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── Cards ─────────────────────────────────────────────────── */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .card h3 {
+    margin: 0 0 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Test cases ────────────────────────────────────────────── */
+  .test-case {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: var(--panel-2);
+  }
+  .test-case-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .test-case-head strong { font-size: 13px; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; }
+  .checkbox-row input[type=checkbox] { width: auto; }
+
+  .actions-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  /* ── Output ────────────────────────────────────────────────── */
+  .output-panel {
+    background: #0f172a;
+    color: #e5e7eb;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    max-height: 420px;
+    overflow-y: auto;
+    display: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .output-panel.show { display: block; }
+  .output-panel.ok { border-left: 3px solid var(--ok); }
+  .output-panel.err { border-left: 3px solid var(--danger); }
+  .stream-line {
+    padding: 4px 0;
+    border-bottom: 1px solid #1e293b;
+  }
+  .stream-line:last-child { border-bottom: none; }
+  .stream-line .ts { color: #64748b; margin-right: 8px; }
+  .stream-line .tag { color: #93c5fd; margin-right: 8px; font-weight: 600; }
+  .stream-line.error .tag { color: #fca5a5; }
+  .stream-line.done .tag { color: #6ee7b7; }
+  .stream-line pre {
+    margin: 4px 0 0 0;
+    color: #cbd5e1;
+    font-size: 11px;
+    background: #1e293b;
+    padding: 6px 8px;
+    border-radius: 4px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+
+  /* ── Misc ──────────────────────────────────────────────────── */
+  .hidden { display: none !important; }
+  .meta-line {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .meta-line strong { color: var(--muted); margin-right: 4px; }
+  .meta-line code { font-family: var(--mono); }
+  .meta-line a { color: var(--accent); text-decoration: none; }
+  .meta-line a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>JCodeQuest · Admin</h1>
+    <span class="tag">v0.1</span>
+  </div>
+  <div class="actions">
+    <span id="conn-badge" class="badge idle">미확인</span>
+    <button class="ghost" id="btn-settings-toggle">⚙ 설정</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <aside class="sidebar">
+    <div class="group">
+      <div class="group-label">카테고리</div>
+      <nav class="nav" id="nav">
+        <a href="#/problems" data-route="problems" class="active">
+          <span>문제 관리</span>
+        </a>
+        <a class="disabled" title="추후 추가">
+          <span>사용자</span>
+          <span class="hint">준비 중</span>
+        </a>
+        <a class="disabled" title="추후 추가">
+          <span>통계</span>
+          <span class="hint">준비 중</span>
+        </a>
+        <a class="disabled" title="추후 추가">
+          <span>트레이스</span>
+          <span class="hint">준비 중</span>
+        </a>
+      </nav>
+    </div>
+  </aside>
+
+  <main>
+
+    <!-- Settings -->
+    <section class="settings" id="settings">
+      <h3>연결 설정</h3>
+      <div class="row cols-2">
+        <div class="field">
+          <label>Authoring base URL</label>
+          <input id="base-url" type="text" placeholder="http://localhost:8001" />
+          <div class="hint">authoring_engine 서버의 루트. 기본은 dev.sh가 띄우는 :8001.</div>
+        </div>
+        <div class="field">
+          <label>Admin token (JCQ_ADMIN_TOKEN)</label>
+          <input id="admin-token" type="password" placeholder="authoring_engine/.env 의 값" />
+          <div class="hint">/api/health 외 모든 라우트가 이 Bearer 토큰을 요구.</div>
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="sm" id="btn-test">/api/health 핑</button>
+        <button class="primary sm" id="btn-save">저장</button>
+      </div>
+    </section>
+
+    <!-- Problems view -->
+    <section id="view-problems">
+      <h2 class="section-title">문제 관리</h2>
+      <p class="section-desc">원본 문제를 직접 등록하거나, 기존 원본을 시드로 LangGraph 변형 파이프라인을 실행한다.</p>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="create">원본 등록</button>
+        <button class="tab" data-tab="variant">변형 출제</button>
+      </div>
+
+      <!-- ── Tab: 원본 등록 ──────────────────────────────────────── -->
+      <div id="tab-create" class="tab-content">
+        <form id="problem-form">
+          <section class="card">
+            <h3>문제 기본 정보</h3>
+            <div class="field">
+              <label>제목</label>
+              <input name="title" required placeholder="예: 두 배 출력" />
+            </div>
+            <div class="field">
+              <label>본문 (Markdown 허용)</label>
+              <textarea name="statement" required placeholder="문제 설명..."></textarea>
+            </div>
+            <div class="row cols-3">
+              <div class="field">
+                <label>카테고리</label>
+                <input name="category" value="basic" />
+              </div>
+              <div class="field">
+                <label>난이도</label>
+                <select name="level">
+                  <option value="bronze">bronze</option>
+                  <option value="silver">silver</option>
+                  <option value="gold">gold</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>포인트</label>
+                <input name="points" type="number" value="100" min="0" max="1000" />
+              </div>
+            </div>
+            <div class="row cols-2">
+              <div class="field">
+                <label>시간 제한 (ms)</label>
+                <input name="time_limit_ms" type="number" value="2000" min="100" max="60000" />
+              </div>
+              <div class="field">
+                <label>메모리 제한 (MB)</label>
+                <input name="memory_limit_mb" type="number" value="256" min="16" max="2048" />
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>참조 코드 (Python)</h3>
+            <textarea name="reference_code" class="code" required
+              placeholder="n = int(input())&#10;print(n * 2)"></textarea>
+            <div class="hint">이 코드를 sandbox에서 실행해 비어 있는 expected_stdout을 자동으로 채운다.</div>
+          </section>
+
+          <section class="card">
+            <h3>의도 / 루브릭 (선택)</h3>
+            <div class="field">
+              <label>한 줄 요약</label>
+              <input name="one_line_summary" />
+            </div>
+            <div class="row cols-2">
+              <div class="field">
+                <label>기대 접근법</label>
+                <input name="expected_approach" />
+              </div>
+              <div class="field">
+                <label>핵심 통찰</label>
+                <input name="key_insight" />
+              </div>
+            </div>
+            <div class="field">
+              <label>기대 복잡도</label>
+              <input name="expected_complexity" placeholder="예: O(n log n)" />
+            </div>
+            <div class="row cols-2">
+              <div class="field">
+                <label>반드시 처리 (콤마 구분)</label>
+                <input name="must_handle" placeholder="음수, 빈 입력" />
+              </div>
+              <div class="field">
+                <label>금지 패턴 (콤마 구분)</label>
+                <input name="forbidden_patterns" placeholder="eval, exec" />
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>테스트 케이스</h3>
+            <div id="test-cases"></div>
+            <div class="actions-row">
+              <button type="button" class="sm" id="btn-add-tc">+ 케이스 추가</button>
+            </div>
+            <div class="hint">expected_stdout이 비어 있으면 백엔드가 reference_code로 자동 실행해 채운다.</div>
+          </section>
+
+          <div class="actions-row">
+            <button type="button" id="btn-clear">초기화</button>
+            <button type="submit" class="primary" id="btn-submit">문제 등록</button>
+          </div>
+        </form>
+
+        <pre id="create-output" class="output-panel"></pre>
+      </div>
+
+      <!-- ── Tab: 변형 출제 ──────────────────────────────────────── -->
+      <div id="tab-variant" class="tab-content hidden">
+        <section class="card">
+          <h3>LangGraph 변형 파이프라인 실행</h3>
+          <div class="row cols-2">
+            <div class="field">
+              <label>원본 문제 ID (parent_id)</label>
+              <input id="variant-problem-id" type="number" min="1" placeholder="예: 1" />
+              <div class="hint">기존 approved 원본 문제의 ID. 이걸 시드로 변형이 만들어진다.</div>
+            </div>
+            <div class="field">
+              <label>생성 개수</label>
+              <input id="variant-count" type="number" value="5" min="1" max="20" />
+              <div class="hint">검증/심사 통과한 후보만 저장됨. 실제 저장 수는 더 적을 수 있음.</div>
+            </div>
+          </div>
+          <div class="actions-row">
+            <button type="button" class="primary" id="btn-start-variant">변형 출제 시작</button>
+            <button type="button" id="btn-stop-stream" disabled>스트림 중단</button>
+          </div>
+        </section>
+
+        <div id="variant-meta" class="meta-line hidden">
+          <div><strong>run_id</strong><code id="variant-run-id"></code></div>
+          <div><strong>trace</strong><code id="variant-trace-id"></code></div>
+          <div id="variant-trace-link"></div>
+        </div>
+
+        <div id="variant-output" class="output-panel"></div>
+      </div>
+
+    </section>
+
+  </main>
+
+</div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+const STORAGE_KEY = "jcq-admin-conn";
+
+// ── 연결 설정 ──────────────────────────────────────────────────
+function loadConn() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    $("#base-url").value = saved.baseUrl || "http://localhost:8001";
+    $("#admin-token").value = saved.token || "";
+  } catch {
+    $("#base-url").value = "http://localhost:8001";
+  }
+}
+function saveConn() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    baseUrl: $("#base-url").value.trim().replace(/\/$/, ""),
+    token: $("#admin-token").value,
+  }));
+  setBadge("idle", "저장됨");
+  pingHealth();
+}
+function getConn() {
+  return {
+    baseUrl: $("#base-url").value.trim().replace(/\/$/, ""),
+    token: $("#admin-token").value,
+  };
+}
+function setBadge(state, text) {
+  const el = $("#conn-badge");
+  el.className = `badge ${state}`;
+  el.textContent = text;
+}
+async function pingHealth() {
+  const { baseUrl } = getConn();
+  if (!baseUrl) return setBadge("err", "URL 없음");
+  setBadge("idle", "확인 중");
+  try {
+    const r = await fetch(baseUrl + "/api/health");
+    setBadge(r.ok ? "ok" : "err", r.ok ? "연결됨" : `HTTP ${r.status}`);
+  } catch {
+    setBadge("err", "연결 실패");
+  }
+}
+
+// ── 라우팅 (확장 대비 — 지금은 #/problems 만 유효) ────────────
+function applyRoute() {
+  const hash = location.hash || "#/problems";
+  $$("#nav a").forEach((a) => {
+    a.classList.toggle("active", a.dataset.route && hash.startsWith("#/" + a.dataset.route));
+  });
+}
+window.addEventListener("hashchange", applyRoute);
+
+// ── Tabs ───────────────────────────────────────────────────────
+$$(".tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $$(".tab").forEach((b) => b.classList.toggle("active", b === btn));
+    const tab = btn.dataset.tab;
+    $$(".tab-content").forEach((c) => c.classList.add("hidden"));
+    $(`#tab-${tab}`).classList.remove("hidden");
+  });
+});
+
+// ── Settings toggle ────────────────────────────────────────────
+$("#btn-settings-toggle").addEventListener("click", () => {
+  $("#settings").classList.toggle("open");
+});
+
+// ── 테스트 케이스 ─────────────────────────────────────────────
+function tcRow(idx, data = {}) {
+  const div = document.createElement("div");
+  div.className = "test-case";
+  div.innerHTML = `
+    <div class="test-case-head">
+      <strong>케이스 #${idx}</strong>
+      <button type="button" class="danger sm" data-action="remove">제거</button>
+    </div>
+    <div class="row cols-2">
+      <div class="field">
+        <label>stdin</label>
+        <textarea class="code" data-key="stdin">${data.stdin || ""}</textarea>
+      </div>
+      <div class="field">
+        <label>expected_stdout (비우면 autofill)</label>
+        <textarea class="code" data-key="expected_stdout">${data.expected_stdout || ""}</textarea>
+      </div>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" data-key="is_sample" ${data.is_sample ? "checked" : ""} />
+      <label style="margin:0">샘플로 공개 (is_sample)</label>
+    </div>
+  `;
+  div.querySelector('[data-action="remove"]').addEventListener("click", () => {
+    div.remove();
+    renumberTC();
+  });
+  return div;
+}
+function renumberTC() {
+  $$("#test-cases .test-case").forEach((el, i) => {
+    el.querySelector(".test-case-head strong").textContent = `케이스 #${i + 1}`;
+  });
+}
+function addTC(data) {
+  const idx = $$("#test-cases .test-case").length + 1;
+  $("#test-cases").appendChild(tcRow(idx, data));
+}
+function collectTC() {
+  return $$("#test-cases .test-case").map((el) => ({
+    stdin: el.querySelector('[data-key="stdin"]').value,
+    expected_stdout: el.querySelector('[data-key="expected_stdout"]').value,
+    is_sample: el.querySelector('[data-key="is_sample"]').checked,
+  }));
+}
+
+// ── 원본 등록 폼 제출 ─────────────────────────────────────────
+function csvToList(v) {
+  return v.split(",").map((s) => s.trim()).filter(Boolean);
+}
+function showOutput(target, kind, text) {
+  const el = $(target);
+  el.textContent = text;
+  el.className = `output-panel show ${kind}`;
+}
+
+async function submitCreate(e) {
+  e.preventDefault();
+  const { baseUrl, token } = getConn();
+  if (!baseUrl) return showOutput("#create-output", "err", "base URL이 비어있습니다 (설정 열기)");
+  if (!token) return showOutput("#create-output", "err", "admin token이 비어있습니다 (설정 열기)");
+
+  const fd = new FormData(e.target);
+  const payload = {
+    title: fd.get("title"),
+    statement: fd.get("statement"),
+    category: fd.get("category") || "basic",
+    level: fd.get("level"),
+    points: parseInt(fd.get("points"), 10),
+    time_limit_ms: parseInt(fd.get("time_limit_ms"), 10),
+    memory_limit_mb: parseInt(fd.get("memory_limit_mb"), 10),
+    reference_code: fd.get("reference_code"),
+    one_line_summary: fd.get("one_line_summary") || "",
+    expected_approach: fd.get("expected_approach") || "",
+    key_insight: fd.get("key_insight") || "",
+    expected_complexity: fd.get("expected_complexity") || "",
+    must_handle: csvToList(fd.get("must_handle") || ""),
+    forbidden_patterns: csvToList(fd.get("forbidden_patterns") || ""),
+    test_cases: collectTC(),
+  };
+  if (!payload.test_cases.length) {
+    return showOutput("#create-output", "err", "테스트 케이스가 최소 1개 필요합니다");
+  }
+
+  $("#btn-submit").disabled = true;
+  showOutput("#create-output", "ok", "요청 보내는 중...");
+  try {
+    const r = await fetch(baseUrl + "/api/problems", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = await r.text();
+    let pretty = body;
+    try { pretty = JSON.stringify(JSON.parse(body), null, 2); } catch {}
+    showOutput("#create-output", r.ok ? "ok" : "err", `[${r.status}] ${r.ok ? "성공" : "실패"}\n\n${pretty}`);
+  } catch (err) {
+    showOutput("#create-output", "err", `네트워크 오류: ${err.message}`);
+  } finally {
+    $("#btn-submit").disabled = false;
+  }
+}
+
+// ── 변형 출제: POST /api/runs + fetch streaming SSE ───────────
+let _activeStream = null;  // AbortController
+
+function appendStreamLine(kind, tag, body) {
+  const el = $("#variant-output");
+  el.classList.add("show");
+  const ts = new Date().toLocaleTimeString("ko-KR", { hour12: false });
+  const line = document.createElement("div");
+  line.className = `stream-line ${kind || ""}`;
+  let html = `<span class="ts">${ts}</span><span class="tag">${tag}</span>`;
+  if (body) {
+    if (typeof body === "object") {
+      html += `<pre>${escapeHtml(JSON.stringify(body, null, 2))}</pre>`;
+    } else {
+      html += escapeHtml(String(body));
+    }
+  }
+  line.innerHTML = html;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+async function streamRun(runId, { baseUrl, token }) {
+  const ctrl = new AbortController();
+  _activeStream = ctrl;
+  $("#btn-stop-stream").disabled = false;
+
+  try {
+    const resp = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
+      headers: { "Authorization": `Bearer ${token}` },
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) {
+      appendStreamLine("error", "ERROR", `SSE HTTP ${resp.status}`);
+      return;
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const frames = buf.split("\n\n");
+      buf = frames.pop();
+      for (const f of frames) {
+        for (const line of f.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const raw = line.slice(5).trim();
+          if (!raw) continue;
+          let payload;
+          try { payload = JSON.parse(raw); } catch { payload = { raw }; }
+          handleStreamPayload(payload);
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      appendStreamLine("error", "ERROR", err.message);
+    } else {
+      appendStreamLine("error", "STOP", "사용자가 스트림 중단");
+    }
+  } finally {
+    _activeStream = null;
+    $("#btn-stop-stream").disabled = true;
+    $("#btn-start-variant").disabled = false;
+  }
+}
+
+function handleStreamPayload(p) {
+  if (p.type === "update") {
+    // p.data는 LangGraph chunk — {<node_name>: <state delta>}
+    if (p.data && typeof p.data === "object") {
+      for (const node of Object.keys(p.data)) {
+        appendStreamLine("", node, p.data[node]);
+      }
+    } else {
+      appendStreamLine("", "UPDATE", p.data);
+    }
+  } else if (p.type === "done") {
+    appendStreamLine("done", "DONE", p.trace_id ? `trace_id=${p.trace_id}` : "");
+  } else if (p.type === "error") {
+    appendStreamLine("error", "ERROR", p.message);
+  } else {
+    appendStreamLine("", p.type || "?", p);
+  }
+}
+
+async function startVariant() {
+  const { baseUrl, token } = getConn();
+  if (!baseUrl || !token) {
+    appendStreamLine("error", "ERROR", "연결 설정 비어있음");
+    return;
+  }
+  const problemId = parseInt($("#variant-problem-id").value, 10);
+  const count = parseInt($("#variant-count").value, 10);
+  if (!problemId || problemId < 1) {
+    appendStreamLine("error", "ERROR", "원본 문제 ID가 비어있음");
+    return;
+  }
+
+  // 기존 출력 초기화
+  $("#variant-output").innerHTML = "";
+  $("#variant-output").classList.add("show");
+  $("#variant-meta").classList.add("hidden");
+  $("#btn-start-variant").disabled = true;
+  appendStreamLine("", "POST", `/api/runs problem_id=${problemId} count=${count}`);
+
+  let run_id, trace_id;
+  try {
+    const r = await fetch(baseUrl + "/api/runs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({ problem_id: problemId, count }),
+    });
+    const body = await r.json();
+    if (!r.ok) {
+      appendStreamLine("error", "ERROR", `[${r.status}] ${JSON.stringify(body)}`);
+      $("#btn-start-variant").disabled = false;
+      return;
+    }
+    run_id = body.run_id;
+    trace_id = body.trace_id;
+  } catch (err) {
+    appendStreamLine("error", "ERROR", `POST 실패: ${err.message}`);
+    $("#btn-start-variant").disabled = false;
+    return;
+  }
+
+  // 메타 표시
+  $("#variant-run-id").textContent = run_id;
+  $("#variant-trace-id").textContent = trace_id;
+  const linkEl = $("#variant-trace-link");
+  if (trace_id) {
+    linkEl.innerHTML = `<a href="${baseUrl}/api/spans/${trace_id}" target="_blank">스팬 조회 →</a>`;
+  } else {
+    linkEl.innerHTML = "";
+  }
+  $("#variant-meta").classList.remove("hidden");
+
+  appendStreamLine("", "STREAM", `구독 시작 — /api/runs/${run_id}/events`);
+  await streamRun(run_id, { baseUrl, token });
+}
+
+$("#btn-start-variant").addEventListener("click", startVariant);
+$("#btn-stop-stream").addEventListener("click", () => {
+  if (_activeStream) _activeStream.abort();
+});
+
+// ── 초기화 ─────────────────────────────────────────────────────
+loadConn();
+applyRoute();
+addTC();
+$("#btn-save").addEventListener("click", saveConn);
+$("#btn-test").addEventListener("click", pingHealth);
+$("#btn-add-tc").addEventListener("click", () => addTC());
+$("#btn-clear").addEventListener("click", () => {
+  $("#problem-form").reset();
+  $("#test-cases").innerHTML = "";
+  addTC();
+  $("#create-output").classList.remove("show");
+});
+$("#problem-form").addEventListener("submit", submitCreate);
+pingHealth();
+</script>
+
+</body>
+</html>

@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# JCodeQuest 개발 환경 — backend(:8000) + authoring(:8001) + judge(:8002) + frontend(:5173)을
-# 한 번에 띄우고 내리는 진입점.
+# JCodeQuest 개발 환경 — backend(:8000) + authoring(:8001) + judge(:8002) +
+# frontend(:5173) + admin dashboard(:6010) 을 한 번에 띄우고 내리는 진입점.
+#
+# 대시보드 포트는 6010 — 6000(X11)이 브라우저 차단 대상이라 회피.
+# 바꾸면 authoring_engine/.env의 JCQ_DASHBOARD_ORIGIN도 같은 값으로 맞춰라.
 #
 # 사용법:
-#   scripts/dev.sh up                               # 4개 서버 기동 + 헬스체크
+#   scripts/dev.sh up                               # 5개 서버 기동 + 헬스체크
 #   scripts/dev.sh up --no-authoring               # 출제 엔진 제외하고 기동
+#   scripts/dev.sh up --no-dashboard               # 관리 대시보드 제외
 #   scripts/dev.sh up --no-llm                     # Ollama 앙상블 스킵 (JCQ_SKIP_ENSEMBLE=1 주입)
 #   scripts/dev.sh up --no-authoring --no-llm      # 둘 다
 #   scripts/dev.sh down                            # 떠 있는 서버 종료
 #   scripts/dev.sh status                          # 현재 상태 (PID, 포트, /health 응답)
-#   scripts/dev.sh logs <backend|authoring|judge|frontend>
-#   scripts/dev.sh restart [--no-authoring] [--no-llm]  # down → up
+#   scripts/dev.sh logs <backend|authoring|judge|frontend|dashboard>
+#   scripts/dev.sh restart [--no-authoring] [--no-dashboard] [--no-llm]  # down → up
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,12 +40,14 @@ done
 # ── 서비스 정의 (이름 / 포트 / 헬스 경로 / cwd / 실행 인자) ──────────────────
 # judge가 backend보다 먼저 떠야 함 — backend가 첫 채점 요청에서 채점 엔진을 호출.
 # 헬스체크가 막아주긴 하지만 의도적으로 순서를 명시.
-SERVICES=("judge" "backend" "authoring" "frontend")
+SERVICES=("judge" "backend" "authoring" "dashboard" "frontend")
 
 backend_port=8000;   backend_health="/health"
 authoring_port=8001; authoring_health="/api/health"
 judge_port=8002;     judge_health="/api/health"
 frontend_port=5173;  frontend_health="/"
+# 대시보드 포트 — 바꾸면 authoring_engine/.env의 JCQ_DASHBOARD_ORIGIN도 함께 변경.
+dashboard_port=6010; dashboard_health="/"
 
 # ── 출력 유틸 ───────────────────────────────────────────────────────────────
 _use_color=$([[ -t 1 ]] && echo 1 || echo 0)
@@ -115,6 +121,14 @@ start_frontend() {
     nohup npm run dev -- --host 127.0.0.1 --port "$frontend_port" \
         > "$(logfile frontend)" 2>&1 &
     echo $! > "$(pidfile frontend)"
+}
+
+start_dashboard() {
+    # 정적 HTML — venv 불필요. python http.server로 충분.
+    cd "$REPO_ROOT/admin_dashboard"
+    nohup "$PY" -m http.server "$dashboard_port" --bind 127.0.0.1 \
+        > "$(logfile dashboard)" 2>&1 &
+    echo $! > "$(pidfile dashboard)"
 }
 
 start_one() {
@@ -195,19 +209,24 @@ stop_one() {
 
 # ── 서브커맨드 ─────────────────────────────────────────────────────────────
 cmd_up() {
-    local skip_authoring=0 skip_llm=0
+    local skip_authoring=0 skip_dashboard=0 skip_llm=0
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --no-authoring) skip_authoring=1; shift ;;
+            --no-dashboard) skip_dashboard=1; shift ;;
             --no-llm)       skip_llm=1; shift ;;
             *) echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
         esac
     done
 
-    local services=("${SERVICES[@]}")
-    if [[ $skip_authoring = 1 ]]; then
-        services=("judge" "backend" "frontend")
-    fi
+    # 기본 순서에서 옵션에 따라 제외
+    local services=()
+    for s in "${SERVICES[@]}"; do
+        [[ $skip_authoring = 1 && "$s" = "authoring" ]] && continue
+        [[ $skip_dashboard = 1 && "$s" = "dashboard" ]] && continue
+        # dashboard는 authoring 없이도 띄울 수는 있지만 사용은 못 함 — 그냥 안내만
+        services+=("$s")
+    done
 
     # judge 프로세스가 상속할 수 있도록 export — nohup은 부모 환경을 그대로 가져감.
     if [[ $skip_llm = 1 ]]; then
@@ -218,6 +237,7 @@ cmd_up() {
 
     section "JCodeQuest dev — 기동"
     [[ $skip_authoring = 1 ]] && info "출제 엔진(authoring) 스킵"
+    [[ $skip_dashboard = 1 ]] && info "관리 대시보드 스킵"
     [[ $skip_llm = 1 ]]       && info "LLM 앙상블 스킵 (JCQ_SKIP_ENSEMBLE=1)"
     info "python: $PY"
     info "log dir: $LOG_DIR"
@@ -232,6 +252,7 @@ cmd_up() {
         echo "     frontend  http://localhost:${frontend_port}  (Vite dev)"
         echo "     backend   http://localhost:${backend_port}   (Supabase JWT 인증)"
         [[ $skip_authoring = 0 ]] && echo "     authoring http://localhost:${authoring_port}"
+        [[ $skip_dashboard = 0 ]] && echo "     dashboard http://localhost:${dashboard_port}  (브라우저가 막으면 dashboard_port 변경)"
         echo "     judge     http://localhost:${judge_port}$([ $skip_llm = 1 ] && echo "  (LLM 스킵)")"
     else
         echo "  $(c 31 '✗') 일부 서비스 기동 실패 — 위 로그 참고"
@@ -270,11 +291,11 @@ cmd_status() {
 cmd_logs() {
     local svc="${1:-}"
     if [[ -z "$svc" ]]; then
-        echo "사용법: scripts/dev.sh logs <backend|authoring|judge|frontend>" >&2
+        echo "사용법: scripts/dev.sh logs <backend|authoring|judge|frontend|dashboard>" >&2
         exit 2
     fi
     case "$svc" in
-        backend|authoring|judge|frontend) ;;
+        backend|authoring|judge|frontend|dashboard) ;;
         *) echo "알 수 없는 서비스: $svc" >&2; exit 2 ;;
     esac
     local lf
