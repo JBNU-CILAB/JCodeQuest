@@ -1,8 +1,8 @@
-# JCodeQuest — backend + judge + authoring + frontend 4종 서비스.
+# JCodeQuest — backend + judge + authoring + frontend + admin dashboard 5종 서비스.
 #
 # 사용:
 #   cp .env.docker.example .env.docker
-#   # .env.docker 채우기 (JCQ_DB_URL, SUPABASE_URL, JCQ_INTERNAL_SECRET 등)
+#   # .env.docker 채우기 (JCQ_DB_URL, SUPABASE_URL, JCQ_INTERNAL_SECRET, JCQ_ADMIN_TOKEN 등)
 #   docker compose --env-file .env.docker up --build -d
 #
 # 주의:
@@ -12,6 +12,9 @@
 #   - 인증은 Supabase Auth(Google OIDC) — JWT는 backend가 검증, OAuth 흐름은
 #     프런트엔드(@supabase/supabase-js)가 직접 처리.
 #   - frontend는 Vite 빌드 결과를 nginx로 서빙. VITE_* 변수는 빌드 타임에 주입돼야 한다.
+#   - admin dashboard는 단일 정적 HTML을 nginx로 :6010에 서빙. 브라우저가 host로
+#     매핑된 authoring(:8001)으로 직접 호출하므로 authoring의 JCQ_DASHBOARD_ORIGIN과
+#     이 대시보드 origin을 일치시켜야 CORS preflight가 통과한다.
 
 x-common-env: &common-env
   PYTHONUNBUFFERED: "1"
@@ -105,6 +108,10 @@ services:
       LANGSMITH_PROJECT: "${LANGSMITH_PROJECT_AUTHORING:-jcq-authoring}"
       LANGCHAIN_TRACING_V2: "${LANGCHAIN_TRACING_V2:-}"
       LANGCHAIN_ENDPOINT: "${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}"
+      # Admin 대시보드 — Bearer 토큰 + CORS origin. 대시보드 컨테이너가 같은 토큰을
+      # 굳이 알 필요는 없다 (브라우저에서 사람이 직접 입력) — 여기엔 authoring 측만 주입.
+      JCQ_ADMIN_TOKEN: "${JCQ_ADMIN_TOKEN}"
+      JCQ_DASHBOARD_ORIGIN: "${JCQ_DASHBOARD_ORIGIN:-http://localhost:6010}"
     ports:
       - "8001:8001"
     depends_on:
@@ -133,6 +140,20 @@ services:
     restart: unless-stopped
     ports:
       - "5173:5173"
+    networks: [jcq]
+
+  dashboard:
+    # 정적 HTML 1장 — 빌드 args, 환경변수 모두 없다.
+    # 브라우저가 페이지 받아 host 매핑된 authoring(:8001)으로 직접 호출 →
+    # authoring 측의 JCQ_DASHBOARD_ORIGIN과 이 서비스가 노출하는 origin이 일치해야 한다.
+    # 토큰은 사람이 ⚙ 설정 화면에 입력 → localStorage에 저장. 컨테이너에는 안 들어감.
+    build:
+      context: .
+      dockerfile: admin_dashboard/Dockerfile
+    container_name: jcq-dashboard
+    restart: unless-stopped
+    ports:
+      - "6010:80"
     networks: [jcq]
 
 networks:
