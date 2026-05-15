@@ -1,3 +1,3 @@
-from . import stats, submissions
+from . import stats, submissions, users
 
-__all__ = ["stats", "submissions"]
+__all__ = ["stats", "submissions", "users"]

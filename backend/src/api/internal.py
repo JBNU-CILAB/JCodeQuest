@@ -11,6 +11,9 @@
   GET    /internal/problems/{id}/children  authoring viewer: 변형 목록 상세
   GET    /internal/submissions             admin: 제출 목록 (필터 + 페이지네이션)
   GET    /internal/submissions/{id}        admin: 제출 상세 (코드/votes/test_results)
+  GET    /internal/users                   admin: 유저 목록 (검색 + 페이지네이션)
+  DELETE /internal/users/{id}              admin: 유저 + submission/tutor/session cascade 삭제
+  DELETE /internal/users/{id}/api-key      admin: 유저 API 키 강제 제거 (vault row 포함)
 """
 from __future__ import annotations
 
@@ -28,6 +31,7 @@ from ..judge.jobs import apply_grading_event
 from ..schemas import (
     AdminSubmissionDetail,
     AdminSubmissionSummary,
+    AdminUserSummary,
     AuthoringProblemAdmin,
     AuthoringProblemCreate,
     AuthoringProblemCreateResponse,
@@ -44,6 +48,8 @@ from ..schemas import (
     StatsJudgeResponse,
     StatsVerdictBucket,
     StatsVerdictResponse,
+    UserDeleteCascade,
+    UserDeleteResponse,
 )
 from ..storage import get_session
 from ..storage.models import NoticeRow, ProblemRow, SubmissionRow, UserRow, iso_week_of
@@ -54,6 +60,7 @@ from ..storage.notices import (
     update_notice,
 )
 from ..storage.problems import create_problem, delete_problem
+from ..storage.users import clear_user_api_key, delete_user, list_users_admin
 
 log = logging.getLogger(__name__)
 
@@ -371,6 +378,82 @@ def get_submission_admin(
             votes=s.votes,
             test_results=s.test_results,
         )
+
+
+# ── users (admin) ─────────────────────────────────────────────────────
+def _user_to_summary(row: UserRow, submission_count: int) -> AdminUserSummary:
+    return AdminUserSummary(
+        id=row.id,  # type: ignore[arg-type]
+        display_name=row.display_name,
+        email=row.email,
+        provider=row.provider,
+        nickname=row.nickname,
+        exp=row.exp,
+        tier=row.tier,
+        has_api_key=row.api_key_secret_id is not None,
+        submission_count=submission_count,
+        created_at=row.created_at.isoformat() if row.created_at else None,
+    )
+
+
+@router.get(
+    "/users",
+    response_model=list[AdminUserSummary],
+    summary="유저 목록 (admin)",
+)
+def list_users(
+    authorization: Annotated[str | None, Header()] = None,
+    search: Annotated[str | None, Query(description="display_name/email/nickname 부분 일치")] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[AdminUserSummary]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        rows = list_users_admin(session, search=search, limit=limit, offset=offset)
+    return [_user_to_summary(u, c) for (u, c) in rows]
+
+
+@router.delete(
+    "/users/{user_id}",
+    response_model=UserDeleteResponse,
+    summary="유저 + submission/tutor/session cascade 삭제 (하드)",
+    description=(
+        "단일 트랜잭션 내에서: tutor_messages → submissions → sessions → "
+        "vault.secret (api_key) → user 순으로 삭제. 카운트가 응답에 포함."
+    ),
+    responses={404: {"description": "유저 없음"}},
+)
+def delete_user_admin(
+    user_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> UserDeleteResponse:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        counts = delete_user(session, user_id)
+    if counts is None:
+        raise HTTPException(404, f"user {user_id} not found")
+    return UserDeleteResponse(id=user_id, cascade=UserDeleteCascade(**counts))
+
+
+@router.delete(
+    "/users/{user_id}/api-key",
+    summary="유저 API 키 강제 제거 (admin)",
+    description=(
+        "vault.secrets의 행도 함께 삭제. 키가 없던 유저에 대해서도 200 (idempotent). "
+        "유저 자체는 보존되어 본인이 다시 등록 가능."
+    ),
+    responses={404: {"description": "유저 없음"}},
+)
+def force_clear_api_key(
+    user_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, int | bool]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        ok = clear_user_api_key(session, user_id)
+    if not ok:
+        raise HTTPException(404, f"user {user_id} not found")
+    return {"id": user_id, "cleared": True}
 
 
 # ── stats (admin_dashboard 그래프용) ──────────────────────────────────

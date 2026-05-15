@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from jcq_shared.schemas import (
     AdminSubmissionDetail,
     AdminSubmissionSummary,
+    AdminUserSummary,
     AuthoringProblemAdmin,
     AuthoringProblemCreate,
     AuthoringProblemCreateResponse,
@@ -34,12 +35,15 @@ from jcq_shared.schemas import (
     StatsVerdictResponse,
     TestCase,
     TestResult,
+    UserDeleteCascade,
+    UserDeleteResponse,
     Verdict,
 )
 
 __all__ = [
     "AdminSubmissionDetail",
     "AdminSubmissionSummary",
+    "AdminUserSummary",
     "AuthoringProblemAdmin",
     "AuthoringProblemCreate",
     "AuthoringProblemCreateResponse",
@@ -68,6 +72,8 @@ __all__ = [
     "StatsVerdictResponse",
     "TestCase",
     "TestResult",
+    "UserDeleteCascade",
+    "UserDeleteResponse",
     "Verdict",
 ]
 

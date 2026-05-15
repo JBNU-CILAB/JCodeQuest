@@ -12,8 +12,10 @@ import httpx
 from jcq_shared.schemas import (
     AdminSubmissionDetail,
     AdminSubmissionSummary,
+    AdminUserSummary,
     StatsJudgeResponse,
     StatsVerdictResponse,
+    UserDeleteResponse,
 )
 
 log = logging.getLogger(__name__)
@@ -90,6 +92,35 @@ def fetch_verdict_stats(
         r = cli.get(f"{_backend_url()}/internal/stats/verdicts", params=params)
         r.raise_for_status()
         return StatsVerdictResponse.model_validate(r.json())
+
+
+def list_users(
+    *,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[AdminUserSummary]:
+    params: dict[str, str | int] = {"limit": limit, "offset": offset}
+    if search is not None:
+        params["search"] = search
+    with _client() as cli:
+        r = cli.get(f"{_backend_url()}/internal/users", params=params)
+        r.raise_for_status()
+        return [AdminUserSummary.model_validate(x) for x in r.json()]
+
+
+def delete_user(user_id: int) -> UserDeleteResponse:
+    with _client() as cli:
+        r = cli.delete(f"{_backend_url()}/internal/users/{user_id}")
+        r.raise_for_status()
+        return UserDeleteResponse.model_validate(r.json())
+
+
+def clear_user_api_key(user_id: int) -> dict:
+    with _client() as cli:
+        r = cli.delete(f"{_backend_url()}/internal/users/{user_id}/api-key")
+        r.raise_for_status()
+        return r.json()
 
 
 def fetch_judge_stats(

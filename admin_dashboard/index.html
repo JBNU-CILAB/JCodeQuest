@@ -494,9 +494,8 @@
         <a href="#/stats" data-route="stats">
           <span>통계</span>
         </a>
-        <a class="disabled" title="추후 추가">
+        <a href="#/users" data-route="users">
           <span>사용자</span>
-          <span class="hint">준비 중</span>
         </a>
         <a class="disabled" title="추후 추가">
           <span>트레이스</span>
@@ -903,6 +902,57 @@
       <pre id="stats-output" class="output-panel"></pre>
     </section>
 
+    <!-- ── View: 사용자 ────────────────────────────────────────────── -->
+    <section id="view-users" class="hidden">
+      <h2 class="section-title">사용자</h2>
+      <p class="section-desc">유저 목록을 검색하고, 필요 시 cascade 삭제하거나 API 키만 강제로 비운다. 모든 작업은 되돌릴 수 없다.</p>
+
+      <section class="card">
+        <h3>검색</h3>
+        <div class="filter-bar" style="grid-template-columns: 2fr 1fr auto">
+          <div class="field">
+            <label>search (display_name / email / nickname)</label>
+            <input id="user-search" type="text" placeholder="비우면 전체" />
+          </div>
+          <div class="field">
+            <label>limit</label>
+            <input id="user-limit" type="number" min="1" max="200" value="50" />
+          </div>
+          <button type="button" class="primary sm" id="btn-user-search">조회</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>이름</th>
+              <th>이메일</th>
+              <th>provider</th>
+              <th class="num">EXP</th>
+              <th class="num">제출</th>
+              <th>API 키</th>
+              <th>가입</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody">
+            <tr><td colspan="9" class="empty">조회 버튼을 눌러 시작</td></tr>
+          </tbody>
+        </table>
+        <div class="pagination">
+          <div id="user-page-info">offset 0</div>
+          <div class="controls">
+            <button type="button" class="sm" id="btn-user-prev">◀ 이전</button>
+            <button type="button" class="sm" id="btn-user-next">다음 ▶</button>
+          </div>
+        </div>
+      </section>
+
+      <pre id="users-output" class="output-panel"></pre>
+    </section>
+
   </main>
 
 </div>
@@ -964,6 +1014,7 @@ const VIEWS = {
   submissions: "view-submissions",
   notices: "view-notices",
   stats: "view-stats",
+  users: "view-users",
 };
 function applyRoute() {
   const hash = location.hash || "#/problems";
@@ -990,6 +1041,11 @@ function applyRoute() {
   if (route === "stats" && !window._statsLoaded) {
     window._statsLoaded = true;
     loadStats();
+  }
+  // 사용자로 들어오면 자동 첫 조회
+  if (route === "users" && !window._usersLoaded) {
+    window._usersLoaded = true;
+    loadUsers();
   }
 }
 window.addEventListener("hashchange", applyRoute);
@@ -1830,6 +1886,139 @@ function renderJudgeSplitChart(data) {
 $("#btn-stats-reload").addEventListener("click", loadStats);
 $("#stats-bucket").addEventListener("change", () => {
   if (window._statsLoaded) loadStats();
+});
+
+// ── 사용자 관리 (users) ────────────────────────────────────────
+let _userOffset = 0;
+let _userLimit = 50;
+
+async function loadUsers(resetOffset = true) {
+  const tbody = $("#users-tbody");
+  const search = $("#user-search").value.trim();
+  _userLimit = parseInt($("#user-limit").value, 10) || 50;
+  if (resetOffset) _userOffset = 0;
+
+  const qs = new URLSearchParams({ limit: String(_userLimit), offset: String(_userOffset) });
+  if (search) qs.set("search", search);
+
+  tbody.innerHTML = `<tr><td colspan="9" class="empty">불러오는 중...</td></tr>`;
+  try {
+    const r = await judgeFetch(`/api/users?${qs}`);
+    if (!r.ok) {
+      const body = await r.text();
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">[${r.status}] ${escapeHtml(body.slice(0, 200))}</td></tr>`;
+      return;
+    }
+    const rows = await r.json();
+    $("#user-page-info").textContent = `offset ${_userOffset} · 받은 행 ${rows.length}`;
+    $("#btn-user-prev").disabled = _userOffset === 0;
+    $("#btn-user-next").disabled = rows.length < _userLimit;
+
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">결과 없음</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = "";
+    for (const u of rows) {
+      const tr = document.createElement("tr");
+      const created = u.created_at ? u.created_at.slice(0, 10) : "—";
+      const apiBadge = u.has_api_key
+        ? `<span class="verdict AC">SET</span>`
+        : `<span class="verdict NONE">none</span>`;
+      tr.innerHTML = `
+        <td class="num">${u.id}</td>
+        <td>${escapeHtml(u.display_name)}${u.nickname ? ` <span class="hint">(${escapeHtml(u.nickname)})</span>` : ""}</td>
+        <td>${escapeHtml(u.email || "—")}</td>
+        <td>${escapeHtml(u.provider)}</td>
+        <td class="num">${u.exp}</td>
+        <td class="num">${u.submission_count}</td>
+        <td>${apiBadge}</td>
+        <td>${created}</td>
+        <td class="actions">
+          <button class="sm" data-action="clear-key" ${u.has_api_key ? "" : "disabled"}>키 제거</button>
+          <button class="danger sm" data-action="delete">유저 삭제</button>
+        </td>
+      `;
+      tr.querySelector('[data-action="clear-key"]').addEventListener("click", () => clearUserApiKey(u));
+      tr.querySelector('[data-action="delete"]').addEventListener("click", () => deleteUser(u));
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function clearUserApiKey(u) {
+  const out = $("#users-output");
+  const ok = confirm(
+    `유저 #${u.id} "${u.display_name}"의 API 키를 강제 제거합니다.\n` +
+    `· vault.secrets 행도 함께 삭제\n` +
+    `· 유저 자신이 다시 등록 가능\n\n계속할까요?`
+  );
+  if (!ok) return;
+  out.textContent = `DELETE /api/users/${u.id}/api-key ...`;
+  out.className = "output-panel show";
+  try {
+    const r = await judgeFetch(`/api/users/${u.id}/api-key`, { method: "DELETE" });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) {
+      out.className = "output-panel show ok";
+      out.textContent = `✓ API 키 제거 — user_id=${u.id}`;
+      loadUsers(false);
+    } else {
+      out.className = "output-panel show err";
+      out.textContent = `[${r.status}] ${JSON.stringify(body, null, 2)}`;
+    }
+  } catch (err) {
+    out.className = "output-panel show err";
+    out.textContent = `네트워크 오류: ${err.message}`;
+  }
+}
+
+async function deleteUser(u) {
+  const out = $("#users-output");
+  const ok = confirm(
+    `유저 #${u.id} "${u.display_name}"을(를) 영구 삭제합니다.\n` +
+    `· 이 유저의 제출 ${u.submission_count}건 cascade 삭제\n` +
+    `· 제출에 묶인 튜터 메시지 / 서버 세션 / API 키도 함께 삭제\n` +
+    `· 되돌릴 수 없음.\n\n계속할까요?`
+  );
+  if (!ok) return;
+  out.textContent = `DELETE /api/users/${u.id} ...`;
+  out.className = "output-panel show";
+  try {
+    const r = await judgeFetch(`/api/users/${u.id}`, { method: "DELETE" });
+    const body = await r.json();
+    if (r.ok) {
+      const c = body.cascade || {};
+      out.className = "output-panel show ok";
+      out.textContent =
+        `✓ 삭제 완료 — id=${body.id}\n` +
+        `  submissions: ${c.submissions}\n` +
+        `  tutor_messages: ${c.tutor_messages}\n` +
+        `  sessions: ${c.sessions}`;
+      loadUsers(false);
+    } else {
+      out.className = "output-panel show err";
+      out.textContent = `[${r.status}] ${JSON.stringify(body, null, 2)}`;
+    }
+  } catch (err) {
+    out.className = "output-panel show err";
+    out.textContent = `네트워크 오류: ${err.message}`;
+  }
+}
+
+$("#btn-user-search").addEventListener("click", () => loadUsers(true));
+$("#user-search").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") loadUsers(true);
+});
+$("#btn-user-prev").addEventListener("click", () => {
+  _userOffset = Math.max(0, _userOffset - _userLimit);
+  loadUsers(false);
+});
+$("#btn-user-next").addEventListener("click", () => {
+  _userOffset += _userLimit;
+  loadUsers(false);
 });
 
 // ── 초기화 ─────────────────────────────────────────────────────

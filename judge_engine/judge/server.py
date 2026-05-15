@@ -8,6 +8,9 @@
   GET  /api/submissions/{id}  채점 결과 상세 (코드/votes/test_results 포함).
   GET  /api/stats/verdicts    시계열 판정 카운트 (admin 그래프).
   GET  /api/stats/judges      시계열 모델별 투표 추세 (admin 그래프).
+  GET    /api/users               유저 목록 (admin).
+  DELETE /api/users/{id}          유저 cascade 삭제 (제출/튜터/세션).
+  DELETE /api/users/{id}/api-key  유저 API 키 강제 제거.
   GET  /api/health       liveness probe
 
 채점 라이프사이클 (backend가 받게 되는 webhook 순서):
@@ -44,6 +47,7 @@ from .jobs import grade_job
 from .queue import JobQueue
 from .routers import stats as stats_router
 from .routers import submissions as submissions_router
+from .routers import users as users_router
 from .sandbox import run_user_code
 
 log = logging.getLogger(__name__)
@@ -77,6 +81,7 @@ if _origins:
 
 app.include_router(submissions_router.router)
 app.include_router(stats_router.router)
+app.include_router(users_router.router)
 
 
 @app.get(
