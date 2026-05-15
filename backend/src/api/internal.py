@@ -2,12 +2,15 @@
 `/internal/*` 경로를 차단할 것. 인증은 `Authorization: Bearer <JCQ_INTERNAL_SECRET>`.
 
 엔드포인트:
-  POST /internal/grade-events           judge_engine이 채점 라이프사이클 이벤트를 push
-  GET  /internal/problems/{id}          authoring_engine: 원본 문제 상세
-  GET  /internal/problems/{id}/seeds    authoring_engine: 같은 카테고리 시드 (approved)
-  POST /internal/problems               authoring_engine: 변형/시드 문제 저장
-  GET  /internal/problems               authoring viewer: 관리자 목록 (변형 통계 포함)
-  GET  /internal/problems/{id}/children authoring viewer: 변형 목록 상세
+  POST   /internal/grade-events            judge_engine이 채점 라이프사이클 이벤트를 push
+  GET    /internal/problems/{id}           authoring_engine: 원본 문제 상세
+  GET    /internal/problems/{id}/seeds     authoring_engine: 같은 카테고리 시드 (approved)
+  POST   /internal/problems                authoring_engine: 변형/시드 문제 저장
+  DELETE /internal/problems/{id}           admin: 문제 + 변형/제출/튜터 cascade 삭제
+  GET    /internal/problems                authoring viewer: 관리자 목록 (변형 통계 포함)
+  GET    /internal/problems/{id}/children  authoring viewer: 변형 목록 상세
+  GET    /internal/submissions             admin: 제출 목록 (필터 + 페이지네이션)
+  GET    /internal/submissions/{id}        admin: 제출 상세 (코드/votes/test_results)
 """
 from __future__ import annotations
 
@@ -23,16 +26,20 @@ from sqlmodel import select
 from ..events import SubmissionEventBroker
 from ..judge.jobs import apply_grading_event
 from ..schemas import (
+    AdminSubmissionDetail,
+    AdminSubmissionSummary,
     AuthoringProblemAdmin,
     AuthoringProblemCreate,
     AuthoringProblemCreateResponse,
     AuthoringProblemSummary,
     AuthoringTestCase,
     GradeEvent,
+    ProblemDeleteCascade,
+    ProblemDeleteResponse,
 )
 from ..storage import get_session
-from ..storage.models import ProblemRow, iso_week_of
-from ..storage.problems import create_problem
+from ..storage.models import ProblemRow, SubmissionRow, UserRow, iso_week_of
+from ..storage.problems import create_problem, delete_problem
 
 log = logging.getLogger(__name__)
 
@@ -234,3 +241,119 @@ def create_problem_admin(
             iso_week=issued_week,
         )
     return AuthoringProblemCreateResponse(id=pid)
+
+
+@router.delete(
+    "/problems/{problem_id}",
+    response_model=ProblemDeleteResponse,
+    summary="문제 + 변형/제출/튜터 cascade 삭제 (하드)",
+    description=(
+        "단일 트랜잭션 내에서: 자식 변형(재귀) → tutor_messages → submissions → "
+        "test_cases(SQLA cascade) → problem 순으로 삭제. 반환값에 각 카운트가 들어있다."
+    ),
+    responses={404: {"description": "문제 없음"}},
+)
+def delete_problem_admin(
+    problem_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+    cascade_children: Annotated[bool, Query(description="변형(자식 문제)까지 함께 삭제")] = True,
+) -> ProblemDeleteResponse:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        counts = delete_problem(session, problem_id, cascade_children=cascade_children)
+    if counts is None:
+        raise HTTPException(404, f"problem {problem_id} not found")
+    return ProblemDeleteResponse(id=problem_id, cascade=ProblemDeleteCascade(**counts))
+
+
+# ── submissions ──────────────────────────────────────────────────────────
+def _sub_to_summary(
+    s: SubmissionRow,
+    user_name: str | None,
+    problem_title: str | None,
+) -> AdminSubmissionSummary:
+    return AdminSubmissionSummary(
+        id=s.id,  # type: ignore[arg-type]
+        user_id=s.user_id,
+        user_display_name=user_name,
+        problem_id=s.problem_id,
+        problem_title=problem_title,
+        status=s.status,
+        final_verdict=s.final_verdict,
+        mode=s.mode,
+        max_elapsed_ms=s.max_elapsed_ms,
+        peak_memory_kb=s.peak_memory_kb,
+        points_awarded=s.points_awarded,
+        created_at=s.created_at.isoformat() if s.created_at else None,
+    )
+
+
+@router.get(
+    "/submissions",
+    response_model=list[AdminSubmissionSummary],
+    summary="제출 목록 (필터 + 페이지네이션)",
+)
+def list_submissions_admin(
+    authorization: Annotated[str | None, Header()] = None,
+    user_id: Annotated[int | None, Query()] = None,
+    problem_id: Annotated[int | None, Query()] = None,
+    verdict: Annotated[str | None, Query(description="AC | SUS")] = None,
+    status: Annotated[str | None, Query(description="queued | running | done | failed")] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[AdminSubmissionSummary]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        # SubmissionRow + UserRow.display_name + ProblemRow.title 를 한 번에.
+        stmt = (
+            select(SubmissionRow, UserRow.display_name, ProblemRow.title)
+            .join(UserRow, UserRow.id == SubmissionRow.user_id)  # type: ignore[arg-type]
+            .join(ProblemRow, ProblemRow.id == SubmissionRow.problem_id)  # type: ignore[arg-type]
+            .order_by(SubmissionRow.id.desc())  # type: ignore[union-attr]
+        )
+        if user_id is not None:
+            stmt = stmt.where(SubmissionRow.user_id == user_id)
+        if problem_id is not None:
+            stmt = stmt.where(SubmissionRow.problem_id == problem_id)
+        if verdict is not None:
+            stmt = stmt.where(SubmissionRow.final_verdict == verdict)
+        if status is not None:
+            stmt = stmt.where(SubmissionRow.status == status)
+        rows = list(session.exec(stmt.offset(offset).limit(limit)).all())
+    return [_sub_to_summary(s, name, title) for (s, name, title) in rows]
+
+
+@router.get(
+    "/submissions/{submission_id}",
+    response_model=AdminSubmissionDetail,
+    summary="제출 상세 (코드/votes/test_results 포함)",
+    responses={404: {"description": "제출 없음"}},
+)
+def get_submission_admin(
+    submission_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> AdminSubmissionDetail:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        s = session.get(SubmissionRow, submission_id)
+        if s is None:
+            raise HTTPException(404, f"submission {submission_id} not found")
+        user = session.get(UserRow, s.user_id)
+        problem = session.get(ProblemRow, s.problem_id)
+        return AdminSubmissionDetail(
+            id=s.id,  # type: ignore[arg-type]
+            user_id=s.user_id,
+            user_display_name=user.display_name if user else None,
+            problem_id=s.problem_id,
+            problem_title=problem.title if problem else None,
+            status=s.status,
+            final_verdict=s.final_verdict,
+            mode=s.mode,
+            max_elapsed_ms=s.max_elapsed_ms,
+            peak_memory_kb=s.peak_memory_kb,
+            points_awarded=s.points_awarded,
+            created_at=s.created_at.isoformat() if s.created_at else None,
+            code=s.code,
+            votes=s.votes,
+            test_results=s.test_results,
+        )

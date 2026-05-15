@@ -4,6 +4,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from jcq_shared.schemas import (
+    AdminSubmissionDetail,
+    AdminSubmissionSummary,
     AuthoringProblemAdmin,
     AuthoringProblemCreate,
     AuthoringProblemCreateResponse,
@@ -21,6 +23,8 @@ from jcq_shared.schemas import (
     JudgeVote,
     JudgeVotePartial,
     Problem,
+    ProblemDeleteCascade,
+    ProblemDeleteResponse,
     ProblemLevel,
     TestCase,
     TestResult,
@@ -28,6 +32,8 @@ from jcq_shared.schemas import (
 )
 
 __all__ = [
+    "AdminSubmissionDetail",
+    "AdminSubmissionSummary",
     "AuthoringProblemAdmin",
     "AuthoringProblemCreate",
     "AuthoringProblemCreateResponse",
@@ -45,6 +51,8 @@ __all__ = [
     "JudgeVote",
     "JudgeVotePartial",
     "Problem",
+    "ProblemDeleteCascade",
+    "ProblemDeleteResponse",
     "ProblemLevel",
     "TestCase",
     "TestResult",

@@ -2,7 +2,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..schemas import IntentRubric, Problem, TestCase
-from .models import ProblemRow, TestCaseRow
+from .models import ProblemRow, SubmissionRow, TestCaseRow, TutorMessageRow
 
 
 def _to_domain(row: ProblemRow) -> Problem:
@@ -128,3 +128,81 @@ def create_problem(
     session.refresh(row)
     assert row.id is not None
     return row.id
+
+
+def delete_problem(
+    session: Session,
+    problem_id: int,
+    cascade_children: bool = True,
+) -> dict[str, int] | None:
+    """문제 + 연관 row를 모두 삭제. 단일 트랜잭션, 마지막에 한 번만 commit.
+
+    cascade_children=True이면 parent_id == problem_id인 변형도 재귀 삭제.
+    SubmissionRow.problem_id, ProblemRow.parent_id, TutorMessageRow.submission_id 모두
+    ORM Relationship으로 선언돼 있지 않아 SQLAlchemy의 unit-of-work가 DELETE 순서를
+    추론할 수 없다 (postgres에서 FK violation 발생). 각 코호트 사이에 명시적으로
+    `session.flush()`를 발행해 SQL 순서를 강제한다.
+
+    반환:
+      {variants, submissions, tutor_messages, test_cases} 누적 카운트.
+      대상 문제가 없으면 None.
+    """
+    counts = {"variants": 0, "submissions": 0, "tutor_messages": 0, "test_cases": 0}
+
+    def _delete_one(pid: int) -> bool:
+        row = session.get(ProblemRow, pid)
+        if row is None:
+            return False
+
+        # 1) 변형(자식) 먼저 — 자식이 자기 코호트별 flush를 끝낸 뒤 돌아온다.
+        if cascade_children:
+            children = list(
+                session.exec(
+                    select(ProblemRow).where(ProblemRow.parent_id == pid)
+                ).all()
+            )
+            for c in children:
+                if c.id is not None and _delete_one(c.id):
+                    counts["variants"] += 1
+
+        # 2) 이 문제의 submissions에 묶인 tutor_messages 먼저
+        sub_ids = [
+            s.id for s in session.exec(
+                select(SubmissionRow).where(SubmissionRow.problem_id == pid)
+            ).all() if s.id is not None
+        ]
+        if sub_ids:
+            tms = list(
+                session.exec(
+                    select(TutorMessageRow).where(
+                        TutorMessageRow.submission_id.in_(sub_ids)  # type: ignore[attr-defined]
+                    )
+                ).all()
+            )
+            for tm in tms:
+                session.delete(tm)
+            if tms:
+                session.flush()  # DELETE tutor_message 즉시 발행
+            counts["tutor_messages"] += len(tms)
+
+        # 3) submissions
+        if sub_ids:
+            for sid in sub_ids:
+                s = session.get(SubmissionRow, sid)
+                if s is not None:
+                    session.delete(s)
+            session.flush()  # DELETE submission 즉시 발행 (tutor_message 다음)
+            counts["submissions"] += len(sub_ids)
+
+        # 4) test_cases는 ProblemRow의 cascade="all, delete-orphan"으로 자동
+        counts["test_cases"] += len(row.test_cases)
+
+        session.delete(row)
+        session.flush()  # DELETE problem(+test_cases) 즉시 발행 → 다음 형제/부모로 진행
+        return True
+
+    if not _delete_one(problem_id):
+        return None
+
+    session.commit()
+    return counts

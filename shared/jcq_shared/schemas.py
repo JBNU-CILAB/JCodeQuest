@@ -220,3 +220,43 @@ class SandboxRunRequest(BaseModel):
     stdin: str = ""
     time_limit_ms: int = Field(default=2000, ge=100, le=60000)
     memory_limit_mb: int = Field(default=256, ge=16, le=2048)
+
+
+# ── admin 대시보드 ─────────────────────────────────────────────────────
+class ProblemDeleteCascade(BaseModel):
+    """delete_problem이 돌려주는 cascade 카운트 — 사용자에게 "X건 함께 삭제됨" 표시용."""
+
+    variants: int = 0
+    submissions: int = 0
+    tutor_messages: int = 0
+    test_cases: int = 0
+
+
+class ProblemDeleteResponse(BaseModel):
+    id: int
+    cascade: ProblemDeleteCascade
+
+
+class AdminSubmissionSummary(BaseModel):
+    """submission 목록 — 코드/테스트결과/votes 같은 무거운 필드 제외."""
+
+    id: int
+    user_id: int
+    user_display_name: str | None = None
+    problem_id: int
+    problem_title: str | None = None
+    status: str
+    final_verdict: str | None = None
+    mode: str | None = None
+    max_elapsed_ms: int | None = None
+    peak_memory_kb: int | None = None
+    points_awarded: int | None = None
+    created_at: str | None = None
+
+
+class AdminSubmissionDetail(AdminSubmissionSummary):
+    """submission 상세 — 무거운 필드 포함."""
+
+    code: str
+    votes: list | None = None
+    test_results: list | None = None

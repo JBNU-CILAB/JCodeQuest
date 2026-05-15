@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query
-from jcq_shared.schemas import IntentRubric, Problem, TestCase
+from jcq_shared.schemas import IntentRubric, Problem, ProblemDeleteResponse, TestCase
 
 from .. import backend_client
 from ..admin_auth import require_admin
@@ -190,3 +190,23 @@ async def list_problem_children(
     except httpx.HTTPStatusError as e:
         raise _backend_error(e)
     return [_admin_to_detail(r.model_dump()) for r in rows]
+
+
+@router.delete(
+    "/api/problems/{problem_id}",
+    response_model=ProblemDeleteResponse,
+    summary="문제 + 변형/제출/튜터 하드 cascade 삭제",
+    description=(
+        "backend `/internal/problems/{id}` DELETE 로 위임. 자식 변형까지 함께 삭제하려면 "
+        "`cascade_children=true` (기본). false면 자식이 있을 때 FK violation으로 실패."
+    ),
+    responses={404: {"description": "문제 없음"}},
+)
+async def delete_original(
+    problem_id: Annotated[int, PathParam(description="삭제할 문제 ID")],
+    cascade_children: Annotated[bool, Query(description="변형(자식)까지 같이 삭제")] = True,
+) -> ProblemDeleteResponse:
+    try:
+        return backend_client.delete_problem(problem_id, cascade_children=cascade_children)
+    except httpx.HTTPStatusError as e:
+        raise _backend_error(e)

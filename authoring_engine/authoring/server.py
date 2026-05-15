@@ -20,7 +20,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import health, problems, runs, spans
+from .routers import health, problems, runs, spans, submissions
 
 if os.getenv("LANGSMITH_API_KEY"):
     os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
@@ -32,7 +32,8 @@ if os.getenv("LANGSMITH_API_KEY"):
 tags_metadata = [
     {"name": "health", "description": "liveness probe (인증 없음)"},
     {"name": "runs", "description": "출제 파이프라인 실행 + SSE 진행 스트림 (admin)"},
-    {"name": "problems", "description": "원본/변형 문제 조회와 원본 직접 등록 (admin)"},
+    {"name": "problems", "description": "원본/변형 문제 조회·등록·삭제 (admin)"},
+    {"name": "submissions", "description": "유저 풀이 기록 조회 (admin)"},
     {"name": "spans", "description": "LangSmith 트레이스 조회 (admin)"},
 ]
 
@@ -64,6 +65,7 @@ if _origins:
 app.include_router(health.router)
 app.include_router(runs.router)
 app.include_router(problems.router)
+app.include_router(submissions.router)
 app.include_router(spans.router)
 
 

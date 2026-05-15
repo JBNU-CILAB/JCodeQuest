@@ -326,6 +326,124 @@
     overflow-y: auto;
   }
 
+  /* ── Tables ────────────────────────────────────────────────── */
+  table.data {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  table.data th, table.data td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  table.data th {
+    background: var(--panel-2);
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11px;
+  }
+  table.data tr:hover td { background: var(--panel-2); }
+  table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.data td.actions { text-align: right; white-space: nowrap; }
+  table.data .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 24px;
+  }
+  .verdict {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .verdict.AC { background: var(--ok-soft); color: var(--ok); }
+  .verdict.SUS { background: #fef3c7; color: var(--warn); }
+  .verdict.WA, .verdict.RE, .verdict.TLE, .verdict.MLE { background: var(--danger-soft); color: var(--danger); }
+  .verdict.NONE { background: #f3f4f6; color: var(--muted); }
+
+  /* ── Pagination ────────────────────────────────────────────── */
+  .pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    padding: 8px 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .pagination .controls { display: flex; gap: 6px; }
+
+  /* ── Filter bar ────────────────────────────────────────────── */
+  .filter-bar {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+  }
+  .filter-bar .field { margin-bottom: 0; }
+  .filter-bar .field label { font-size: 11px; }
+
+  /* ── Detail panel (overlay-ish) ────────────────────────────── */
+  .detail-card {
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-top: 16px;
+  }
+  .detail-card .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .detail-card .head h3 { margin: 0; font-size: 14px; }
+  .kv {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-family: var(--mono); }
+  .code-block {
+    background: #0f172a;
+    color: #e5e7eb;
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .json-block {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: pre-wrap;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  details.block { margin-top: 10px; }
+  details.block summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 4px 0;
+  }
+
   /* ── Misc ──────────────────────────────────────────────────── */
   .hidden { display: none !important; }
   .meta-line {
@@ -366,6 +484,9 @@
       <nav class="nav" id="nav">
         <a href="#/problems" data-route="problems" class="active">
           <span>문제 관리</span>
+        </a>
+        <a href="#/submissions" data-route="submissions">
+          <span>풀이 기록</span>
         </a>
         <a class="disabled" title="추후 추가">
           <span>사용자</span>
@@ -414,6 +535,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="create">원본 등록</button>
         <button class="tab" data-tab="variant">변형 출제</button>
+        <button class="tab" data-tab="list">원본 목록</button>
       </div>
 
       <!-- ── Tab: 원본 등록 ──────────────────────────────────────── -->
@@ -547,6 +669,109 @@
         <div id="variant-output" class="output-panel"></div>
       </div>
 
+      <!-- ── Tab: 원본 목록 (삭제 진입점) ─────────────────────────── -->
+      <div id="tab-list" class="tab-content hidden">
+        <section class="card">
+          <div class="actions-row" style="margin-top: 0">
+            <label class="checkbox-row" style="margin-right: auto">
+              <input type="checkbox" id="list-include-variants" />
+              <span style="font-size: 12px; color: var(--muted)">변형도 포함</span>
+            </label>
+            <button type="button" id="btn-reload-list">새로고침</button>
+          </div>
+          <table class="data" style="margin-top: 8px">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>제목</th>
+                <th>카테고리</th>
+                <th>난이도</th>
+                <th>상태</th>
+                <th class="num">변형</th>
+                <th class="num">생성</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="problems-tbody">
+              <tr><td colspan="8" class="empty">목록을 불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </section>
+        <pre id="list-output" class="output-panel"></pre>
+      </div>
+
+    </section>
+
+    <!-- ── View: 풀이 기록 ────────────────────────────────────────── -->
+    <section id="view-submissions" class="hidden">
+      <h2 class="section-title">풀이 기록</h2>
+      <p class="section-desc">유저의 제출(submission) 행을 필터·페이지네이션으로 조회. 상세 행에선 코드/votes/test_results까지 본다.</p>
+
+      <section class="card">
+        <h3>필터</h3>
+        <div class="filter-bar">
+          <div class="field">
+            <label>user_id</label>
+            <input id="sub-filter-user" type="number" min="1" placeholder="모두" />
+          </div>
+          <div class="field">
+            <label>problem_id</label>
+            <input id="sub-filter-problem" type="number" min="1" placeholder="모두" />
+          </div>
+          <div class="field">
+            <label>verdict</label>
+            <select id="sub-filter-verdict">
+              <option value="">모두</option>
+              <option value="AC">AC</option>
+              <option value="SUS">SUS</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>status</label>
+            <select id="sub-filter-status">
+              <option value="">모두</option>
+              <option value="queued">queued</option>
+              <option value="running">running</option>
+              <option value="done">done</option>
+              <option value="failed">failed</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>limit</label>
+            <input id="sub-filter-limit" type="number" min="1" max="200" value="50" />
+          </div>
+          <button type="button" class="primary sm" id="btn-sub-search">조회</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>유저</th>
+              <th>문제</th>
+              <th>verdict</th>
+              <th>status</th>
+              <th class="num">elapsed</th>
+              <th class="num">point</th>
+              <th>created</th>
+            </tr>
+          </thead>
+          <tbody id="subs-tbody">
+            <tr><td colspan="8" class="empty">조회 버튼을 눌러 시작</td></tr>
+          </tbody>
+        </table>
+        <div class="pagination">
+          <div id="sub-page-info">offset 0</div>
+          <div class="controls">
+            <button type="button" class="sm" id="btn-sub-prev">◀ 이전</button>
+            <button type="button" class="sm" id="btn-sub-next">다음 ▶</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="sub-detail" class="detail-card hidden"></div>
     </section>
 
   </main>
@@ -599,12 +824,24 @@ async function pingHealth() {
   }
 }
 
-// ── 라우팅 (확장 대비 — 지금은 #/problems 만 유효) ────────────
+// ── 라우팅 ─────────────────────────────────────────────────────
+const VIEWS = { problems: "view-problems", submissions: "view-submissions" };
 function applyRoute() {
   const hash = location.hash || "#/problems";
+  const route = (hash.match(/^#\/(\w+)/) || [])[1] || "problems";
   $$("#nav a").forEach((a) => {
-    a.classList.toggle("active", a.dataset.route && hash.startsWith("#/" + a.dataset.route));
+    a.classList.toggle("active", a.dataset.route === route);
   });
+  // view 토글
+  for (const [r, id] of Object.entries(VIEWS)) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("hidden", r !== route);
+  }
+  // 풀이 기록으로 들어오면 자동 첫 조회
+  if (route === "submissions" && !window._subsLoaded) {
+    window._subsLoaded = true;
+    loadSubmissions();
+  }
 }
 window.addEventListener("hashchange", applyRoute);
 
@@ -615,8 +852,30 @@ $$(".tab").forEach((btn) => {
     const tab = btn.dataset.tab;
     $$(".tab-content").forEach((c) => c.classList.add("hidden"));
     $(`#tab-${tab}`).classList.remove("hidden");
+    // 원본 목록 첫 진입 시 자동 로드
+    if (tab === "list" && !window._listLoaded) {
+      window._listLoaded = true;
+      loadProblems();
+    }
   });
 });
+
+// ── 공통: admin fetch (Bearer 자동) ───────────────────────────
+async function adminFetch(path, init = {}) {
+  const { baseUrl, token } = getConn();
+  if (!baseUrl || !token) {
+    const err = new Error("연결 설정이 비어있음 (⚙ 설정에서 입력)");
+    err.code = "NO_CONN";
+    throw err;
+  }
+  const headers = Object.assign(
+    { "Authorization": `Bearer ${token}` },
+    init.headers || {},
+  );
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const r = await fetch(baseUrl + path, { ...init, headers });
+  return r;
+}
 
 // ── Settings toggle ────────────────────────────────────────────
 $("#btn-settings-toggle").addEventListener("click", () => {
@@ -885,6 +1144,213 @@ async function startVariant() {
 $("#btn-start-variant").addEventListener("click", startVariant);
 $("#btn-stop-stream").addEventListener("click", () => {
   if (_activeStream) _activeStream.abort();
+});
+
+// ── 원본 목록 + 삭제 ────────────────────────────────────────────
+async function loadProblems() {
+  const tbody = $("#problems-tbody");
+  tbody.innerHTML = `<tr><td colspan="8" class="empty">불러오는 중...</td></tr>`;
+  const includeVariants = $("#list-include-variants").checked;
+  try {
+    const r = await adminFetch(`/api/problems?originals_only=${includeVariants ? "false" : "true"}`);
+    if (!r.ok) {
+      const body = await r.text();
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">[${r.status}] ${escapeHtml(body.slice(0, 200))}</td></tr>`;
+      return;
+    }
+    const rows = await r.json();
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">문제가 없습니다</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = "";
+    for (const p of rows) {
+      const tr = document.createElement("tr");
+      const created = p.created_at ? p.created_at.slice(0, 10) : "—";
+      const variantTag = p.parent_id != null
+        ? `<span class="hint" title="변형 (parent=${p.parent_id})">var</span>` : "";
+      tr.innerHTML = `
+        <td class="num">${p.id}</td>
+        <td>${escapeHtml(p.title)} ${variantTag}</td>
+        <td>${escapeHtml(p.category)}</td>
+        <td>${escapeHtml(p.level)}</td>
+        <td>${escapeHtml(p.status)}</td>
+        <td class="num">${p.child_count ?? 0}</td>
+        <td>${created}</td>
+        <td class="actions">
+          <button class="danger sm" data-pid="${p.id}" data-title="${escapeHtml(p.title)}">삭제</button>
+        </td>
+      `;
+      tr.querySelector("button.danger").addEventListener("click", () => deleteProblem(p.id, p.title));
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function deleteProblem(pid, title) {
+  const out = $("#list-output");
+  const ok = confirm(
+    `문제 #${pid} "${title}"을(를) 영구 삭제합니다.\n` +
+    `· 자식 변형(parent_id 매치)도 함께 cascade 삭제\n` +
+    `· 이 문제의 모든 제출 + 튜터 메시지도 함께 삭제\n` +
+    `· 되돌릴 수 없음.\n\n계속할까요?`
+  );
+  if (!ok) return;
+  out.textContent = `DELETE /api/problems/${pid} ...`;
+  out.className = "output-panel show";
+  try {
+    const r = await adminFetch(`/api/problems/${pid}?cascade_children=true`, { method: "DELETE" });
+    const body = await r.json();
+    if (r.ok) {
+      const c = body.cascade || {};
+      out.className = "output-panel show ok";
+      out.textContent =
+        `✓ 삭제 완료 — id=${body.id}\n` +
+        `  variants: ${c.variants}\n` +
+        `  submissions: ${c.submissions}\n` +
+        `  tutor_messages: ${c.tutor_messages}\n` +
+        `  test_cases: ${c.test_cases}`;
+      loadProblems();  // 목록 새로고침
+    } else {
+      out.className = "output-panel show err";
+      out.textContent = `[${r.status}] ${JSON.stringify(body, null, 2)}`;
+    }
+  } catch (err) {
+    out.className = "output-panel show err";
+    out.textContent = `네트워크 오류: ${err.message}`;
+  }
+}
+
+$("#btn-reload-list").addEventListener("click", loadProblems);
+$("#list-include-variants").addEventListener("change", loadProblems);
+
+// ── 풀이 기록 (submissions) ─────────────────────────────────────
+let _subOffset = 0;
+let _subLimit = 50;
+let _subLastCount = 0;
+
+function getSubFilters() {
+  return {
+    user_id: $("#sub-filter-user").value || null,
+    problem_id: $("#sub-filter-problem").value || null,
+    verdict: $("#sub-filter-verdict").value || null,
+    status: $("#sub-filter-status").value || null,
+    limit: parseInt($("#sub-filter-limit").value, 10) || 50,
+  };
+}
+
+async function loadSubmissions(resetOffset = true) {
+  const tbody = $("#subs-tbody");
+  const filters = getSubFilters();
+  _subLimit = filters.limit;
+  if (resetOffset) _subOffset = 0;
+
+  const qs = new URLSearchParams({ limit: String(_subLimit), offset: String(_subOffset) });
+  for (const k of ["user_id", "problem_id", "verdict", "status"]) {
+    if (filters[k]) qs.set(k, filters[k]);
+  }
+
+  tbody.innerHTML = `<tr><td colspan="8" class="empty">불러오는 중...</td></tr>`;
+  try {
+    const r = await adminFetch(`/api/submissions?${qs}`);
+    if (!r.ok) {
+      const body = await r.text();
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">[${r.status}] ${escapeHtml(body.slice(0, 200))}</td></tr>`;
+      return;
+    }
+    const rows = await r.json();
+    _subLastCount = rows.length;
+    $("#sub-page-info").textContent = `offset ${_subOffset} · 받은 행 ${rows.length}`;
+    $("#btn-sub-prev").disabled = _subOffset === 0;
+    $("#btn-sub-next").disabled = rows.length < _subLimit;
+
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">결과 없음</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = "";
+    for (const s of rows) {
+      const tr = document.createElement("tr");
+      tr.style.cursor = "pointer";
+      const verdict = s.final_verdict || "NONE";
+      const created = s.created_at ? s.created_at.replace("T", " ").slice(0, 19) : "—";
+      tr.innerHTML = `
+        <td class="num">${s.id}</td>
+        <td>${escapeHtml(s.user_display_name || `#${s.user_id}`)} <span class="hint">#${s.user_id}</span></td>
+        <td>${escapeHtml(s.problem_title || `#${s.problem_id}`)} <span class="hint">#${s.problem_id}</span></td>
+        <td><span class="verdict ${verdict}">${verdict}</span></td>
+        <td>${escapeHtml(s.status)}</td>
+        <td class="num">${s.max_elapsed_ms ?? "—"}</td>
+        <td class="num">${s.points_awarded ?? "—"}</td>
+        <td>${created}</td>
+      `;
+      tr.addEventListener("click", () => showSubmissionDetail(s.id));
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function showSubmissionDetail(sid) {
+  const card = $("#sub-detail");
+  card.classList.remove("hidden");
+  card.innerHTML = `<div class="head"><h3>제출 #${sid}</h3><button class="ghost sm" id="btn-close-detail">닫기</button></div><div>불러오는 중...</div>`;
+  $("#btn-close-detail").addEventListener("click", () => card.classList.add("hidden"));
+
+  try {
+    const r = await adminFetch(`/api/submissions/${sid}`);
+    if (!r.ok) {
+      const body = await r.text();
+      card.innerHTML += `<div class="json-block">[${r.status}] ${escapeHtml(body.slice(0, 400))}</div>`;
+      return;
+    }
+    const d = await r.json();
+    const verdict = d.final_verdict || "NONE";
+    card.innerHTML = `
+      <div class="head">
+        <h3>제출 #${d.id} · <span class="verdict ${verdict}">${verdict}</span></h3>
+        <button class="ghost sm" id="btn-close-detail">닫기</button>
+      </div>
+      <dl class="kv">
+        <dt>user</dt><dd>${escapeHtml(d.user_display_name || "(unknown)")} <span class="hint">#${d.user_id}</span></dd>
+        <dt>problem</dt><dd>${escapeHtml(d.problem_title || "(deleted)")} <span class="hint">#${d.problem_id}</span></dd>
+        <dt>status</dt><dd>${escapeHtml(d.status)}</dd>
+        <dt>mode</dt><dd>${escapeHtml(d.mode || "—")}</dd>
+        <dt>elapsed (ms)</dt><dd>${d.max_elapsed_ms ?? "—"}</dd>
+        <dt>peak mem (KB)</dt><dd>${d.peak_memory_kb ?? "—"}</dd>
+        <dt>points</dt><dd>${d.points_awarded ?? "—"}</dd>
+        <dt>created</dt><dd>${d.created_at ?? "—"}</dd>
+      </dl>
+      <details class="block" open>
+        <summary>코드 (${(d.code || "").length} bytes)</summary>
+        <pre class="code-block">${escapeHtml(d.code || "")}</pre>
+      </details>
+      <details class="block">
+        <summary>test_results (${(d.test_results || []).length} 건)</summary>
+        <pre class="json-block">${escapeHtml(JSON.stringify(d.test_results, null, 2))}</pre>
+      </details>
+      <details class="block">
+        <summary>ensemble votes</summary>
+        <pre class="json-block">${escapeHtml(JSON.stringify(d.votes, null, 2))}</pre>
+      </details>
+    `;
+    $("#btn-close-detail").addEventListener("click", () => card.classList.add("hidden"));
+  } catch (err) {
+    card.innerHTML += `<div class="json-block">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+$("#btn-sub-search").addEventListener("click", () => loadSubmissions(true));
+$("#btn-sub-prev").addEventListener("click", () => {
+  _subOffset = Math.max(0, _subOffset - _subLimit);
+  loadSubmissions(false);
+});
+$("#btn-sub-next").addEventListener("click", () => {
+  _subOffset += _subLimit;
+  loadSubmissions(false);
 });
 
 // ── 초기화 ─────────────────────────────────────────────────────
