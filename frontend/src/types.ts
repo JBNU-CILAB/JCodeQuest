@@ -92,6 +92,15 @@ export interface TutorHistoryResponse {
   messages: TutorHistoryItem[]
 }
 
+export interface Notice {
+  id: number
+  title: string
+  body: string
+  pinned: boolean
+  created_at: string
+  updated_at: string
+}
+
 // ───────────────── Mock 카드 타입 (Phase 6에서 일부 교체) ─────────────────
 
 export interface RankUser {

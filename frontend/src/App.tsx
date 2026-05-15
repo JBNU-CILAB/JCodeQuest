@@ -5,6 +5,8 @@ import { Landing } from './pages/Landing'
 import { Problems } from './pages/Problems'
 import { Solver } from './pages/Solver'
 import { Result } from './pages/Result'
+import { Notices } from './pages/Notices'
+import { NoticeDetail } from './pages/NoticeDetail'
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -29,6 +31,8 @@ export default function App() {
             <Route path="/problems" element={<Problems />} />
             <Route path="/problems/:id" element={<Solver />} />
             <Route path="/submissions/:id" element={<Result />} />
+            <Route path="/notices" element={<Notices />} />
+            <Route path="/notices/:id" element={<NoticeDetail />} />
           </Routes>
         </Layout>
       </BrowserRouter>
