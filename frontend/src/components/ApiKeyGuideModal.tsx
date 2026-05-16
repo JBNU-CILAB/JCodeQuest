@@ -36,6 +36,18 @@ const SLIDES: Slide[] = [
   },
 ]
 
+// 백엔드 schemas._API_KEY_PATTERN과 동일 — 공백/개행 없는 인쇄 가능 ASCII 20–512자.
+const API_KEY_PATTERN = /^[!-~]{20,512}$/
+
+function validateApiKey(raw: string): string | null {
+  if (!raw) return null
+  if (raw.length < 20) return '20자 이상 입력해주세요.'
+  if (raw.length > 512) return '512자를 넘을 수 없습니다.'
+  if (!API_KEY_PATTERN.test(raw))
+    return '공백·개행 없이 영문/숫자/기호로만 입력해주세요.'
+  return null
+}
+
 interface Props {
   open: boolean
   onClose: () => void
@@ -56,6 +68,7 @@ export function ApiKeyGuideModal({ open, onClose, onSubmit }: Props) {
   const handleSubmit = useCallback(async () => {
     const trimmed = apiKey.trim()
     if (!trimmed || submitting) return
+    if (validateApiKey(trimmed) !== null) return
     try {
       setSubmitting(true)
       await onSubmit?.(trimmed)
@@ -130,30 +143,42 @@ function SlidePanel({
         </p>
       </div>
       {isApiKeyStep && (
-        <form
-          className="mt-4 flex items-stretch gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            onSubmit()
-          }}
-        >
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => onApiKeyChange(e.target.value)}
-            placeholder="API 키를 붙여넣어 주세요"
-            autoComplete="off"
-            spellCheck={false}
-            className="flex-1 min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-800/30 focus:border-gray-800/40"
-          />
-          <button
-            type="submit"
-            disabled={!apiKey.trim() || submitting}
-            className="shrink-0 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        <>
+          <form
+            className="mt-4 flex items-stretch gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              onSubmit()
+            }}
           >
-            {submitting ? '저장 중…' : '저장'}
-          </button>
-        </form>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => onApiKeyChange(e.target.value)}
+              placeholder="API 키를 붙여넣어 주세요"
+              autoComplete="off"
+              spellCheck={false}
+              aria-invalid={validateApiKey(apiKey.trim()) !== null}
+              className="flex-1 min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-800/30 focus:border-gray-800/40"
+            />
+            <button
+              type="submit"
+              disabled={
+                !apiKey.trim() ||
+                submitting ||
+                validateApiKey(apiKey.trim()) !== null
+              }
+              className="shrink-0 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              {submitting ? '저장 중…' : '저장'}
+            </button>
+          </form>
+          {validateApiKey(apiKey.trim()) && (
+            <p className="mt-1 text-xs text-red-600">
+              {validateApiKey(apiKey.trim())}
+            </p>
+          )}
+        </>
       )}
     </div>
   )

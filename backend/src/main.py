@@ -8,9 +8,12 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 import os
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .api.auth import router as auth_router
 from .api.grading import router as grading_router
@@ -44,6 +47,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_SENSITIVE_FIELDS = frozenset({"api_key", "password", "secret", "token"})
+_REDACTED = "[REDACTED]"
+
+
+def _redact(value: Any) -> Any:
+    """422 응답/로그 직렬화 직전, 민감 필드 값만 자리표시자로 치환."""
+    if isinstance(value, dict):
+        return {
+            k: (_REDACTED if k in _SENSITIVE_FIELDS else _redact(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def _redacted_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    # FastAPI 기본 422는 errors()에 ctx.input/input과 exc.body로 원본 페이로드를 그대로
+    # 흘려보낸다 — api_key를 포함하면 응답·액세스 로그에 평문이 박힌다. 여기서 자리표시자로 치환.
+    errors = []
+    for err in exc.errors():
+        e = dict(err)
+        if "input" in e:
+            loc = e.get("loc") or ()
+            if loc and loc[-1] in _SENSITIVE_FIELDS:
+                e["input"] = _REDACTED
+            else:
+                e["input"] = _redact(e["input"])
+        if "ctx" in e and isinstance(e["ctx"], dict):
+            e["ctx"] = _redact(e["ctx"])
+        errors.append(e)
+    return JSONResponse(status_code=422, content={"detail": errors})
+
 
 app.include_router(auth_router)
 app.include_router(me_router)

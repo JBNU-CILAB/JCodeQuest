@@ -508,6 +508,9 @@ def main() -> int:
         db_url = f"sqlite:///{scratch_db}"
         db_source = "격리 sqlite (기본)"
     os.environ["JCQ_DB_URL"] = db_url
+    # storage/db.py가 비-Postgres URL을 거부한다 — verify는 격리 sqlite를 쓰므로 우회 허용.
+    if not db_url.startswith("postgresql"):
+        os.environ["JCQ_ALLOW_NON_POSTGRES"] = "1"
     print(f"  [db] {db_source}: {db_url}")
 
     # backend ↔ judge_engine 양쪽이 webhook 검증에 같은 시크릿을 쓰도록 verify 세션 1회 생성값으로 통일.
@@ -525,6 +528,8 @@ def main() -> int:
         "JCQ_BACKEND_URL": args.backend_url,
         "JCQ_INTERNAL_SECRET": internal_secret,
     }
+    if not db_url.startswith("postgresql"):
+        common_env["JCQ_ALLOW_NON_POSTGRES"] = "1"
     # 이 프로세스에서도 동일 cooldown=0 / dev-stub을 따라야 시드/제출이 막히지 않음
     os.environ.update(common_env)
 

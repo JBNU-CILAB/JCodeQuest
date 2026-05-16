@@ -323,13 +323,24 @@ class ProfileUpdateRequest(BaseModel):
     )
 
 
+_API_KEY_PATTERN = r"^[!-~]{20,512}$"
+"""인쇄 가능 ASCII(스페이스 제외)로만 구성된 20–512자 문자열.
+학내 GPT 게이트웨이 키 형식이 공개되지 않아 prefix 강제는 피하고, 사용자가
+복사 시 섞이기 쉬운 공백/개행/탭/유니코드 문자만 차단한다. 너무 짧은 placeholder
+(예: 'test')도 함께 막는다."""
+
+
 class ApiKeyUpdateRequest(BaseModel):
     """PUT /me/api-key — 학내 GPT API 키 등록/갱신."""
 
     api_key: str = Field(
-        min_length=1,
+        min_length=20,
         max_length=512,
-        description="등록할 API 키 (학내 GPT 게이트웨이 발급)",
+        pattern=_API_KEY_PATTERN,
+        description=(
+            "등록할 API 키 (학내 GPT 게이트웨이 발급). "
+            "공백·개행 없는 인쇄 가능 ASCII 20–512자."
+        ),
     )
 
 

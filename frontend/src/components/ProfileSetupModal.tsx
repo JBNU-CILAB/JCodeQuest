@@ -120,12 +120,12 @@ export function ProfileSetupModal({ open, onClose, initial }: Props) {
         placeholder="닉네임"
         className="mt-6 w-full rounded-md border border-black/10 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-800/30 focus:border-gray-800/40"
       />
-      <label className="mt-4 flex items-start gap-2 cursor-pointer select-none">
+      <label className="mt-4 flex items-start gap-2 cursor-pointer select-none group">
         <input
           type="checkbox"
           checked={anonymous}
           onChange={(e) => setAnonymous(e.target.checked)}
-          className="mt-0.5 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-800/30"
+          className="mt-0.5 w-4 h-4 rounded accent-gray-900 cursor-pointer"
         />
         <span className="text-sm text-gray-700 leading-snug">
           닉네임으로 표시{' '}
@@ -140,14 +140,14 @@ export function ProfileSetupModal({ open, onClose, initial }: Props) {
         입력한 내용을 확인하고 저장해주세요
       </p>
       <div className="mt-6 grid grid-cols-[80px_1fr] gap-x-4 gap-y-3 text-sm">
-        <span className="text-gray-500">학년</span>
-        <span className="text-gray-900">
+        <span className={`text-gray-500 ${!grade ? 'opacity-50' : ''}`}>학년</span>
+        <span className={`text-gray-900 ${!grade ? 'opacity-50 text-gray-400' : ''}`}>
           {grade ? GRADE_LABEL[grade] : '-'}
         </span>
-        <span className="text-gray-500">학과</span>
-        <span className="text-gray-900">{department || '-'}</span>
-        <span className="text-gray-500">닉네임</span>
-        <span className="text-gray-900">{nickname || '-'}</span>
+        <span className={`text-gray-500 ${!department.trim() ? 'opacity-50' : ''}`}>학과</span>
+        <span className={`text-gray-900 ${!department.trim() ? 'opacity-50 text-gray-400' : ''}`}>{department || '-'}</span>
+        <span className={`text-gray-500 ${!nickname.trim() ? 'opacity-50' : ''}`}>닉네임</span>
+        <span className={`text-gray-900 ${!nickname.trim() ? 'opacity-50 text-gray-400' : ''}`}>{nickname || '-'}</span>
         <span className="text-gray-500">표시</span>
         <span className="text-gray-900">
           {anonymous ? '닉네임' : '실명'}
@@ -159,7 +159,7 @@ export function ProfileSetupModal({ open, onClose, initial }: Props) {
       <button
         type="button"
         onClick={handleSubmit}
-        disabled={submitting}
+        disabled={submitting || !grade || !department.trim() || !nickname.trim()}
         className="mt-6 w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
       >
         {submitting ? '저장 중…' : '저장하기'}

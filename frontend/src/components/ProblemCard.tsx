@@ -1,4 +1,7 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../lib/AuthContext'
+import { ProfileRequiredModal } from './ProfileRequiredModal'
 import type { ProblemSummary, ProblemLevel } from '../types'
 
 const LEVEL_BADGE_STYLE: Record<ProblemLevel, string> = {
@@ -15,14 +18,50 @@ const LEVEL_LABEL: Record<ProblemLevel, string> = {
 
 interface ProblemCardProps {
   problem: ProblemSummary
+  onProfileRequired?: () => void
 }
 
-export function ProblemCard({ problem }: ProblemCardProps) {
+export function ProblemCard({ problem, onProfileRequired }: ProblemCardProps) {
+  const navigate = useNavigate()
+  const { session } = useAuth()
+  const [showProfileRequired, setShowProfileRequired] = useState(false)
+
+  const metadata = (session?.user.user_metadata ?? {}) as {
+    grade?: number
+    department?: string
+    nickname?: string
+    anonymous?: boolean
+  }
+
+  const hasCompleteProfile =
+    session &&
+    metadata.grade &&
+    metadata.department &&
+    metadata.nickname &&
+    typeof metadata.anonymous === 'boolean'
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+
+    if (!session) {
+      navigate(`/problems/${problem.id}`)
+      return
+    }
+
+    if (!hasCompleteProfile) {
+      setShowProfileRequired(true)
+      return
+    }
+
+    navigate(`/problems/${problem.id}`)
+  }
+
   return (
-    <Link
-      to={`/problems/${problem.id}`}
-      className="group flex flex-col bg-white border border-gray-200 rounded-2xl px-5 py-4 shadow-[0_1px_2px_rgba(31,41,55,0.03)] hover:shadow-md hover:border-brand/40 transition"
-    >
+    <>
+      <button
+        onClick={handleClick}
+        className="group flex flex-col bg-white border border-gray-200 rounded-2xl px-5 py-4 shadow-[0_1px_2px_rgba(31,41,55,0.03)] hover:shadow-md hover:border-brand/40 transition text-left w-full"
+      >
       <div className="flex items-center gap-2 mb-3">
         <span
           className={`px-2 py-0.5 text-[11px] font-bold rounded-full ${LEVEL_BADGE_STYLE[problem.level]}`}
@@ -43,6 +82,16 @@ export function ProblemCard({ problem }: ProblemCardProps) {
       <p className="text-[12.5px] text-gray-500 leading-relaxed line-clamp-2">
         {problem.one_line_summary}
       </p>
-    </Link>
+      </button>
+
+      <ProfileRequiredModal
+        open={showProfileRequired}
+        onClose={() => setShowProfileRequired(false)}
+        onSetupProfile={() => {
+          setShowProfileRequired(false)
+          onProfileRequired?.()
+        }}
+      />
+    </>
   )
 }

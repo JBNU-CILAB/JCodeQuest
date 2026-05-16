@@ -18,6 +18,17 @@ _connect_args: dict[str, object] = {}
 if DB_URL.startswith("postgresql+psycopg://"):
     _connect_args["prepare_threshold"] = None
 
+# 운영에서 비-Postgres DB로 떨어지면 storage/vault.py가 plaintext fallback으로
+# 사용자 API 키를 그대로 저장한다(테스트 격리용 코드 경로). 명시적 우회 플래그
+# (JCQ_ALLOW_NON_POSTGRES=1) 없이는 모듈 로드를 거부한다.
+if not DB_URL.startswith("postgresql") and os.environ.get("JCQ_ALLOW_NON_POSTGRES") != "1":
+    _scheme = DB_URL.split(":", 1)[0]
+    raise RuntimeError(
+        f"JCQ_DB_URL must point to PostgreSQL (got '{_scheme}://...'). "
+        "Non-Postgres backends trigger vault plaintext fallback — refusing to boot. "
+        "Set JCQ_ALLOW_NON_POSTGRES=1 only for tests/local dev with no real secrets."
+    )
+
 engine = create_engine(DB_URL, connect_args=_connect_args)
 
 

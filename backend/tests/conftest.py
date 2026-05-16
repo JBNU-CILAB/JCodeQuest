@@ -10,6 +10,9 @@ from pathlib import Path
 _db_fd, _db_path = tempfile.mkstemp(prefix="jcq_test_", suffix=".db")
 os.close(_db_fd)
 os.environ["JCQ_DB_URL"] = f"sqlite:///{_db_path}"
+# storage/db.py는 비-Postgres URL을 거부한다(vault plaintext fallback 방지).
+# 테스트는 SQLite 격리가 필요하므로 명시적으로 우회 플래그를 켠다.
+os.environ["JCQ_ALLOW_NON_POSTGRES"] = "1"
 
 # 1.5) auth 관련 env — dev-login 라우트 등록이 module import 시점에 env를 읽으므로 여기서 미리 주입.
 os.environ.setdefault("JCQ_AUTH_ALLOW_DEV_STUB", "1")

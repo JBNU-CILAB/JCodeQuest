@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { apiGet, ApiError } from '../lib/api'
+import { useAuth } from '../lib/AuthContext'
 import { ProblemCard } from '../components/ProblemCard'
+import { ProfileSetupModal } from '../components/ProfileSetupModal'
 import type { ProblemLevel, ProblemSummary } from '../types'
 
 const LEVEL_FILTERS: Array<{ value: ProblemLevel | 'all'; label: string }> = [
@@ -11,6 +13,7 @@ const LEVEL_FILTERS: Array<{ value: ProblemLevel | 'all'; label: string }> = [
 ]
 
 export function Problems() {
+  const { session } = useAuth()
   const [problems, setProblems] = useState<ProblemSummary[] | null>(null)
   const [allCategories, setAllCategories] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -18,6 +21,18 @@ export function Problems() {
 
   const [category, setCategory] = useState<string>('all')
   const [level, setLevel] = useState<ProblemLevel | 'all'>('all')
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
+
+  const metadata = (session?.user.user_metadata ?? {}) as {
+    grade?: number
+    department?: string
+    nickname?: string
+    anonymous?: boolean
+  }
+
+  const handleOpenProfileModal = useCallback(() => {
+    setProfileModalOpen(true)
+  }, [])
 
   useEffect(() => {
     setLoading(true)
@@ -112,10 +127,21 @@ export function Problems() {
       {!loading && !error && problems && problems.length > 0 && (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {problems.map((p) => (
-            <ProblemCard key={p.id} problem={p} />
+            <ProblemCard key={p.id} problem={p} onProfileRequired={handleOpenProfileModal} />
           ))}
         </div>
       )}
+
+      <ProfileSetupModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        initial={{
+          grade: metadata.grade,
+          department: metadata.department,
+          nickname: metadata.nickname,
+          anonymous: metadata.anonymous,
+        }}
+      />
     </main>
   )
 }

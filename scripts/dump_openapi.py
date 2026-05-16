@@ -26,6 +26,9 @@ REPO = Path(__file__).resolve().parent.parent
 # 모듈 임포트 시점에 읽히는 env. 실제 DB/세션을 만지지는 않음.
 os.environ.setdefault("SESSION_SECRET_KEY", "openapi-dump-placeholder")
 os.environ.setdefault("JCQ_DB_URL", "sqlite:///:memory:")
+# storage/db.py가 비-Postgres URL을 거부하므로 (vault plaintext fallback 방지)
+# 명세 dump 한정으로 우회 플래그를 켠다 — 실제 DB I/O는 일어나지 않는다.
+os.environ.setdefault("JCQ_ALLOW_NON_POSTGRES", "1")
 # dev-login 라우트는 prod-shape 명세에 포함하지 않는다.
 # 빈 문자열로 강제 — backend/.env가 1로 켜 둔 경우에도 load_dotenv(override=False)가
 # 기존 값을 보존하므로 끌 수 있다.

@@ -4,28 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Layout
 
-JCodeQuest is a monorepo of three Python packages plus a Vite/React frontend, all sharing one Supabase PostgreSQL DB.
+JCodeQuest is a monorepo of four Python packages plus a Vite/React frontend, all sharing one Supabase PostgreSQL DB.
 
-- `shared/` — `jcq-shared` package: Pydantic schemas (`Problem`, `IntentRubric`, `TestCase`) used by both backend and authoring engine.
-- `backend/` — FastAPI grading server. Routers under `src/api/` (`/auth`, `/me`, `/problems`, `/grade`, `/tutor`); ORM rows in `src/storage/models.py`; sandbox + LLM ensemble in `src/judge/`.
-- `authoring_engine/` — LangGraph pipeline that produces variant problems from an existing one and writes them back to the same DB. CLI (`authoring/main.py`) and FastAPI viewer (`authoring/server.py`). Imports `backend/src/storage` directly via `sys.path` injection in `config.ensure_backend_on_path()`.
+- `shared/` — `jcq-shared` package: Pydantic schemas (`Problem`, `IntentRubric`, `TestCase`) used by backend, authoring engine, and judge engine.
+- `backend/` — FastAPI API server (default :8000). Routers under `src/api/`: `auth`, `me`, `problems`, `grading`, `tutor`, `internal`, `leaderboard`, `notices`. ORM rows in `src/storage/models.py`. The HTTP client to the judge engine lives in `src/judge/client.py`.
+- `judge_engine/` — Separate FastAPI service (default :8002) that owns grading execution. Contains the in-process job queue, the pure-Python sandbox (`judge/sandbox/`), the three-judge LLM ensemble (`judge/ensemble.py`), webhook callback into backend (`judge/callback.py`), and its own admin routers (`judge/routers/{stats,submissions,users}`).
+- `authoring_engine/` — LangGraph pipeline that produces variant problems from an existing one and writes them back to the same DB. CLI (`authoring/main.py`) and FastAPI viewer (`authoring/server.py`, default :8001). Imports `backend/src/storage` directly via `sys.path` injection in `config.ensure_backend_on_path()`.
 - `frontend/` — Vite + React + TypeScript SPA. `npm run dev` for local dev (default :5173), `npm run build` for production. Uses `@supabase/supabase-js` for auth and Monaco editor for code input.
-- `scripts/verify_all.py` — integration smoke runner that spawns both servers and exercises the end-to-end flow.
+- `admin_dashboard/` — Static admin page (`index.html` + `Dockerfile`) shipped as its own container.
+- `docker-compose.yml` — Container entry point for the full stack.
+- `scripts/verify_all.py` — integration smoke runner that spawns backend + judge_engine + authoring and exercises the end-to-end flow.
 
-`shared` and `authoring_engine` install `jcq-shared` via `file:../shared` — installing the backend or authoring engine pulls the shared package in editable mode automatically.
+`shared`, `backend`, `authoring_engine`, and `judge_engine` install `jcq-shared` via `file:../shared` — installing any of them pulls the shared package in editable mode automatically.
 
 ## Core Architecture
 
-**Two servers, one DB.** Both `backend` (FastAPI, default :8000) and `authoring_engine` (FastAPI, separate port) read/write the same Supabase PostgreSQL database via `JCQ_DB_URL`. The authoring engine reuses `backend/src/storage` rather than maintaining its own ORM — see `authoring/config.py:ensure_backend_on_path()`. `JCQ_DB_URL` must be a valid `postgresql://` connection string pointing at the Supabase project (use the Transaction Pooler URL from the Supabase dashboard for best compatibility).
+**Three services, one DB.** `backend` (:8000), `authoring_engine` (:8001), and `judge_engine` (:8002) all read/write the same Supabase PostgreSQL database via `JCQ_DB_URL`. Both authoring_engine and judge_engine reuse `backend/src/storage` rather than maintaining their own ORM (`authoring/config.py:ensure_backend_on_path()` and the equivalent in judge_engine). `JCQ_DB_URL` must be a valid `postgresql://` connection string pointing at the Supabase project (use the Transaction Pooler URL from the Supabase dashboard for best compatibility).
 
 **Module-load env reads.** `backend/src/storage/db.py` reads `JCQ_DB_URL` at module import. Anything that imports `src.*` before `JCQ_DB_URL` is set will get the wrong engine. The CLI entry points and `main.py` files call `load_dotenv(...)` or `ensure_backend_on_path()` *before* the first `src.*` import — preserve that ordering when editing them.
 
-**Grading pipeline** (`backend/src/judge/`):
-1. `POST /grade` enqueues a submission via `judge.jobs.JobQueue` (asyncio worker pool, concurrency = `JCQ_QUEUE_CONCURRENCY`).
-2. `judge.jobs.grading.grade_submission`: runs `sandbox.run_all_tests` (pure-Python isolation wrapper in `sandbox/runner.py` — blocks `socket`/`subprocess`/`ctypes` etc.; not a real syscall sandbox).
-3. If all tests pass, calls `judge.ensemble.vote` — three Ollama models (Melchior/Balthasar/Casper) cast AC/SUS votes; ≥2/3 AC ⇒ AC.
-4. `save_grading` writes verdict + per-test results + ensemble votes; first-time AC adds `points * efficiency_multiplier` to the user's `exp`.
-5. Clients track progress via SSE at `GET /grade/{id}/events` — subscribe *before* reading snapshot to avoid missing events (see `api/grading.py:stream_grade_events`).
+**Grading pipeline (cross-service)**:
+1. `POST /grade` on backend persists the submission, then `backend/src/judge/client.py:submit_to_engine` does an HTTP POST to `JCQ_JUDGE_URL` (default `http://127.0.0.1:8002`) and returns immediately.
+2. judge_engine queues the job in its own asyncio worker pool (concurrency = `JCQ_QUEUE_CONCURRENCY`) and runs `judge/sandbox/runner.py:run_all_tests` — pure-Python isolation that blocks `socket`/`subprocess`/`ctypes` etc.; not a real syscall sandbox.
+3. If all tests pass, judge_engine calls `judge/ensemble.py:vote` — three Ollama models (Melchior/Balthasar/Casper) cast AC/SUS votes; ≥2/3 AC ⇒ AC. Skipped when `JCQ_SKIP_ENSEMBLE=1`.
+4. judge_engine POSTs the verdict to backend's `/internal/grade-events` webhook. Both sides authenticate the webhook with a shared `JCQ_INTERNAL_SECRET`. backend's `apply_grading_event` writes verdict + per-test results + ensemble votes; first-time AC adds `points * efficiency_multiplier` to the user's `exp`.
+5. Clients track progress via SSE at `GET /grade/{id}/events` on backend — subscribe *before* reading snapshot to avoid missing events (see `api/grading.py:stream_grade_events`).
 
 **Authoring pipeline** (`authoring_engine/authoring/pipeline/`): LangGraph DAG `fetch_problem → generate_variants → verify_candidates → judge_candidates → solve_candidates → persist_approved`. Approved variants are inserted with `parent_id` pointing at the source problem and `langsmith_trace_id` for trace lookup.
 
@@ -77,13 +80,16 @@ python backend/tests/scripts/smoke_e2e.py
 
 ## Conventions That Will Bite You
 
-- **Patch the callsite, not the source.** Integration tests monkeypatch LLM calls on the importing module (`src.judge.jobs.grading.vote`, `src.tutor.client.<x>`), never on the defining module. See `docs/testing.md` and existing `test_pipeline.py`.
+- **Patch the callsite, not the source.** Integration tests monkeypatch LLM calls on the importing module (`src.tutor.client.<x>`, judge_engine's importer of `vote`), never on the defining module. See `docs/testing.md` and existing `test_pipeline.py`.
 - **Tests use SQLite, production uses PostgreSQL.** `tests/conftest.py` substitutes a temporary SQLite DB so tests run without a Supabase connection. Don't add PostgreSQL-specific SQL to the ORM layer without a SQLite fallback, or gate it behind an env flag.
+- **`JCQ_ALLOW_NON_POSTGRES=1` is required for non-Postgres URLs.** `backend/src/storage/db.py` raises `RuntimeError` at module load if `JCQ_DB_URL` is not `postgresql://...` unless this escape hatch is set. The reason: `storage/vault.py` falls back to plaintext secret storage on non-Postgres backends (test-only path), so booting prod with SQLite would silently expose user API keys. `tests/conftest.py`, `scripts/verify_all.py`, and `scripts/dump_openapi.py` already set this flag — any new entry point that points at SQLite must do the same.
+- **422 responses auto-redact sensitive fields.** `main.py`'s `RequestValidationError` handler replaces the `input` of fields named `api_key`, `password`, `secret`, or `token` with `[REDACTED]` before the body hits the response or access log. When adding a new sensitive request field, register its name in `_SENSITIVE_FIELDS` in `main.py`.
+- **`schemas._API_KEY_PATTERN` and frontend `API_KEY_PATTERN` must stay in sync.** The same regex (`^[!-~]{20,512}$`) lives in `backend/src/schemas.py` and `frontend/src/components/ApiKeyGuideModal.tsx`. Loosening or tightening one without the other produces a UX/server mismatch (frontend passes, backend 422s — or vice versa).
 - **`backend/env.sh` is gitignored** — `.env.example` is the template. `frontend/.env` is also gitignored — `.env.example` is the template. Never commit secrets; rotate immediately if leaked.
 - **`MAX_CODE_LENGTH = 64 * 1024`** in `schemas.py` caps `GradeRequest.code`. The sandbox also caps stdout/stderr at 64 KB each.
-- **Sandbox is not adversarial-grade.** `_WRAPPER` in `judge/sandbox/runner.py` blocks `socket`, `subprocess`, `ctypes`, etc. at the Python import layer plus RLIMITs. It is not seccomp/namespace isolation — anything that needs real isolation must layer that on.
+- **Sandbox is not adversarial-grade.** `_WRAPPER` in `judge_engine/judge/sandbox/runner.py` blocks `socket`, `subprocess`, `ctypes`, etc. at the Python import layer plus RLIMITs. It is not seccomp/namespace isolation — anything that needs real isolation must layer that on.
 - **Submission cooldown** defaults to 10s per (user, problem); tests force it to 0 via `_disable_cooldown` (autouse). Tests that exercise cooldown re-enable it locally.
-- **Three-judge ensemble** (`judge/ensemble.py`) requires three specific Ollama tags (`qwen2.5-coder:14b-instruct-q5_K_M`, `deepseek-coder-v2:lite`, `llama3.1:8b`). See `docs/setup-ollama.md` for setup; missing models will fail at first call, not startup.
+- **Three-judge ensemble** (`judge_engine/judge/ensemble.py`) requires three specific Ollama tags (`qwen2.5-coder:14b-instruct-q5_K_M`, `deepseek-coder-v2:lite`, `llama3.1:8b`). See `docs/setup-ollama.md` for setup; missing models will fail at first call, not startup.
 - **Problem variants** are linked by `ProblemRow.parent_id` (self-FK) — the authoring engine sets this on persist. Existing manual problems have `parent_id IS NULL`. Don't break this when adding queries.
 
 ## Reference Docs
