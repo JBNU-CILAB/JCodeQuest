@@ -25,6 +25,14 @@ const RANK_COLOR: Record<number, string> = {
 
 const MAX_SCORE = 1500
 
+const CJK_WIDE = /[ᄀ-ᅟ⺀-鿿ꥠ-꥿가-퟿豈-﫿︰-﹏＀-｠￠-￦]/
+
+const displayWidth = (s: string) => {
+  let w = 0
+  for (const ch of s) w += CJK_WIDE.test(ch) ? 2 : 1
+  return w
+}
+
 export function Hero() {
   const { session, profile } = useAuth()
   const loggedIn = session !== null
@@ -67,7 +75,7 @@ export function Hero() {
     loading: boolean,
     error: string | null,
   ) => {
-    const nameLen = rows.length ? Math.max(...rows.map((u) => u.display_name.length)) : 12
+    const nameLen = rows.length ? Math.max(...rows.map((u) => displayWidth(u.display_name))) : 12
     return (
       <div className="flex flex-col gap-2.5">
         {loading && (
@@ -91,8 +99,8 @@ export function Hero() {
                 [{u.rank}]
               </span>
               <span
-                className="shrink-0 text-zinc-100 whitespace-nowrap"
-                style={{ minWidth: `${nameLen}ch` }}
+                className="shrink-0 text-zinc-100 whitespace-nowrap overflow-hidden"
+                style={{ width: `${nameLen}ch` }}
               >
                 {u.display_name}
               </span>
@@ -122,7 +130,10 @@ export function Hero() {
   const handleLogin = () =>
     supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: { hd: 'jbnu.ac.kr' },
+      },
     })
 
   const handleLogout = () => supabase.auth.signOut()
@@ -173,8 +184,8 @@ export function Hero() {
           <span className="text-zinc-500">$</span>
           <span className="ml-1 text-zinc-100">
             {period === 'all'
-              ? 'jcq leaderboard --global --top 3'
-              : `jcq leaderboard --week ${weekLabel ?? 'current'} --top 3`}
+              ? 'J-CodeQuest leaderboard --global --top 3'
+              : `J-CodeQuest leaderboard --week ${weekLabel ?? 'current'} --top 3`}
           </span>
         </div>
 

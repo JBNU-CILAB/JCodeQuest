@@ -13,6 +13,8 @@ import jwt
 SESSION_COOKIE = "jcq_session"
 _bearer = HTTPBearer(auto_error=False)
 
+ALLOWED_EMAIL_DOMAIN = "jbnu.ac.kr"
+
 
 def _touch(user: UserRow) -> None:
     _ = (user.id, user.display_name, user.email, user.exp, user.tier, user.provider, user.external_id)
@@ -44,6 +46,12 @@ def get_current_user(
 
         if not sub:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token missing sub")
+
+        if not email or not email.lower().endswith(f"@{ALLOWED_EMAIL_DOMAIN}"):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"@{ALLOWED_EMAIL_DOMAIN} 도메인 계정만 로그인할 수 있습니다.",
+            )
 
         with get_session() as s:
             user = get_or_create_user(
