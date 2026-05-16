@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { SlideModal } from './SlideModal'
 import { supabase } from '../lib/supabase'
 
@@ -26,6 +27,7 @@ const GRADE_LABEL: Record<GradeValue, string> = {
 }
 
 export function ProfileSetupModal({ open, onClose, initial }: Props) {
+  const navigate = useNavigate()
   const [grade, setGrade] = useState<GradeValue | null>(null)
   const [department, setDepartment] = useState('')
   const [nickname, setNickname] = useState('')
@@ -61,6 +63,7 @@ export function ProfileSetupModal({ open, onClose, initial }: Props) {
       })
       if (err) throw err
       onClose()
+      navigate('/mypage')
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패')
     } finally {

@@ -9,6 +9,40 @@ export interface UserMe {
   exp: number
   tier: string
   has_api_key?: boolean
+  nickname?: string | null
+  grade?: number | null
+  department?: string | null
+}
+
+export interface SubmissionListItem {
+  id: number
+  problem_id: number
+  status: SubmissionStatus
+  final_verdict: Verdict | null
+  mode: 'unanimous' | 'majority' | null
+  points_awarded: number | null
+  max_elapsed_ms: number | null
+  peak_memory_kb: number | null
+  created_at: string
+}
+
+export interface SubmissionListResponse {
+  items: SubmissionListItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface DailySolve {
+  date: string
+  count: number
+}
+
+export interface StreakResponse {
+  current_streak: number
+  longest_streak: number
+  last_solved_date: string | null
+  daily_solves: DailySolve[]
 }
 
 export type ProblemLevel = 'bronze' | 'silver' | 'gold'

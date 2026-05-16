@@ -7,6 +7,7 @@ import { Solver } from './pages/Solver'
 import { Result } from './pages/Result'
 import { Notices } from './pages/Notices'
 import { NoticeDetail } from './pages/NoticeDetail'
+import { MyPage } from './pages/MyPage'
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/submissions/:id" element={<Result />} />
             <Route path="/notices" element={<Notices />} />
             <Route path="/notices/:id" element={<NoticeDetail />} />
+            <Route path="/mypage" element={<MyPage />} />
           </Routes>
         </Layout>
       </BrowserRouter>

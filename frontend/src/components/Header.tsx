@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { ProfileSetupModal } from './ProfileSetupModal'
@@ -21,6 +21,7 @@ const TIER_STYLES: Record<string, string> = {
 
 export function Header() {
   const { session, profile } = useAuth()
+  const navigate = useNavigate()
   const loggedIn = session !== null
   const [frame, setFrame] = useState(0)
 
@@ -97,7 +98,10 @@ export function Header() {
           onClick={() =>
             supabase.auth.signInWithOAuth({
               provider: 'google',
-              options: { redirectTo: window.location.origin },
+              options: {
+                redirectTo: window.location.origin,
+                queryParams: { hd: 'jbnu.ac.kr' },
+              },
             })
           }
           className="ml-7 text-black text-[15px] font-medium pb-1.5 border-b-2 border-transparent hover:border-black/40 transition"
@@ -190,17 +194,23 @@ export function Header() {
                   <div className="flex flex-col py-1">
                     <button
                       type="button"
-                      onClick={() => setProfileModalOpen(true)}
+                      onClick={() => {
+                        if (needsProfile) {
+                          setProfileModalOpen(true)
+                        } else {
+                          navigate('/mypage')
+                        }
+                      }}
                       className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
                     >
                       프로필 설정
                     </button>
-                    <a
-                      href="#"
+                    <Link
+                      to="/mypage"
                       className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
                     >
                       마이페이지
-                    </a>
+                    </Link>
                     <button
                       onClick={() => supabase.auth.signOut()}
                       className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
