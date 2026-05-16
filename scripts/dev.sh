@@ -157,10 +157,28 @@ start_one() {
 }
 
 # ── 마이그레이션 ────────────────────────────────────────────────────────────
+#
+# 정책: 운영 DB(Postgres/Supabase)는 dev.sh가 자동 마이그레이션하지 않는다.
+# 운영 DB는 공유 자원이라 매 `dev.sh up` 마다 스키마를 건드리면 사고(동시
+# 기동 race, 잘못된 모델 변경의 즉시 반영, 롤백 곤란)가 나기 쉽다. 그래서
+# JCQ_DB_URL이 postgresql://* 이면 아래 함수는 migrate.py 호출을 스킵한다.
+#
+# 운영 DB에 컬럼 추가/변경이 필요할 때는 개발자가 의식적으로 한 번 실행:
+#     set -a; source backend/.env; set +a
+#     backend/.venv/bin/python backend/migrate.py
+#
+# SQLite(로컬 단일 파일, 폭발 반경 0) 환경에서는 그대로 자동 실행한다.
 run_migrations() {
-    # JCQ_DB_URL이 postgresql:// 이면 Supabase 관리 DB → migrate.py 스킵.
-    # SQLite 환경(로컬 테스트 등)에서만 실행.
+    # JCQ_DB_URL은 backend/.env에만 적혀 있고 셸에는 export 안 돼있는 게 정상 흐름.
+    # backend/main.py는 import 시 load_dotenv를 부르지만, migrate.py·이 스크립트의
+    # 분기 로직은 그 경로를 안 거친다. 그래서 분기 판정 전에 .env를 직접 읽는다.
     local db_url="${JCQ_DB_URL:-}"
+    if [[ -z "$db_url" && -f "$REPO_ROOT/backend/.env" ]]; then
+        # shellcheck disable=SC1090,SC1091
+        # `export ...` 라인을 포함한 dotenv 포맷이라 그대로 source 가능.
+        set -a; source "$REPO_ROOT/backend/.env"; set +a
+        db_url="${JCQ_DB_URL:-}"
+    fi
     if [[ "$db_url" == postgresql://* ]]; then
         info "Supabase PostgreSQL 감지 — migrate.py 스킵 (스키마는 Supabase 대시보드/CLI로 관리)"
         return 0

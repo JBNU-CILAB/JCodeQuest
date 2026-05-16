@@ -1,91 +1,119 @@
-"""SQLite 스키마 마이그레이션 스크립트.
+"""스키마 마이그레이션 스크립트.
+
+Postgres(운영, Supabase)와 SQLite(테스트) 양쪽 dialect를 지원한다.
+JCQ_DB_URL이 가리키는 DB를 SQLAlchemy engine으로 열고, dialect별 DDL을 실행한다.
 
 실행:
+    # SQLite (기본 경로 backend/data/jcq.db) — 그냥 호출
     python migrate.py
 
-JCQ_DB_URL 환경변수가 설정되어 있으면 그 경로를 사용하고,
-없으면 backend/data/jcq.db 기본값을 사용한다.
+    # Postgres — env.sh 가 JCQ_DB_URL 을 export 한 셸에서
+    source backend/env.sh
+    python backend/migrate.py
+
+dev.sh는 Postgres URL 감지 시 자동 마이그레이션을 스킵한다(운영 DB 변경은
+의식적으로 손으로 돌리도록). 운영 스키마 변경이 필요할 때만 위처럼 호출하라.
 """
-import os
-import sqlite3
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
 
-raw_url = os.getenv("JCQ_DB_URL", "")
-if raw_url.startswith("sqlite:///"):
-    db_path = raw_url.removeprefix("sqlite:///")
-else:
-    db_path = str(Path(__file__).parent / "data" / "jcq.db")
+from dotenv import load_dotenv
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
-print(f"DB: {db_path}")
+# src.storage.db는 import 시점에 JCQ_DB_URL을 KeyError 없이 요구한다.
+# 단독 실행(`python backend/migrate.py`) 호환을 위해 backend/.env를 먼저 로드.
+load_dotenv(Path(__file__).parent / ".env")
 
-if not Path(db_path).exists():
-    print("DB 파일이 없습니다. 서버를 먼저 한 번 실행해 init_db()를 수행하세요.")
-    raise SystemExit(1)
+from src.storage.db import engine  # noqa: E402  — env 로딩 후에 import
 
-conn = sqlite3.connect(db_path)
-cur = conn.cursor()
+dialect = engine.dialect.name
+is_pg = dialect.startswith("postgres")
+print(f"Dialect: {dialect}  URL: {engine.url.render_as_string(hide_password=True)}")
 
-migrations: list[tuple[str, str]] = [
+# 각 항목: (라벨, Postgres DDL, SQLite DDL)
+# Postgres는 IF NOT EXISTS로 idempotent, SQLite는 duplicate-column 예외로 처리.
+migrations: list[tuple[str, str, str]] = [
     (
         "problem.parent_id",
+        "ALTER TABLE problem ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES problem(id)",
         "ALTER TABLE problem ADD COLUMN parent_id INTEGER REFERENCES problem(id)",
     ),
     (
         "problem.langsmith_trace_id",
+        "ALTER TABLE problem ADD COLUMN IF NOT EXISTS langsmith_trace_id TEXT",
         "ALTER TABLE problem ADD COLUMN langsmith_trace_id TEXT",
     ),
     (
         "problem.authoring_meta",
+        "ALTER TABLE problem ADD COLUMN IF NOT EXISTS authoring_meta TEXT",
         "ALTER TABLE problem ADD COLUMN authoring_meta TEXT",
     ),
     (
         "problem.iso_week",
+        "ALTER TABLE problem ADD COLUMN IF NOT EXISTS iso_week TEXT",
         "ALTER TABLE problem ADD COLUMN iso_week TEXT",
+    ),
+    (
+        "user.api_key_secret_id",
+        # "user"는 Postgres 예약어 — 따옴표 필수.
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS api_key_secret_id TEXT',
+        'ALTER TABLE "user" ADD COLUMN api_key_secret_id TEXT',
     ),
 ]
 
-for col, sql in migrations:
-    try:
-        cur.execute(sql)
-        print(f"  OK  {col}")
-    except sqlite3.OperationalError as e:
-        if "duplicate column name" in str(e).lower():
-            print(f"SKIP  {col} (이미 존재)")
+
+def _is_duplicate(err: Exception) -> bool:
+    msg = str(err).lower()
+    return "duplicate column" in msg or "already exists" in msg
+
+
+with engine.begin() as conn:
+    for label, pg_sql, sqlite_sql in migrations:
+        sql = pg_sql if is_pg else sqlite_sql
+        try:
+            conn.execute(text(sql))
+            print(f"  OK  {label}")
+        except (OperationalError, ProgrammingError) as e:
+            if _is_duplicate(e):
+                print(f"SKIP  {label} (이미 존재)")
+            else:
+                raise
+
+    for idx_sql in (
+        "CREATE INDEX IF NOT EXISTS ix_problem_parent_id ON problem (parent_id)",
+        "CREATE INDEX IF NOT EXISTS ix_problem_langsmith_trace_id ON problem (langsmith_trace_id)",
+        "CREATE INDEX IF NOT EXISTS ix_problem_iso_week ON problem (iso_week)",
+    ):
+        conn.execute(text(idx_sql))
+
+    # iso_week 백필 — SQLite strftime의 %V 지원이 일관되지 않아 Python으로 계산.
+    rows = conn.execute(
+        text(
+            "SELECT id, created_at FROM problem "
+            "WHERE iso_week IS NULL OR iso_week = ''"
+        )
+    ).all()
+    backfilled = 0
+    for pid, created_at in rows:
+        if isinstance(created_at, datetime):
+            dt = created_at
+        elif isinstance(created_at, str):
+            try:
+                dt = datetime.fromisoformat(created_at)
+            except ValueError:
+                continue
         else:
-            raise
+            continue
+        y, w, _ = dt.isocalendar()
+        conn.execute(
+            text("UPDATE problem SET iso_week = :w WHERE id = :id"),
+            {"w": f"{y:04d}-W{w:02d}", "id": pid},
+        )
+        backfilled += 1
+    if backfilled:
+        print(f"  OK  iso_week 백필 {backfilled}건")
 
-# parent_id 인덱스 (별도 생성 — ALTER TABLE로는 인덱스 불가)
-cur.execute(
-    "CREATE INDEX IF NOT EXISTS ix_problem_parent_id ON problem (parent_id)"
-)
-cur.execute(
-    "CREATE INDEX IF NOT EXISTS ix_problem_langsmith_trace_id ON problem (langsmith_trace_id)"
-)
-cur.execute(
-    "CREATE INDEX IF NOT EXISTS ix_problem_iso_week ON problem (iso_week)"
-)
-
-# iso_week 백필 — created_at(UTC)에서 ISO 주차를 Python으로 계산.
-# SQLite의 strftime은 ISO week(%V)를 일관되게 지원하지 않아 호스트 코드로 처리.
-cur.execute(
-    "SELECT id, created_at FROM problem WHERE iso_week IS NULL OR iso_week = ''"
-)
-to_fill = cur.fetchall()
-for pid, created_at in to_fill:
-    try:
-        # SQLAlchemy가 timezone-aware datetime을 저장하면 "+00:00" 접미가 붙는다.
-        # fromisoformat은 둘 다 받아준다.
-        dt = datetime.fromisoformat(created_at)
-    except ValueError:
-        # 혹시라도 포맷이 깨졌으면 그 행은 비워두고 넘어감 — 다음 행 인덱싱은 정상 동작해야 한다.
-        continue
-    y, w, _ = dt.isocalendar()
-    label = f"{y:04d}-W{w:02d}"
-    cur.execute("UPDATE problem SET iso_week = ? WHERE id = ?", (label, pid))
-if to_fill:
-    print(f"  OK  iso_week 백필 {len(to_fill)}건")
-
-conn.commit()
-conn.close()
 print("마이그레이션 완료")
