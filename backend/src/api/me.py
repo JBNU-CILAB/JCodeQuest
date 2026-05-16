@@ -7,15 +7,17 @@ from ..auth.deps import get_current_user
 from ..schemas import (
     ApiKeyUpdateRequest,
     ApiKeyUpdateResponse,
+    DailySolve,
     EnsembleVerdict,
     MeResponse,
     ProfileUpdateRequest,
+    StreakResponse,
     SubmissionListItem,
     SubmissionListResponse,
 )
 from ..storage import get_session
 from ..storage.models import UserRow
-from ..storage.submissions import list_user_submissions
+from ..storage.submissions import compute_user_streak, list_user_submissions
 from ..storage.users import set_user_api_key, update_user_profile
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -160,4 +162,28 @@ def list_my_submissions(
         items = [_to_submission_item(r) for r in rows]
     return SubmissionListResponse(
         items=items, total=total, limit=limit, offset=offset
+    )
+
+
+@router.get(
+    "/streak",
+    response_model=StreakResponse,
+    summary="내 풀이 스트릭",
+    description=(
+        "'새 문제를 처음 AC한 날' 기준 연속 일수를 반환한다. "
+        "날짜 경계는 KST(UTC+9). 오늘 또는 어제까지 이어진 풀이가 있어야 current가 유지된다."
+    ),
+    responses={401: {"description": "유효한 세션 쿠키/토큰 없음"}},
+)
+def get_my_streak(user: UserRow = Depends(get_current_user)) -> StreakResponse:
+    assert user.id is not None
+    with get_session() as session:
+        stats = compute_user_streak(session, user.id)
+    return StreakResponse(
+        current_streak=stats.current_streak,
+        longest_streak=stats.longest_streak,
+        last_solved_date=stats.last_solved_date.isoformat() if stats.last_solved_date else None,
+        daily_solves=[
+            DailySolve(date=d.isoformat(), count=c) for d, c in stats.daily_solves
+        ],
     )

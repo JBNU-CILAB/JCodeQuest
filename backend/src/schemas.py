@@ -262,6 +262,31 @@ class SubmissionListResponse(BaseModel):
     offset: int
 
 
+class DailySolve(BaseModel):
+    date: str = Field(description="KST 날짜 (YYYY-MM-DD)")
+    count: int = Field(description="그 날 처음 AC한 문제 수")
+
+
+class StreakResponse(BaseModel):
+    """GET /me/streak — '새 문제를 처음 AC한 날' 기준 연속 일수.
+
+    날짜 경계는 KST(UTC+9)로 계산. 오늘 또는 어제까지 이어진 연속이면 current가 유지되고,
+    그보다 더 오래 끊겼다면 current=0이 된다. daily_solves는 잔디 시각화를 위한 최근 window 일치
+    일별 새 문제 풀이 수 (오래된 → 최신 순).
+    """
+
+    current_streak: int = Field(description="현재 연속 일수")
+    longest_streak: int = Field(description="역대 최장 연속 일수")
+    last_solved_date: str | None = Field(
+        default=None,
+        description="가장 최근에 새 문제를 푼 날 (KST, YYYY-MM-DD). 미해결이면 null.",
+    )
+    daily_solves: list[DailySolve] = Field(
+        default_factory=list,
+        description="최근 window 일치 일별 새 문제 풀이 수. 오래된 날짜부터 정렬.",
+    )
+
+
 class MeResponse(BaseModel):
     """GET /me 의 응답 — UserRow의 공개 가능한 필드만."""
 

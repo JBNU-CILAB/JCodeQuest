@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -8,6 +8,8 @@ from sqlmodel import Session, select
 from ..schemas import EnsembleResult, TestResult
 from .models import SubmissionRow
 from .users import bump_user_exp
+
+KST = timezone(timedelta(hours=9))
 
 MAX_ATTEMPTS = 3
 
@@ -132,6 +134,80 @@ def save_grading(
 
 def get_submission(session: Session, submission_id: int) -> SubmissionRow | None:
     return session.get(SubmissionRow, submission_id)
+
+
+@dataclass(frozen=True)
+class StreakStats:
+    current_streak: int
+    longest_streak: int
+    last_solved_date: date | None
+    daily_solves: list[tuple[date, int]]  # 오래된 → 최신 순
+
+
+def compute_user_streak(
+    session: Session, user_id: int, *, window_days: int = 365
+) -> StreakStats:
+    """'새 문제 처음 AC한 날' 기준 연속 일수와 잔디 카운트. 날짜는 KST로 환산.
+
+    window_days: daily_solves에 포함할 최근 일수 (오늘 포함, 과거 방향).
+    """
+    rows = session.exec(
+        select(SubmissionRow.problem_id, func.min(SubmissionRow.created_at))
+        .where(
+            SubmissionRow.user_id == user_id,
+            SubmissionRow.final_verdict == "AC",
+        )
+        .group_by(SubmissionRow.problem_id)
+    ).all()
+
+    def to_kst_date(dt: datetime) -> date:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(KST).date()
+
+    today_kst = datetime.now(KST).date()
+
+    counts: dict[date, int] = {}
+    for _, dt in rows:
+        if dt is None:
+            continue
+        d = to_kst_date(dt)
+        counts[d] = counts.get(d, 0) + 1
+
+    daily = [
+        (today_kst - timedelta(days=i), counts.get(today_kst - timedelta(days=i), 0))
+        for i in range(window_days - 1, -1, -1)
+    ]
+
+    if not counts:
+        return StreakStats(0, 0, None, daily)
+
+    solve_dates = sorted(counts.keys())
+
+    longest = 1
+    run = 1
+    for i in range(1, len(solve_dates)):
+        if (solve_dates[i] - solve_dates[i - 1]).days == 1:
+            run += 1
+        else:
+            run = 1
+        if run > longest:
+            longest = run
+
+    last_solved = solve_dates[-1]
+    gap = (today_kst - last_solved).days
+
+    if gap > 1:
+        current = 0
+    else:
+        current = 1
+        for i in range(len(solve_dates) - 2, -1, -1):
+            if (solve_dates[i + 1] - solve_dates[i]).days == 1:
+                current += 1
+            else:
+                break
+
+    return StreakStats(current, longest, last_solved, daily)
 
 
 def list_user_submissions(
