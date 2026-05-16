@@ -180,22 +180,23 @@ function EnsembleVotes({ votes }: { votes: JudgeVote[] }) {
 
 function TutorPanel({ submissionId }: { submissionId: number }) {
   const [message, setMessage] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadOnce, setLoadOnce] = useState(false)
+  const [usageCount, setUsageCount] = useState<number>(0)
+  const [remainingUses, setRemainingUses] = useState<number>(3)
 
+  // 초기 로드: 이력 조회만 (메시지 자동 로드 X)
   useEffect(() => {
     if (loadOnce) return
     setLoadOnce(true)
-    setLoading(true)
 
     apiGet<TutorHistoryResponse>(`/tutor/${submissionId}/history`)
-      .then(async (h) => {
+      .then((h) => {
+        setUsageCount(h.usage_count)
+        setRemainingUses(h.remaining_uses)
         if (h.messages.length > 0) {
           setMessage(h.messages[h.messages.length - 1].message)
-        } else {
-          const res = await apiPost<TutorResponse>(`/tutor/${submissionId}`)
-          setMessage(res.message)
         }
         setError(null)
       })
@@ -203,8 +204,23 @@ function TutorPanel({ submissionId }: { submissionId: number }) {
         const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'unknown'
         setError(msg)
       })
-      .finally(() => setLoading(false))
   }, [submissionId, loadOnce])
+
+  const requestTutor = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await apiPost<TutorResponse>(`/tutor/${submissionId}`)
+      setMessage(res.message)
+      setUsageCount((prev) => prev + 1)
+      setRemainingUses((prev) => Math.max(0, prev - 1))
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'unknown'
+      setError(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const regenerate = async () => {
     setLoading(true)
@@ -214,6 +230,8 @@ function TutorPanel({ submissionId }: { submissionId: number }) {
         `/tutor/${submissionId}?regenerate=true`,
       )
       setMessage(res.message)
+      setUsageCount((prev) => prev + 1)
+      setRemainingUses((prev) => Math.max(0, prev - 1))
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'unknown'
       setError(msg)
@@ -222,40 +240,81 @@ function TutorPanel({ submissionId }: { submissionId: number }) {
     }
   }
 
+  const canRequest = remainingUses > 0 && !loading
+  const hasReachedLimit = remainingUses === 0 && usageCount > 0
+
   return (
     <div className="bg-white border border-gray-200 rounded-2xl px-6 py-5 shadow-[0_1px_2px_rgba(31,41,55,0.03)]">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
           <span>🤖</span>
           <span>AI 튜터</span>
         </h2>
-        {message && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={loading}
-            onClick={regenerate}
-          >
-            {loading ? '생성 중...' : '다시 묻기'}
-          </Button>
-        )}
+        <div className="text-xs text-gray-500">
+          {usageCount > 0 && (
+            <span>
+              {remainingUses > 0 ? '남은 사용' : '사용'} {remainingUses}/3
+            </span>
+          )}
+        </div>
       </div>
-      {loading && !message && (
-        <p className="text-sm text-gray-400 py-4">
-          튜터가 코드를 읽고 있습니다...
-        </p>
+
+      {/* 에러 상태 */}
+      {error && (
+        <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg">
+          <p className="text-sm text-rose-700">
+            {error.includes('API 키')
+              ? '로그인 후 프로필에서 API 키를 설정해주세요.'
+              : error}
+          </p>
+        </div>
       )}
-      {error && !message && (
-        <p className="text-sm text-rose-600 py-2">튜터 로드 실패 — {error}</p>
-      )}
+
+      {/* 메시지 표시 */}
       {message && (
-        <div className="prose prose-sm max-w-none text-gray-700 [&_pre]:bg-gray-900 [&_pre]:text-gray-100 [&_pre]:rounded-lg [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[12px] [&_pre_code]:bg-transparent [&_pre_code]:p-0">
+        <div className="mb-4 prose prose-sm max-w-none text-gray-700 [&_pre]:bg-gray-900 [&_pre]:text-gray-100 [&_pre]:rounded-lg [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[12px] [&_pre_code]:bg-transparent [&_pre_code]:p-0">
           <ReactMarkdown>{message}</ReactMarkdown>
         </div>
       )}
-      {error && message && (
-        <p className="text-xs text-rose-500 mt-2">{error}</p>
+
+      {/* 한도 도달 메시지 */}
+      {hasReachedLimit && (
+        <p className="text-xs text-gray-500 mb-3 p-3 bg-gray-50 rounded">
+          이 문제에 대한 튜터 사용 한도(3회)에 도달했습니다.
+        </p>
       )}
+
+      {/* 로딩 상태 */}
+      {loading && (
+        <p className="text-sm text-gray-400 py-2">
+          {message ? '다시 생성 중...' : '튜터가 코드를 읽고 있습니다...'}
+        </p>
+      )}
+
+      {/* 버튼 영역 */}
+      <div className="flex gap-2">
+        {!message && (
+          <Button
+            disabled={!canRequest}
+            onClick={requestTutor}
+            className="flex-1"
+          >
+            {loading ? '생성 중...' : canRequest ? '튜터에게 묻기' : '한도 도달'}
+          </Button>
+        )}
+        {message && (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canRequest}
+              onClick={regenerate}
+            >
+              {canRequest ? '다시 묻기' : '한도 도달'}
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   )
 }

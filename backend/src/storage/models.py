@@ -142,6 +142,7 @@ class TutorMessageRow(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     submission_id: int = Field(foreign_key="submission.id", index=True)
     message: str
+    is_user_requested: bool = Field(default=False)  # 사용자가 명시적으로 요청했는가 여부
     created_at: datetime = Field(default_factory=_utcnow)
 
 

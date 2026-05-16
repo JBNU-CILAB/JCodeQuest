@@ -395,6 +395,12 @@ class TutorHistoryResponse(BaseModel):
     messages: list[TutorHistoryItem] = Field(
         description="생성 시각 오름차순"
     )
+    usage_count: int = Field(
+        description="이 문제에 대한 튜터 사용 횟수 (사용자 요청만 카운트)"
+    )
+    remaining_uses: int = Field(
+        description="남은 튜터 사용 횟수 (3회 - usage_count, 최소 0)"
+    )
 
 
 # ── Notices ──────────────────────────────────────────────────────────────

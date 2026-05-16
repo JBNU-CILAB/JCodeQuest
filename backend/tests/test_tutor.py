@@ -71,6 +71,12 @@ def _create_done_submission(
     return sid
 
 
+def _set_api_key(c: TestClient, api_key: str = "test-api-key-with-20-chars") -> None:
+    """현재 세션 사용자에게 API 키를 설정한다."""
+    r = c.put("/me/api-key", json={"api_key": api_key})
+    assert r.status_code == 200, r.text
+
+
 # ────────────────────────── 라우터 happy / 에러 ──────────────────────────
 
 
@@ -90,6 +96,7 @@ def test_tutor_returns_message_for_ac(
     monkeypatch.setattr(tutor_api, "run_tutor", fake_tutor)
 
     sid = _create_done_submission(client, seeded_problem_id, email="ac@example.com")
+    _set_api_key(client)
     r = client.post(f"/tutor/{sid}")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -125,6 +132,7 @@ def test_tutor_when_sandbox_fail_no_votes(
         client, seeded_problem_id, email="wa@example.com",
         code="n = int(input())\nprint(n + 1)\n",  # 오답
     )
+    _set_api_key(client)
     r = client.post(f"/tutor/{sid}")
     assert r.status_code == 200, r.text
     assert captured["votes"] is None
@@ -148,6 +156,7 @@ def test_tutor_caches_by_default(
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
     sid = _create_done_submission(client, seeded_problem_id, email="cache@example.com")
+    _set_api_key(client)
 
     r1 = client.post(f"/tutor/{sid}")
     assert r1.status_code == 200
@@ -175,6 +184,7 @@ def test_tutor_regenerate_creates_new_message(
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
     sid = _create_done_submission(client, seeded_problem_id, email="regen@example.com")
+    _set_api_key(client)
 
     client.post(f"/tutor/{sid}")  # 첫 생성
     r2 = client.post(f"/tutor/{sid}?regenerate=true")
@@ -202,6 +212,7 @@ def test_tutor_history_returns_all_revisions(
     monkeypatch.setattr(tutor_api, "run_tutor", counting_tutor)
 
     sid = _create_done_submission(client, seeded_problem_id, email="hist@example.com")
+    _set_api_key(client)
 
     client.post(f"/tutor/{sid}")
     client.post(f"/tutor/{sid}?regenerate=true")
@@ -221,6 +232,10 @@ def test_tutor_history_returns_all_revisions(
 
 
 def test_tutor_history_404_on_missing_submission(client: TestClient):
+    client.cookies.clear()
+    client.post("/auth/dev-login", params={"email": "test404@example.com"})
+    _set_api_key(client)
+
     r = client.get("/tutor/999999/history")
     assert r.status_code == 404
 
@@ -230,9 +245,14 @@ def test_tutor_history_empty_for_un_tutored_submission(
 ):
     """채점은 끝났지만 한 번도 튜터링 안 받은 제출 — 200 + 빈 리스트."""
     sid = _create_done_submission(client, seeded_problem_id, email="empty-hist@example.com")
+    _set_api_key(client)
     r = client.get(f"/tutor/{sid}/history")
     assert r.status_code == 200
-    assert r.json() == {"submission_id": sid, "messages": []}
+    body = r.json()
+    assert body["submission_id"] == sid
+    assert body["messages"] == []
+    assert body["usage_count"] == 0
+    assert body["remaining_uses"] == 3
 
 
 def test_tutor_404_on_missing_submission(client: TestClient, monkeypatch):
@@ -241,6 +261,10 @@ def test_tutor_404_on_missing_submission(client: TestClient, monkeypatch):
 
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", boom)
+
+    client.cookies.clear()
+    client.post("/auth/dev-login", params={"email": "test404@example.com"})
+    _set_api_key(client)
 
     r = client.post("/tutor/999999")
     assert r.status_code == 404
@@ -254,14 +278,19 @@ def test_tutor_409_when_submission_not_done(
     from src.storage.submissions import create_submission
 
     # 큐를 거치지 않고 직접 row 삽입 → status 기본값은 "queued"
+    user_id = make_user()
     with get_session() as s:
-        sid = create_submission(s, user_id=make_user(), problem_id=seeded_problem_id, code="x")
+        sid = create_submission(s, user_id=user_id, problem_id=seeded_problem_id, code="x")
 
     async def boom(**_kwargs):
         raise AssertionError("OpenAI는 호출되면 안 됨")
 
     import src.api.tutor as tutor_api
     monkeypatch.setattr(tutor_api, "run_tutor", boom)
+
+    client.cookies.clear()
+    client.post("/auth/dev-login", params={"email": "test409@example.com"})
+    _set_api_key(client)
 
     r = client.post(f"/tutor/{sid}")
     assert r.status_code == 409

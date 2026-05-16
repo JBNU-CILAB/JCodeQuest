@@ -90,6 +90,8 @@ export interface TutorHistoryItem {
 export interface TutorHistoryResponse {
   submission_id: number
   messages: TutorHistoryItem[]
+  usage_count: number
+  remaining_uses: number
 }
 
 export interface Notice {
