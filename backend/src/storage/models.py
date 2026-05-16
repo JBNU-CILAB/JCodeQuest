@@ -1,11 +1,18 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import JSON, Column, DateTime, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _tz_column(*, nullable: bool = False, index: bool = False) -> Column:
+    """timezone-aware DateTime 컬럼. Postgres에선 TIMESTAMPTZ, SQLite에선 TEXT로 저장된다.
+    naive datetime이 들어오면 UTC로 가정해서 직렬화/역직렬화하므로 storage 경계에서
+    aware/naive 가 섞여도 한쪽으로 수렴한다."""
+    return Column(DateTime(timezone=True), nullable=nullable, index=index)
 
 
 def iso_week_of(dt: datetime) -> str:
@@ -52,8 +59,8 @@ class UserRow(SQLModel, table=True):
     # SQLite 테스트에선 vault가 없어 plaintext가 들어가는데, storage.vault가 동일 인터페이스로 흡수.
     api_key_secret_id: str | None = None
 
-    created_at: datetime = Field(default_factory=_utcnow)
-    updated_at: datetime = Field(default_factory=_utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
 
 
 class ProblemRow(SQLModel, table=True):
@@ -70,7 +77,7 @@ class ProblemRow(SQLModel, table=True):
     reference_code: str
     intent_rubric: dict = Field(sa_column=Column(JSON, nullable=False))
     status: str = Field(default="draft", index=True)  # draft | approved | retired
-    created_at: datetime = Field(default_factory=_utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
     # 출제 시점의 ISO 주차 라벨(YYYY-Www). created_at에서 파생 가능하지만 명시 컬럼으로
     # 두는 편이 인덱스 스캔 한 번에 주차 그룹핑/필터링이 끝나서 유리하다.
     iso_week: str = Field(default_factory=_current_iso_week, index=True)
@@ -117,7 +124,7 @@ class SubmissionRow(SQLModel, table=True):
     max_elapsed_ms: int | None = None
     peak_memory_kb: int | None = None
     points_awarded: int | None = None       # AC인 경우에만 채워짐
-    created_at: datetime = Field(default_factory=_utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
 
 
 class SessionRow(SQLModel, table=True):
@@ -129,9 +136,9 @@ class SessionRow(SQLModel, table=True):
     # secrets.token_urlsafe(32) → 약 43자. 추측 불가능한 opaque 토큰.
     id: str = Field(primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
-    created_at: datetime = Field(default_factory=_utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
     # 만료 후 lookup이 None을 돌려주는 게이트. cleanup은 별도 purge 호출.
-    expires_at: datetime = Field(index=True)
+    expires_at: datetime = Field(sa_column=_tz_column(index=True))
 
 
 class TutorMessageRow(SQLModel, table=True):
@@ -143,7 +150,7 @@ class TutorMessageRow(SQLModel, table=True):
     submission_id: int = Field(foreign_key="submission.id", index=True)
     message: str
     is_user_requested: bool = Field(default=False)  # 사용자가 명시적으로 요청했는가 여부
-    created_at: datetime = Field(default_factory=_utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
 
 
 class NoticeRow(SQLModel, table=True):
@@ -156,5 +163,5 @@ class NoticeRow(SQLModel, table=True):
     body: str
     # 상단 고정 여부 — true면 created_at 무관하게 위에 노출.
     pinned: bool = Field(default=False, index=True)
-    created_at: datetime = Field(default_factory=_utcnow, index=True)
-    updated_at: datetime = Field(default_factory=_utcnow)
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())

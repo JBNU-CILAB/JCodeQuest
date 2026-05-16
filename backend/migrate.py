@@ -75,6 +75,23 @@ def _is_duplicate(err: Exception) -> bool:
     return "duplicate column" in msg or "already exists" in msg
 
 
+# created_at/updated_at/expires_at 컬럼들을 TIMESTAMPTZ로 통일.
+# SQLite는 TIMESTAMP/TIMESTAMPTZ 구분이 없어 적용 불필요. PG에서만 실행.
+# 기존 naive 값은 session timezone(Supabase 기본 UTC) 기준으로 해석된다.
+# 같은 ALTER를 두 번 돌려도 PG는 타입이 이미 timestamptz면 에러 없이 통과.
+tz_migrations: list[tuple[str, str]] = [
+    ('user.created_at',         'ALTER TABLE "user" ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE \'UTC\''),
+    ('user.updated_at',         'ALTER TABLE "user" ALTER COLUMN updated_at TYPE TIMESTAMPTZ USING updated_at AT TIME ZONE \'UTC\''),
+    ('problem.created_at',      "ALTER TABLE problem ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'"),
+    ('submission.created_at',   "ALTER TABLE submission ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'"),
+    ('session.created_at',      "ALTER TABLE session ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'"),
+    ('session.expires_at',      "ALTER TABLE session ALTER COLUMN expires_at TYPE TIMESTAMPTZ USING expires_at AT TIME ZONE 'UTC'"),
+    ('tutor_message.created_at', "ALTER TABLE tutor_message ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'"),
+    ('notice.created_at',       "ALTER TABLE notice ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'"),
+    ('notice.updated_at',       "ALTER TABLE notice ALTER COLUMN updated_at TYPE TIMESTAMPTZ USING updated_at AT TIME ZONE 'UTC'"),
+]
+
+
 with engine.begin() as conn:
     for label, pg_sql, sqlite_sql in migrations:
         sql = pg_sql if is_pg else sqlite_sql
@@ -93,6 +110,21 @@ with engine.begin() as conn:
         "CREATE INDEX IF NOT EXISTS ix_problem_iso_week ON problem (iso_week)",
     ):
         conn.execute(text(idx_sql))
+
+    # TIMESTAMPTZ 일괄 변환 — PG에서만. 이미 timestamptz 이면 PG가 no-op로 통과.
+    if is_pg:
+        for label, sql in tz_migrations:
+            try:
+                conn.execute(text(sql))
+                print(f"  OK  {label} → TIMESTAMPTZ")
+            except (OperationalError, ProgrammingError) as e:
+                # 같은 타입으로의 재변환은 PG가 조용히 통과하지만, 일부 버전이
+                # "cannot cast" 같은 메시지를 낼 수 있어 방어적으로 무시.
+                msg = str(e).lower()
+                if "timestamp with time zone" in msg or "already" in msg:
+                    print(f"SKIP  {label} (이미 timestamptz)")
+                else:
+                    raise
 
     # iso_week 백필 — SQLite strftime의 %V 지원이 일관되지 않아 Python으로 계산.
     rows = conn.execute(
