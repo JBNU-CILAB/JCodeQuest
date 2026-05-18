@@ -41,6 +41,9 @@ class UserRow(SQLModel, table=True):
     provider: str = Field(index=True)
     external_id: str = Field(index=True)
     email: str | None = None
+    # OAuth IdP(Google 등)가 user_metadata로 넘기는 프로필 이미지 URL. 매 로그인마다
+    # 최신값으로 갱신해 두고, 비어 있으면 클라이언트가 GitHub identicon으로 fallback.
+    avatar_url: str | None = None
 
     # 사용자 커스터마이즈 필드 — OAuth 가입 직후엔 모두 NULL, /me PATCH로 채움.
     # nickname은 display_name(IdP 제공)과 별개의 표시 별명.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { ProfileSetupModal } from './ProfileSetupModal'
@@ -21,7 +21,6 @@ const TIER_STYLES: Record<string, string> = {
 
 export function Header() {
   const { session, profile } = useAuth()
-  const navigate = useNavigate()
   const loggedIn = session !== null
   const [frame, setFrame] = useState(0)
 
@@ -49,13 +48,11 @@ export function Header() {
   const displayName = profile?.display_name ?? metadata.full_name ?? session?.user.email ?? ''
   const tier = profile?.tier ?? 'bronze'
   const exp = profile?.exp ?? 0
-  const needsApiKey = loggedIn && !profile?.has_api_key
+  const needsApiKey = loggedIn && profile !== null && !profile?.has_api_key
   const needsProfile =
     loggedIn &&
-    (!metadata.grade ||
-      !metadata.department ||
-      !metadata.nickname ||
-      typeof metadata.anonymous !== 'boolean')
+    profile !== null &&
+    (!profile.grade || !profile.department || !profile.nickname)
   const showBadge = needsApiKey || needsProfile
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
@@ -192,19 +189,6 @@ export function Header() {
                   )}
 
                   <div className="flex flex-col py-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (needsProfile) {
-                          setProfileModalOpen(true)
-                        } else {
-                          navigate('/mypage')
-                        }
-                      }}
-                      className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
-                    >
-                      프로필 설정
-                    </button>
                     <Link
                       to="/mypage"
                       className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
@@ -229,10 +213,9 @@ export function Header() {
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
         initial={{
-          grade: metadata.grade,
-          department: metadata.department,
-          nickname: metadata.nickname,
-          anonymous: metadata.anonymous,
+          grade: profile?.grade,
+          department: profile?.department,
+          nickname: profile?.nickname,
         }}
       />
     </header>

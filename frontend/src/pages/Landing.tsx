@@ -27,7 +27,7 @@ export function Landing() {
   }
 
   return (
-    <>
+    <div className="bg-white flex-1">
       <Hero />
       {session && <Dashboard />}
       <ApiKeyGuideModal
@@ -35,6 +35,6 @@ export function Landing() {
         onClose={() => navigate('/', { replace: false })}
         onSubmit={handleApiKeySubmit}
       />
-    </>
+    </div>
   )
 }

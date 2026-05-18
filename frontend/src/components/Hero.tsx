@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { apiGet } from '../lib/api'
+import { formatIsoWeekKo } from '../lib/isoWeek'
 
 type LeaderboardEntry = {
   rank: number
@@ -250,7 +251,18 @@ function useLeaderboardOnce(path: string): FetchState & { week: string | null } 
 }
 
 function GradeSlide({ active }: { active: boolean }) {
+  const { profile } = useAuth()
   const [grade, setGrade] = useState<Grade>(1)
+  const initializedRef = useRef(false)
+
+  useEffect(() => {
+    if (initializedRef.current) return
+    const g = profile?.grade
+    if (g && (GRADES as readonly number[]).includes(g)) {
+      setGrade(g as Grade)
+      initializedRef.current = true
+    }
+  }, [profile?.grade])
   const [cache, setCache] = useState<Record<number, FetchState>>({})
 
   useEffect(() => {
@@ -343,7 +355,6 @@ export function Hero() {
   const loggedIn = session !== null
 
   const [slideIdx, setSlideIdx] = useState(0)
-  const [paused, setPaused] = useState(false)
   const interactionRef = useRef(0)
 
   const all = useLeaderboardOnce('/leaderboard?period=all&limit=3')
@@ -356,14 +367,12 @@ export function Hero() {
   }, [])
 
   useEffect(() => {
-    if (paused) return
     const t = setInterval(() => {
-      // 사용자가 직전에 조작했다면 한 사이클 더 기다림
       if (Date.now() - interactionRef.current < AUTO_ROTATE_MS) return
       setSlideIdx((i) => (i + 1) % SLIDES.length)
     }, AUTO_ROTATE_MS)
     return () => clearInterval(t)
-  }, [paused])
+  }, [])
 
   const handleLogin = () =>
     supabase.auth.signInWithOAuth({
@@ -376,10 +385,10 @@ export function Hero() {
 
   const handleLogout = () => supabase.auth.signOut()
 
-  const weekLabel = week.week
+  const weekLabel = formatIsoWeekKo(week.week)
 
   return (
-    <section className="bg-[#faf7f2] text-zinc-900 px-6 pt-10 pb-12 font-mono">
+    <section className="bg-white text-zinc-900 px-6 pt-10 pb-12 font-mono">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1" />

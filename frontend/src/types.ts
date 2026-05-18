@@ -74,6 +74,16 @@ export interface ProblemSummary {
   level: ProblemLevel
   points: number
   one_line_summary: string
+  iso_week: string
+}
+
+export interface WeeklyProblemBucket {
+  week: string
+  count: number
+}
+
+export interface WeeklyProblemBucketsResponse {
+  buckets: WeeklyProblemBucket[]
 }
 
 export interface PublicTestCase {

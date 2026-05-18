@@ -13,7 +13,7 @@ const LEVEL_FILTERS: Array<{ value: ProblemLevel | 'all'; label: string }> = [
 ]
 
 export function Problems() {
-  const { session } = useAuth()
+  const { profile } = useAuth()
   const [problems, setProblems] = useState<ProblemSummary[] | null>(null)
   const [allCategories, setAllCategories] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -22,13 +22,6 @@ export function Problems() {
   const [category, setCategory] = useState<string>('all')
   const [level, setLevel] = useState<ProblemLevel | 'all'>('all')
   const [profileModalOpen, setProfileModalOpen] = useState(false)
-
-  const metadata = (session?.user.user_metadata ?? {}) as {
-    grade?: number
-    department?: string
-    nickname?: string
-    anonymous?: boolean
-  }
 
   const handleOpenProfileModal = useCallback(() => {
     setProfileModalOpen(true)
@@ -136,10 +129,9 @@ export function Problems() {
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
         initial={{
-          grade: metadata.grade,
-          department: metadata.department,
-          nickname: metadata.nickname,
-          anonymous: metadata.anonymous,
+          grade: profile?.grade,
+          department: profile?.department,
+          nickname: profile?.nickname,
         }}
       />
     </main>

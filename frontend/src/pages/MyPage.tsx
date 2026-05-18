@@ -389,10 +389,9 @@ export function MyPage() {
           void refreshProfile()
         }}
         initial={{
-          grade: metadata.grade,
-          department: metadata.department,
-          nickname: metadata.nickname,
-          anonymous: metadata.anonymous,
+          grade: profile?.grade,
+          department: profile?.department,
+          nickname: profile?.nickname,
         }}
       />
     </main>
