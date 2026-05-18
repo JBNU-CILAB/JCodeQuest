@@ -137,15 +137,23 @@ export interface Notice {
   updated_at: string
 }
 
-// ───────────────── Mock 카드 타입 (Phase 6에서 일부 교체) ─────────────────
+export type LeaderboardPeriod = 'all' | 'week'
 
-export interface RankUser {
+export interface LeaderboardEntry {
   rank: number
-  name: string
-  solved: number
-  streak: number
-  score: number
+  user_id: number
+  display_name: string
+  tier: string
+  points: number
 }
+
+export interface LeaderboardResponse {
+  period: LeaderboardPeriod
+  week: string | null
+  entries: LeaderboardEntry[]
+}
+
+// ───────────────── Mock 카드 타입 (Phase 6에서 일부 교체) ─────────────────
 
 export interface WeeklyProblem {
   label: string
