@@ -75,8 +75,8 @@ SOLUTION_SYSTEM = """\
   따라야 한다. 다른 알고리즘으로 우회하지 마라.
 - reference_code는 intent_rubric.expected_complexity를 만족해야 한다.
 
-테스트 입력 (stdin) 4~8개 생성:
-
+테스트 입력 (stdin) 5~8개 생성:
+- 모든 문제에 대해서 무조건 최소 5개 이상의 테스트 케이스를 생성해야 한다.
 - intent_rubric.must_handle의 모든 항목 각각에 대응되는 입력 1개씩 포함.
 - 일반 케이스 1~2개.
 - 시간복잡도 한계를 자극하는 스트레스 케이스 1개 (입력 범위의 최대치 근처).
