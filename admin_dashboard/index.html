@@ -367,6 +367,78 @@
   .verdict.WA, .verdict.RE, .verdict.TLE, .verdict.MLE { background: var(--danger-soft); color: var(--danger); }
   .verdict.NONE { background: #f3f4f6; color: var(--muted); }
 
+  /* ── Comparison view (비교 점수) ───────────────────────────────── */
+  .cmp-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .cmp-stat {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    background: var(--panel-2);
+  }
+  .cmp-stat .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .cmp-stat .value {
+    font-size: 22px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    margin-top: 4px;
+  }
+  .cmp-stat .value.na { color: var(--muted-2); font-size: 18px; }
+  .cmp-stat .range {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .cmp-stat .direction {
+    font-size: 10px;
+    margin-top: 6px;
+    color: var(--muted-2);
+  }
+  .cmp-bar-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 140px;
+  }
+  .cmp-bar-track {
+    flex: 1;
+    height: 6px;
+    background: #f3f4f6;
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 60px;
+  }
+  .cmp-bar-fill { height: 100%; border-radius: 3px; }
+  .cmp-bar-fill.good { background: var(--ok); }
+  .cmp-bar-fill.mid { background: var(--warn); }
+  .cmp-bar-fill.bad { background: var(--danger); }
+  .cmp-bar-fill.na { background: var(--border-strong); }
+  .cmp-bar-val {
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 32px;
+    text-align: right;
+  }
+  .cmp-rationale {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 360px;
+  }
+
   /* ── Pagination ────────────────────────────────────────────── */
   .pagination {
     display: flex;
@@ -538,6 +610,7 @@
         <button class="tab active" data-tab="create">원본 등록</button>
         <button class="tab" data-tab="variant">변형 출제</button>
         <button class="tab" data-tab="list">원본 목록</button>
+        <button class="tab" data-tab="comparison">비교 점수</button>
       </div>
 
       <!-- ── Tab: 원본 등록 ──────────────────────────────────────── -->
@@ -700,6 +773,79 @@
           </table>
         </section>
         <pre id="list-output" class="output-panel"></pre>
+      </div>
+
+      <!-- ── Tab: 비교 점수 (compare_to_original 3축 시각화) ─────── -->
+      <div id="tab-comparison" class="tab-content hidden">
+        <section class="card">
+          <h3>대상 원본</h3>
+          <div class="filter-bar" style="grid-template-columns: 1fr auto auto">
+            <div class="field">
+              <label>원본 problem_id</label>
+              <input id="cmp-original-id" type="number" min="1" placeholder="예: 1" />
+              <div class="hint">자식 변형의 compare_to_original 점수를 끌어와 집계한다.</div>
+            </div>
+            <button type="button" class="primary sm" id="btn-cmp-load">조회</button>
+          </div>
+        </section>
+
+        <section class="card hidden" id="cmp-summary-card">
+          <h3>요약 — <span id="cmp-summary-title" style="text-transform:none;color:var(--text);font-weight:600">—</span></h3>
+          <div class="hint" style="margin-bottom:12px" id="cmp-summary-meta">—</div>
+          <div class="cmp-stats">
+            <div class="cmp-stat">
+              <div class="label">hallucination (낮을수록 좋음)</div>
+              <div class="value" id="cmp-stat-hal">—</div>
+              <div class="range" id="cmp-stat-hal-range">—</div>
+              <div class="direction">0 = 환각 없음 · 1 = 환각 심함</div>
+            </div>
+            <div class="cmp-stat">
+              <div class="label">intent similarity (높을수록 좋음)</div>
+              <div class="value" id="cmp-stat-int">—</div>
+              <div class="range" id="cmp-stat-int-range">—</div>
+              <div class="direction">0 = 원본과 무관 · 1 = 동일 부류</div>
+            </div>
+            <div class="cmp-stat">
+              <div class="label">difficulty similarity (높을수록 좋음)</div>
+              <div class="value" id="cmp-stat-diff">—</div>
+              <div class="range" id="cmp-stat-diff-range">—</div>
+              <div class="direction">0 = 난이도 차이 큼 · 1 = 거의 동일</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card hidden" id="cmp-chart-card">
+          <h3>변형별 3축 점수</h3>
+          <div style="position:relative;height:320px">
+            <canvas id="chart-comparison"></canvas>
+          </div>
+          <div class="hint" style="margin-top:8px">
+            X축은 변형 ID. 점수 미기록(comparison 노드 미실행) 변형은 막대가 비어 있다.
+          </div>
+        </section>
+
+        <section class="card hidden" id="cmp-table-card">
+          <h3>변형 목록</h3>
+          <table class="data">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>제목</th>
+                <th>난이도</th>
+                <th>hallucination</th>
+                <th>intent</th>
+                <th>difficulty</th>
+                <th>judge score</th>
+                <th>rationale</th>
+              </tr>
+            </thead>
+            <tbody id="cmp-tbody">
+              <tr><td colspan="8" class="empty">원본 ID를 입력하고 조회</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <pre id="cmp-output" class="output-panel"></pre>
       </div>
 
     </section>
@@ -1396,9 +1542,11 @@ async function loadProblems() {
         <td class="num">${p.child_count ?? 0}</td>
         <td>${created}</td>
         <td class="actions">
+          <button class="sm" data-pid="${p.id}" data-act="cmp">비교</button>
           <button class="danger sm" data-pid="${p.id}" data-title="${escapeHtml(p.title)}">삭제</button>
         </td>
       `;
+      tr.querySelector("button[data-act='cmp']").addEventListener("click", () => openComparisonFor(p.id));
       tr.querySelector("button.danger").addEventListener("click", () => deleteProblem(p.id, p.title));
       tbody.appendChild(tr);
     }
@@ -1443,6 +1591,191 @@ async function deleteProblem(pid, title) {
 
 $("#btn-reload-list").addEventListener("click", loadProblems);
 $("#list-include-variants").addEventListener("change", loadProblems);
+
+// ── 비교 점수 (compare_to_original 시각화) ──────────────────────
+let _cmpChart = null;
+
+function _cmpFillClass(axis, v) {
+  // axis: 'hal' | 'pos' (intent/difficulty는 같은 방향)
+  if (v == null) return "na";
+  if (axis === "hal") {
+    // 낮을수록 좋음
+    if (v <= 0.25) return "good";
+    if (v <= 0.55) return "mid";
+    return "bad";
+  } else {
+    // 높을수록 좋음
+    if (v >= 0.75) return "good";
+    if (v >= 0.45) return "mid";
+    return "bad";
+  }
+}
+
+function _cmpBarCell(axis, v) {
+  const cls = _cmpFillClass(axis, v);
+  const pct = v == null ? 0 : Math.max(0, Math.min(100, v * 100));
+  const label = v == null ? "—" : v.toFixed(2);
+  return `
+    <div class="cmp-bar-cell">
+      <div class="cmp-bar-track">
+        <div class="cmp-bar-fill ${cls}" style="width:${pct}%"></div>
+      </div>
+      <div class="cmp-bar-val">${label}</div>
+    </div>`;
+}
+
+function _renderStat(spanIdValue, spanIdRange, stats, axis) {
+  const valEl = $("#" + spanIdValue);
+  const rngEl = $("#" + spanIdRange);
+  if (!stats || stats.count === 0 || stats.mean == null) {
+    valEl.className = "value na";
+    valEl.textContent = "기록 없음";
+    rngEl.textContent = "n=0";
+    return;
+  }
+  const cls = _cmpFillClass(axis, stats.mean);
+  valEl.className = "value";
+  valEl.style.color = cls === "good" ? "var(--ok)"
+    : cls === "bad" ? "var(--danger)"
+    : cls === "mid" ? "var(--warn)" : "";
+  valEl.textContent = stats.mean.toFixed(3);
+  rngEl.textContent = `n=${stats.count} · min ${stats.min.toFixed(2)} · max ${stats.max.toFixed(2)}`;
+}
+
+function _renderCmpChart(variants) {
+  const labels = variants.map((v) => `#${v.problem_id}`);
+  const halData = variants.map((v) => v.hallucination_score);
+  const intData = variants.map((v) => v.intent_similarity);
+  const diffData = variants.map((v) => v.difficulty_similarity);
+  const cfg = {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "hallucination", data: halData, backgroundColor: "rgba(220,38,38,0.75)" },
+        { label: "intent_similarity", data: intData, backgroundColor: "rgba(37,99,235,0.75)" },
+        { label: "difficulty_similarity", data: diffData, backgroundColor: "rgba(5,150,105,0.75)" },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { beginAtZero: true, max: 1.0, ticks: { stepSize: 0.2 } },
+      },
+      plugins: {
+        legend: { position: "top" },
+        tooltip: {
+          callbacks: {
+            afterBody: (items) => {
+              if (!items.length) return "";
+              const v = variants[items[0].dataIndex];
+              return v && v.title ? `\n${v.title}` : "";
+            },
+          },
+        },
+      },
+    },
+  };
+  const canvas = $("#chart-comparison");
+  if (_cmpChart) {
+    _cmpChart.data = cfg.data;
+    _cmpChart.update();
+  } else {
+    _cmpChart = new Chart(canvas, cfg);
+  }
+}
+
+function _renderCmpTable(variants) {
+  const tbody = $("#cmp-tbody");
+  if (!variants.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">이 원본의 변형이 없습니다</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = "";
+  for (const v of variants) {
+    const tr = document.createElement("tr");
+    const judge = v.judge_score == null ? "—" : v.judge_score.toFixed(2);
+    const rationale = v.error
+      ? `<span style="color:var(--danger)">error: ${escapeHtml(v.error)}</span>`
+      : `<div class="cmp-rationale">${escapeHtml(v.rationale || "—")}</div>`;
+    tr.innerHTML = `
+      <td class="num">${v.problem_id}</td>
+      <td>${escapeHtml(v.title || "")}</td>
+      <td>${escapeHtml(v.level || "")}</td>
+      <td>${_cmpBarCell("hal", v.hallucination_score)}</td>
+      <td>${_cmpBarCell("pos", v.intent_similarity)}</td>
+      <td>${_cmpBarCell("pos", v.difficulty_similarity)}</td>
+      <td class="num">${judge}</td>
+      <td>${rationale}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadComparison() {
+  const out = $("#cmp-output");
+  const idStr = ($("#cmp-original-id").value || "").trim();
+  const oid = parseInt(idStr, 10);
+  if (!oid || oid < 1) {
+    out.className = "output-panel show err";
+    out.textContent = "원본 problem_id를 입력하세요";
+    return;
+  }
+  out.className = "output-panel show";
+  out.textContent = `GET /api/admin/originals/${oid}/comparison ...`;
+
+  try {
+    const r = await adminFetch(`/api/admin/originals/${oid}/comparison`);
+    const body = await r.json();
+    if (!r.ok) {
+      out.className = "output-panel show err";
+      out.textContent = `[${r.status}] ${JSON.stringify(body, null, 2)}`;
+      return;
+    }
+    $("#cmp-summary-card").classList.remove("hidden");
+    $("#cmp-chart-card").classList.remove("hidden");
+    $("#cmp-table-card").classList.remove("hidden");
+
+    $("#cmp-summary-title").textContent = `#${body.original_id} ${body.original_title || ""}`;
+    $("#cmp-summary-meta").textContent =
+      `변형 ${body.variant_count}건 중 ${body.scored_count}건 기록됨` +
+      (body.variant_count === 0
+        ? " — 변형 없음"
+        : body.scored_count === 0
+          ? " — compare_to_original 노드가 한 번도 돌지 않은 원본"
+          : "");
+
+    _renderStat("cmp-stat-hal", "cmp-stat-hal-range", body.hallucination, "hal");
+    _renderStat("cmp-stat-int", "cmp-stat-int-range", body.intent_similarity, "pos");
+    _renderStat("cmp-stat-diff", "cmp-stat-diff-range", body.difficulty_similarity, "pos");
+
+    _renderCmpChart(body.variants || []);
+    _renderCmpTable(body.variants || []);
+
+    out.className = "output-panel show ok";
+    out.textContent = `✓ ${body.variant_count}개 변형 로드`;
+  } catch (err) {
+    out.className = "output-panel show err";
+    out.textContent = `네트워크 오류: ${err.message}`;
+  }
+}
+
+function openComparisonFor(originalId) {
+  // 비교 탭으로 전환하고 자동 조회
+  const tabBtn = document.querySelector('.tab[data-tab="comparison"]');
+  if (tabBtn) tabBtn.click();
+  $("#cmp-original-id").value = originalId;
+  loadComparison();
+}
+
+$("#btn-cmp-load").addEventListener("click", loadComparison);
+$("#cmp-original-id").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    loadComparison();
+  }
+});
 
 // ── 풀이 기록 (submissions) ─────────────────────────────────────
 let _subOffset = 0;

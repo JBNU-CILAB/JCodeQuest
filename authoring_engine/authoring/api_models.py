@@ -107,6 +107,59 @@ class CreateOriginalResponse(BaseModel):
     )
 
 
+# ── /api/admin/comparison ────────────────────────────────────────────────
+# compare_to_original 노드가 authoring_meta.comparison에 넣어 둔 3축 정량 기록을
+# admin dashboard에서 그래프/표로 쓰기 좋은 형태로 추출·집계해 노출한다. 게이트 아님.
+
+class ProblemComparisonOut(BaseModel):
+    """단일 변형 1건의 compare_to_original 결과."""
+
+    problem_id: int = Field(description="변형 문제 ID")
+    parent_id: int | None = Field(default=None, description="원본 문제 ID")
+    title: str
+    level: str
+    hallucination_score: float | None = Field(
+        default=None,
+        description="0=환각 없음, 1=환각 심함. compare_to_original 노드가 미실행이면 null.",
+    )
+    intent_similarity: float | None = Field(
+        default=None, description="0=무관, 1=원본과 같은 알고리즘 부류."
+    )
+    difficulty_similarity: float | None = Field(
+        default=None, description="0=난이도 차이 큼, 1=거의 동일."
+    )
+    rationale: str = ""
+    error: str = ""
+    judge_score: float | None = Field(
+        default=None, description="기존 3-judge 품질 점수 (참고용)."
+    )
+    solver_passed: bool | None = None
+
+
+class ComparisonStats(BaseModel):
+    """수치 1개 컬럼에 대한 요약 통계 (대시보드 카드용)."""
+
+    count: int = Field(description="None이 아닌 표본 수")
+    mean: float | None = None
+    min: float | None = None
+    max: float | None = None
+
+
+class ComparisonAggregateOut(BaseModel):
+    """한 원본의 모든 변형에 대한 비교 점수 집계 + 개별 엔트리."""
+
+    original_id: int
+    original_title: str
+    variant_count: int = Field(description="parent_id == original_id인 문제 총 수")
+    scored_count: int = Field(
+        description="hallucination_score가 채워진 (compare 노드가 돈) 변형 수"
+    )
+    hallucination: ComparisonStats
+    intent_similarity: ComparisonStats
+    difficulty_similarity: ComparisonStats
+    variants: list[ProblemComparisonOut]
+
+
 # ── /api/spans ───────────────────────────────────────────────────────────
 class SpanTokens(BaseModel):
     prompt: int | None = None

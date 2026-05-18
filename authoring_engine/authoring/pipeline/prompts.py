@@ -180,3 +180,79 @@ SOLVER_USER = """\
 {sample_cases}
 
 Python 코드만 출력하라."""
+
+# ─── compare_to_original ──────────────────────────────────────────────────────
+# 단일 judge가 원본 문제와 변형 후보를 나란히 놓고 3축 수치를 매긴다.
+# 게이트가 아니라 순수 기록 — authoring_meta에 그대로 저장돼 viewer가 노출한다.
+
+COMPARE_SYSTEM = """\
+당신은 알고리즘 문제 변형 품질을 정량 평가하는 심사관이다. 원본 문제와
+변형 후보를 비교해 다음 3축을 각각 0.0~1.0 실수로 채점한다.
+
+평가 축:
+
+1. hallucination_score (0=환각 없음, 1=환각 심함)
+   - 변형의 statement·intent_rubric·test_cases가 서로 모순되는가
+   - 원본 카테고리에 존재하지 않는 자료구조/연산을 가정하는가
+   - statement에서 언급한 적 없는 제약/입력 형식을 reference에서 요구하는가
+   - intent_rubric.must_handle 항목이 statement에서 추론 불가능한가
+   * 환각이 적을수록 0에 가깝게.
+
+2. intent_similarity (0=원본과 의도 무관, 1=원본 의도와 동일 부류)
+   - 같은 알고리즘 카테고리/풀이 부류를 유지하는가
+   - key_insight·expected_approach가 원본과 같은 사고 흐름인가
+   - 표면적 서술만 다르고 풀이 본질이 동일한가
+   * 카테고리 이탈은 0에 가깝게. 동일 부류 안에서의 변형은 1에 가깝게.
+   * 원본과 글자 그대로 똑같으면 변형 실패지만 이 축에서는 1로 본다
+     (변형 다양성은 별도 축이 아니라 이 시스템에선 평가하지 않는다).
+
+3. difficulty_similarity (0=난이도 크게 다름, 1=거의 동일)
+   - expected_complexity가 같은 빅오 클래스인가
+   - 입력 범위·time_limit_ms·memory_limit_mb가 원본과 비슷한가
+   - must_handle 항목 수와 엣지 케이스 분량이 비슷한가
+   * 한 단계 더 쉬움/어려움 → 0.5 부근, 비슷 → 0.8 이상.
+
+출력은 단일 JSON 객체. 마크다운 금지. 스키마:
+
+{
+  "hallucination_score": 0.0~1.0,
+  "intent_similarity": 0.0~1.0,
+  "difficulty_similarity": 0.0~1.0,
+  "rationale": "<3축을 한 단락에 종합 설명. 어느 축이 왜 그 점수인지 간단히>"
+}"""
+
+COMPARE_USER = """\
+[원본 문제]
+제목: {orig_title}
+카테고리: {orig_category} / 레벨: {orig_level}
+time_limit_ms: {orig_time_limit_ms} / memory_limit_mb: {orig_memory_limit_mb}
+
+서술:
+{orig_statement}
+
+원본 intent_rubric:
+- expected_approach: {orig_expected_approach}
+- expected_complexity: {orig_expected_complexity}
+- key_insight: {orig_key_insight}
+- must_handle: {orig_must_handle}
+- forbidden_patterns: {orig_forbidden_patterns}
+
+[변형 후보]
+제목: {cand_title}
+카테고리: {cand_category} / 레벨: {cand_level}
+time_limit_ms: {cand_time_limit_ms} / memory_limit_mb: {cand_memory_limit_mb}
+
+서술:
+{cand_statement}
+
+후보 intent_rubric:
+- expected_approach: {cand_expected_approach}
+- expected_complexity: {cand_expected_complexity}
+- key_insight: {cand_key_insight}
+- must_handle: {cand_must_handle}
+- forbidden_patterns: {cand_forbidden_patterns}
+
+후보 테스트케이스 요약:
+{cand_test_cases_summary}
+
+위 두 문제를 비교해 3축 점수와 rationale을 JSON으로만 응답하라."""

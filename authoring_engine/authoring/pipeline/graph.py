@@ -1,6 +1,7 @@
 from langgraph.graph import END, StateGraph
 
 from ..schemas import AuthoringState
+from .nodes.compare import compare_to_original
 from .nodes.fetch import fetch_problem
 from .nodes.generate import generate_variants
 from .nodes.judge import judge_candidates
@@ -14,7 +15,12 @@ def build_graph():
 
     노드 순서:
       fetch_problem → generate_variants → verify_candidates
-        → judge_candidates → solve_candidates → persist_approved
+        → judge_candidates → solve_candidates → compare_to_original
+        → persist_approved
+
+    compare_to_original은 단일 judge가 원본과 변형을 비교해 3축 수치를
+    기록하는 단계(게이트 아님). 직전 3-judge 단계가 모두 끝난 후보에만
+    적용되므로 solve_candidates 뒤, persist_approved 직전에 위치한다.
     """
     g: StateGraph = StateGraph(AuthoringState)
 
@@ -23,6 +29,7 @@ def build_graph():
     g.add_node("verify_candidates", verify_candidates)
     g.add_node("judge_candidates", judge_candidates)
     g.add_node("solve_candidates", solve_candidates)
+    g.add_node("compare_to_original", compare_to_original)
     g.add_node("persist_approved", persist_approved)
 
     g.set_entry_point("fetch_problem")
@@ -30,7 +37,8 @@ def build_graph():
     g.add_edge("generate_variants", "verify_candidates")
     g.add_edge("verify_candidates", "judge_candidates")
     g.add_edge("judge_candidates", "solve_candidates")
-    g.add_edge("solve_candidates", "persist_approved")
+    g.add_edge("solve_candidates", "compare_to_original")
+    g.add_edge("compare_to_original", "persist_approved")
     g.add_edge("persist_approved", END)
 
     return g.compile()

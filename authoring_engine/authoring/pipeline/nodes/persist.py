@@ -67,6 +67,14 @@ def persist_approved(state: AuthoringState) -> dict:
                 "verify_passed": c.get("verify_passed"),
                 "verify_error": c.get("verify_error"),
                 "verify_attempts": c.get("verify_attempts"),
+                # compare_to_original 노드 — 순수 기록 (게이트 아님)
+                "comparison": {
+                    "hallucination_score": c.get("comparison_hallucination"),
+                    "intent_similarity": c.get("comparison_intent_similarity"),
+                    "difficulty_similarity": c.get("comparison_difficulty_similarity"),
+                    "rationale": c.get("comparison_rationale") or "",
+                    "error": c.get("comparison_error") or "",
+                },
                 # 사후에 trace만 봐도 '몇 주차 출제분'인지 확인 가능하도록 함께 저장.
                 "issued_iso_week": issued_week,
             }

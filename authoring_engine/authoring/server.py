@@ -20,7 +20,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import health, notices, problems, runs, spans
+from .routers import admin_comparison, health, notices, problems, runs, spans
 
 if os.getenv("LANGSMITH_API_KEY"):
     os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
@@ -35,6 +35,10 @@ tags_metadata = [
     {"name": "problems", "description": "원본/변형 문제 조회·등록·삭제 (admin)"},
     {"name": "notices", "description": "공지 등록/수정/삭제 (admin)"},
     {"name": "spans", "description": "LangSmith 트레이스 조회 (admin)"},
+    {
+        "name": "admin-comparison",
+        "description": "compare_to_original 3축 점수 — admin dashboard용 (admin)",
+    },
 ]
 
 
@@ -67,6 +71,7 @@ app.include_router(runs.router)
 app.include_router(problems.router)
 app.include_router(notices.router)
 app.include_router(spans.router)
+app.include_router(admin_comparison.router)
 
 
 @app.on_event("startup")

@@ -30,6 +30,12 @@ class CandidateProblem(TypedDict):
     # solve_problem: Ollama LLM이 직접 문제 풀기
     solver_results: list[dict]  # [{judge_id, verdict, code, rationale}]
     solver_passed: bool
+    # compare_to_original: 단일 judge가 원본과 변형을 비교한 정량 기록(게이트 아님)
+    comparison_hallucination: float
+    comparison_intent_similarity: float
+    comparison_difficulty_similarity: float
+    comparison_rationale: str
+    comparison_error: str
     # persist
     saved_id: int | None
 
