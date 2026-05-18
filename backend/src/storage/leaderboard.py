@@ -31,26 +31,59 @@ def _iso_week_start(now: datetime | None = None) -> datetime:
 
 def list_leaderboard_all(
     session: Session, *, limit: int
-) -> list[tuple[int, str, str, int]]:
-    """누적 EXP 상위 N. (user_id, display_name, tier, exp) 튜플 리스트."""
+) -> list[tuple[int, str, str, int, str | None]]:
+    """누적 EXP 상위 N. (user_id, display_name, tier, exp, avatar_url) 튜플 리스트."""
     stmt = (
-        select(UserRow.id, UserRow.display_name, UserRow.tier, UserRow.exp)
+        select(
+            UserRow.id,
+            UserRow.display_name,
+            UserRow.tier,
+            UserRow.exp,
+            UserRow.avatar_url,
+        )
         .where(UserRow.exp > 0)
         .order_by(UserRow.exp.desc(), UserRow.id.asc())
         .limit(limit)
     )
     return [
-        (int(uid), name, tier, int(exp))
-        for uid, name, tier, exp in session.exec(stmt).all()
+        (int(uid), name, tier, int(exp), avatar)
+        for uid, name, tier, exp, avatar in session.exec(stmt).all()
+    ]
+
+
+def list_leaderboard_by_grade(
+    session: Session, *, grade: int, limit: int
+) -> list[tuple[int, str, str, int, str | None]]:
+    """특정 학년(1~4) 한정 누적 EXP 상위 N.
+
+    UserRow.grade가 NULL인 사용자(프로필 미설정)는 제외. exp=0 도 제외.
+    반환 형태는 list_leaderboard_all과 동일하게 (user_id, display_name, tier, exp, avatar_url).
+    """
+    stmt = (
+        select(
+            UserRow.id,
+            UserRow.display_name,
+            UserRow.tier,
+            UserRow.exp,
+            UserRow.avatar_url,
+        )
+        .where(UserRow.grade == grade, UserRow.exp > 0)
+        .order_by(UserRow.exp.desc(), UserRow.id.asc())
+        .limit(limit)
+    )
+    return [
+        (int(uid), name, tier, int(exp), avatar)
+        for uid, name, tier, exp, avatar in session.exec(stmt).all()
     ]
 
 
 def list_leaderboard_week(
     session: Session, *, limit: int, now: datetime | None = None
-) -> tuple[str, list[tuple[int, str, str, int]]]:
+) -> tuple[str, list[tuple[int, str, str, int, str | None]]]:
     """이번 ISO 주차 한정 points_awarded 합산 상위 N.
 
-    반환: (집계 대상 주차 'YYYY-Www', entries)
+    반환: (집계 대상 주차 'YYYY-Www', entries) — entries는
+    (user_id, display_name, tier, points, avatar_url) 튜플.
     """
     now = now or datetime.now(timezone.utc)
     week_label = iso_week_of(now)
@@ -60,19 +93,25 @@ def list_leaderboard_week(
         "points"
     )
     stmt = (
-        select(UserRow.id, UserRow.display_name, UserRow.tier, points_sum)
+        select(
+            UserRow.id,
+            UserRow.display_name,
+            UserRow.tier,
+            points_sum,
+            UserRow.avatar_url,
+        )
         .join(SubmissionRow, SubmissionRow.user_id == UserRow.id)
         .where(
             SubmissionRow.points_awarded.is_not(None),
             SubmissionRow.points_awarded > 0,
             SubmissionRow.created_at >= week_start,
         )
-        .group_by(UserRow.id, UserRow.display_name, UserRow.tier)
+        .group_by(UserRow.id, UserRow.display_name, UserRow.tier, UserRow.avatar_url)
         .order_by(points_sum.desc(), UserRow.id.asc())
         .limit(limit)
     )
     entries = [
-        (int(uid), name, tier, int(pts))
-        for uid, name, tier, pts in session.exec(stmt).all()
+        (int(uid), name, tier, int(pts), avatar)
+        for uid, name, tier, pts, avatar in session.exec(stmt).all()
     ]
     return week_label, entries

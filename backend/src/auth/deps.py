@@ -43,6 +43,7 @@ def get_current_user(
         email = payload.get("email")
         meta = payload.get("user_metadata") or {}
         name = meta.get("full_name") or meta.get("name") or email or "(이름 없음)"
+        avatar_url = meta.get("avatar_url") or meta.get("picture")
 
         if not sub:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token missing sub")
@@ -56,7 +57,7 @@ def get_current_user(
         with get_session() as s:
             user = get_or_create_user(
                 s, provider="supabase", external_id=sub,
-                display_name=name, email=email,
+                display_name=name, email=email, avatar_url=avatar_url,
             )
             _touch(user)
             s.expunge(user)

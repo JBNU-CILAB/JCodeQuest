@@ -16,14 +16,26 @@ def get_or_create_user(
     external_id: str,
     display_name: str,
     email: str | None = None,
+    avatar_url: str | None = None,
 ) -> UserRow:
-    """IdP 콜백/스텁이 호출. (provider, external_id)로 멱등."""
+    """IdP 콜백/스텁이 호출. (provider, external_id)로 멱등.
+
+    기존 row가 있어도 IdP 측에서 avatar_url이 바뀌면 최신값으로 덮어쓴다 —
+    리더보드/마이페이지가 다른 사용자의 현재 프로필 이미지를 보여주려면 매 로그인
+    시점에 갱신돼 있어야 한다.
+    """
     stmt = select(UserRow).where(
         UserRow.provider == provider,
         UserRow.external_id == external_id,
     )
     row = session.exec(stmt).first()
     if row is not None:
+        if avatar_url is not None and row.avatar_url != avatar_url:
+            row.avatar_url = avatar_url
+            row.updated_at = _utcnow()
+            session.add(row)
+            session.commit()
+            session.refresh(row)
         return row
 
     row = UserRow(
@@ -31,6 +43,7 @@ def get_or_create_user(
         external_id=external_id,
         display_name=display_name,
         email=email,
+        avatar_url=avatar_url,
     )
     session.add(row)
     session.commit()

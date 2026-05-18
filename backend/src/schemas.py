@@ -262,6 +262,28 @@ class SubmissionListResponse(BaseModel):
     offset: int
 
 
+class RecentSubmissionItem(BaseModel):
+    """공개 최근 제출 — 코드/votes 미노출, display_name/문제 title만 포함."""
+
+    id: int = Field(description="제출 ID")
+    user_id: int
+    user_display_name: str | None = None
+    problem_id: int
+    problem_title: str | None = None
+    status: JobStatus
+    final_verdict: EnsembleVerdict | None = None
+    mode: EnsembleMode | None = None
+    points_awarded: int | None = None
+    max_elapsed_ms: int | None = None
+    peak_memory_kb: int | None = None
+    created_at: datetime
+
+
+class RecentSubmissionsResponse(BaseModel):
+    items: list[RecentSubmissionItem]
+    limit: int
+
+
 class DailySolve(BaseModel):
     date: str = Field(description="KST 날짜 (YYYY-MM-DD)")
     count: int = Field(description="그 날 처음 AC한 문제 수")
@@ -389,6 +411,14 @@ class LeaderboardEntry(BaseModel):
             "points_awarded 합"
         ),
         examples=[1500],
+    )
+    avatar_url: str | None = Field(
+        default=None,
+        description=(
+            "OAuth IdP가 제공한 프로필 이미지 URL. NULL이면 클라이언트가 GitHub "
+            "identicon으로 fallback."
+        ),
+        examples=["https://lh3.googleusercontent.com/a/..."],
     )
 
 

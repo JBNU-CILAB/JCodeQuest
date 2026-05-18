@@ -237,3 +237,23 @@ def list_user_submissions(
     )
     rows = session.exec(page).all()
     return list(rows), int(total)
+
+
+def list_recent_submissions(
+    session: Session, *, limit: int = 20
+) -> list[tuple[SubmissionRow, str | None, str | None]]:
+    """전체 사용자 최근 제출. (SubmissionRow, user_display_name, problem_title) 튜플 목록.
+
+    공개 노출용이라 code/votes는 포함하지 않는다 — 호출자가 직렬화 시 추려야 한다.
+    """
+    from .models import ProblemRow, UserRow
+
+    stmt = (
+        select(SubmissionRow, UserRow.display_name, ProblemRow.title)
+        .join(UserRow, UserRow.id == SubmissionRow.user_id)  # type: ignore[arg-type]
+        .join(ProblemRow, ProblemRow.id == SubmissionRow.problem_id)  # type: ignore[arg-type]
+        .order_by(SubmissionRow.created_at.desc(), SubmissionRow.id.desc())  # type: ignore[union-attr]
+        .limit(limit)
+    )
+    rows = session.exec(stmt).all()
+    return [(s, name, title) for (s, name, title) in rows]

@@ -63,6 +63,11 @@ migrations: list[tuple[str, str, str]] = [
         'ALTER TABLE "user" ADD COLUMN api_key_secret_id TEXT',
     ),
     (
+        "user.avatar_url",
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS avatar_url TEXT',
+        'ALTER TABLE "user" ADD COLUMN avatar_url TEXT',
+    ),
+    (
         "tutor_message.is_user_requested",
         "ALTER TABLE tutor_message ADD COLUMN IF NOT EXISTS is_user_requested BOOLEAN DEFAULT FALSE",
         "ALTER TABLE tutor_message ADD COLUMN is_user_requested BOOLEAN DEFAULT FALSE",
