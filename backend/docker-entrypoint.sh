@@ -5,10 +5,14 @@ set -e
 # 컨테이너 부팅 직후 docker bridge NAT 셋업 전에 외부 Supabase pooler로 가는
 # 첫 SYN이 드롭돼 psycopg ConnectionTimeout이 발생하는 경우가 있다.
 # restart 정책으로 race가 무한 반복되지 않도록 짧은 backoff로 재시도.
+#
+# `timeout`으로 OS 차원의 cap도 건다: db.py의 connect_timeout/statement_timeout이
+# 못 잡는 케이스(예: psycopg가 ep_poll에서 silent hang)에서도 셸이 강제로 죽여
+# until 루프가 다음 시도로 넘어갈 수 있게 한다.
 attempt=1
 max_attempts=10
 sleep_s=1
-until python -c 'from src.storage import init_db; init_db()'; do
+until timeout 25 python -c 'from src.storage import init_db; init_db()'; do
     if [ "$attempt" -ge "$max_attempts" ]; then
         echo "[entrypoint] init_db ${max_attempts}회 실패 — 종료" >&2
         exit 1
