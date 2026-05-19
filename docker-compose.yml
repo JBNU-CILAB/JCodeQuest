@@ -45,6 +45,10 @@ services:
       JCQ_AUTH_ALLOW_DEV_STUB: "${JCQ_AUTH_ALLOW_DEV_STUB:-}"
       JCQ_COOKIE_INSECURE: "${JCQ_COOKIE_INSECURE:-}"
       JCQ_SUBMIT_COOLDOWN_S: "${JCQ_SUBMIT_COOLDOWN_S:-10}"
+      # CORS — 외부 origin은 쉼표 구분으로 JCQ_CORS_ORIGINS, IP 대역은 regex.
+      # 로컬 개발 origin(5173/5500/8001)은 코드에 기본값으로 박혀 있어 추가 설정 불필요.
+      JCQ_CORS_ORIGINS: "${JCQ_CORS_ORIGINS:-}"
+      JCQ_CORS_ORIGIN_REGEX: "${JCQ_CORS_ORIGIN_REGEX:-}"
     ports:
       - "8000:8000"
     depends_on:

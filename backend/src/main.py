@@ -38,13 +38,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="JCodeQuest Backend", lifespan=lifespan)
 
+# CORS — 로컬 개발 origin은 항상 허용, 운영 origin은 JCQ_CORS_ORIGINS(쉼표 구분)로 주입.
+# allow_credentials=True 상태에서는 "*" 사용 불가 → 정확한 origin 매칭만 가능.
+# IP 기반 외부 접속이라면 JCQ_CORS_ORIGIN_REGEX로 패턴(예: ^https?://10\.0\.\d+\.\d+(:\d+)?$)을 줄 수 있다.
+_DEFAULT_ORIGINS = [
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:5500", "http://127.0.0.1:5500",
+    "http://localhost:8001", "http://127.0.0.1:8001",
+]
+_extra_origins = [
+    o.strip() for o in os.getenv("JCQ_CORS_ORIGINS", "").split(",") if o.strip()
+]
+_origin_regex = os.getenv("JCQ_CORS_ORIGIN_REGEX") or None
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173", "http://127.0.0.1:5173",
-        "http://localhost:5500", "http://127.0.0.1:5500",
-        "http://localhost:8001", "http://127.0.0.1:8001",
-    ],
+    allow_origins=_DEFAULT_ORIGINS + _extra_origins,
+    allow_origin_regex=_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
