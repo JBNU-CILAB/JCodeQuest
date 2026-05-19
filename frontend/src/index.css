@@ -12,15 +12,21 @@
   --color-header-1: #2b4a7c;
   --color-header-2: #1e3a64;
   --color-page: #f4f6fa;
-  --color-brand: #4ea36b;
-  --color-brand-dark: #3f8856;
-  --color-brand-soft: #e7f3ec;
+  --color-brand: #3182F6;
+  --color-brand-dark: #1b64da;
+  --color-brand-soft: #e8f0fe;
   --color-sky-1: #b6e0f7;
   --color-sky-2: #d6eef9;
   --color-grass-1: #a7d893;
   --color-grass-2: #7ec46f;
+  --color-line: #e5e7eb;
+  --color-line-soft: #f1f3f7;
+  --color-muted: #6b7280;
+  --color-muted-soft: #9ca3af;
   --font-display: 'Brush Script MT', 'Snell Roundhand', cursive;
   --font-pixel: 'NeoDunggeunmo', 'Pretendard', system-ui, sans-serif;
+  --ease-out-cubic: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 html, body, #root { height: 100%; }
@@ -28,4 +34,44 @@ body {
   font-family: 'NeoDunggeunmo', 'Pretendard', system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
   background: var(--color-page);
   color: #1f2937;
+}
+
+/* ── Keyframes used by handoff pages (Intro / Problems / Solver) ────── */
+@keyframes view-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes card-pop {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes preview-pop-up {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes intro-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes intro-bob {
+  0%, 100% { transform: translate(-50%, 0); }
+  50%      { transform: translate(-50%, 4px); }
+}
+@keyframes toast-pop-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes modal-pop-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes judge-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes ml-in {
+  to { opacity: 1; transform: translateX(0); }
 }

@@ -172,3 +172,29 @@ class NoticeRow(SQLModel, table=True):
     pinned: bool = Field(default=False, index=True)
     created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
     updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
+
+
+class BugReportRow(SQLModel, table=True):
+    """사용자가 제보한 버그/문제 신고. 인증 사용자만 등록, 운영자가 admin_dashboard에서 처리.
+
+    problem_id는 nullable — 시스템/UI 카테고리는 특정 문제와 무관할 수 있다.
+    code_snapshot은 옵션 — 사용자가 includeCode 체크박스 켰을 때만 채워짐 (재현용)."""
+
+    __tablename__ = "bug_report"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    # 사용자가 문제 화면 밖에서 제보할 가능성 + 문제 삭제 시 dangling 참조 방지로 nullable.
+    problem_id: int | None = Field(default=None, foreign_key="problem.id", index=True)
+    # judging | statement | sample | system | other — BugReportModal CATEGORIES와 동일.
+    category: str = Field(index=True)
+    title: str
+    body: str
+    # 사용자가 첨부 체크박스를 켰을 때만 — 재현·디버깅용. None이면 미첨부.
+    code_snapshot: str | None = None
+    # open | in_progress | resolved | rejected — 운영자가 admin에서 토글.
+    status: str = Field(default="open", index=True)
+    # 운영자 내부 메모. 사용자에게 공개되지 않음.
+    admin_notes: str | None = None
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())

@@ -5,6 +5,7 @@ import SettingsModal from "./components/SettingsModal";
 import ProblemsView from "./views/ProblemsView";
 import SubmissionsView from "./views/SubmissionsView";
 import NoticesView from "./views/NoticesView";
+import ReportsView from "./views/ReportsView";
 import StatsView from "./views/StatsView";
 import UsersView from "./views/UsersView";
 
@@ -12,6 +13,7 @@ const NAV: { route: Route; label: string; icon: string }[] = [
   { route: "problems",    label: "문제 관리",   icon: "⬡" },
   { route: "submissions", label: "풀이 기록",   icon: "⊞" },
   { route: "notices",     label: "공지",        icon: "◈" },
+  { route: "reports",     label: "버그 제보",   icon: "⚠" },
   { route: "stats",       label: "통계",        icon: "⬟" },
   { route: "users",       label: "사용자",      icon: "○" },
 ];
@@ -45,6 +47,7 @@ export default function App() {
     problems:    "문제 관리",
     submissions: "풀이 기록",
     notices:     "공지 관리",
+    reports:     "버그 제보",
     stats:       "통계 · 분석",
     users:       "사용자 관리",
   };
@@ -114,6 +117,7 @@ export default function App() {
           {route === "problems"    && <ProblemsView    settings={settings} />}
           {route === "submissions" && <SubmissionsView settings={settings} />}
           {route === "notices"     && <NoticesView     settings={settings} />}
+          {route === "reports"     && <ReportsView     settings={settings} />}
           {route === "stats"       && <StatsView       settings={settings} />}
           {route === "users"       && <UsersView       settings={settings} />}
         </main>

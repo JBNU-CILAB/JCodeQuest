@@ -25,16 +25,16 @@ const GRADE_LABEL: Record<number, string> = {
 }
 
 const VERDICT_COLOR: Record<string, string> = {
-  AC: 'text-emerald-600',
+  AC: 'text-blue-600',
   SUS: 'text-red-600',
 }
 
 const GRASS_COLOR = (count: number): string => {
   if (count <= 0) return 'bg-gray-200'
-  if (count === 1) return 'bg-emerald-200'
-  if (count === 2) return 'bg-emerald-400'
-  if (count === 3) return 'bg-emerald-600'
-  return 'bg-emerald-800'
+  if (count === 1) return 'bg-blue-200'
+  if (count === 2) return 'bg-blue-400'
+  if (count === 3) return 'bg-blue-600'
+  return 'bg-blue-800'
 }
 
 function formatDate(iso: string): string {
@@ -309,7 +309,7 @@ export function MyPage() {
             )}
             <div className="grid grid-cols-4 gap-3">
               <Stat label="누적 제출" value={stats.total} />
-              <Stat label="AC" value={stats.ac} valueClass="text-emerald-600" />
+              <Stat label="AC" value={stats.ac} valueClass="text-blue-600" />
               <Stat label="SUS" value={stats.sus} valueClass="text-red-600" />
               <Stat label="해결 문제" value={stats.solved} />
             </div>

@@ -125,8 +125,8 @@ export function WeeklyProblemsCard() {
                     style={{
                       width: `${pct}%`,
                       background: done
-                        ? 'linear-gradient(90deg, #4ea36b, #3f8856)'
-                        : 'linear-gradient(90deg, #6ec48e, #4ea36b)',
+                        ? 'linear-gradient(90deg, #3182F6, #1b64da)'
+                        : 'linear-gradient(90deg, #7aa9f7, #3182F6)',
                     }}
                   />
                 </div>

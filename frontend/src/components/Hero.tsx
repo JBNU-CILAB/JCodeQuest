@@ -4,6 +4,7 @@ import { useAuth } from '../lib/AuthContext'
 import { apiGet } from '../lib/api'
 import { identiconUrl } from '../lib/avatar'
 import { formatIsoWeekKo } from '../lib/isoWeek'
+import { MatrixBackdrop } from './MatrixBackdrop'
 
 type LeaderboardEntry = {
   rank: number
@@ -98,7 +99,7 @@ const PODIUM: Record<number, PodiumGeom> = {
 
 function PodiumBlock({ rank, geom }: { rank: number; geom: PodiumGeom }) {
   const { width: w, height: h, highlighted, shape } = geom
-  const stroke = highlighted ? '#10b981' : '#d4d4d8'
+  const stroke = highlighted ? '#3182F6' : '#d4d4d8'
   const strokeWidth = highlighted ? 2 : 1
   return (
     <svg width={w} height={h} className="block">
@@ -143,7 +144,7 @@ function PodiumColumn({ entry }: { entry: LeaderboardEntry | null | undefined })
         <div className="mt-2 flex items-center gap-1.5 font-mono text-[13px]">
           <span
             className={
-              isFirst ? 'text-emerald-700 font-semibold' : 'text-zinc-500'
+              isFirst ? 'text-blue-700 font-semibold' : 'text-zinc-500'
             }
           >
             [{entry.rank}]
@@ -308,8 +309,8 @@ function GradeSlide({ active }: { active: boolean }) {
             onClick={() => setGrade(g)}
             className={`px-2.5 py-0.5 rounded transition ${
               grade === g
-                ? 'text-emerald-700 bg-emerald-100 font-semibold'
-                : 'text-zinc-400 hover:text-emerald-700'
+                ? 'text-blue-700 bg-blue-100 font-semibold'
+                : 'text-zinc-400 hover:text-blue-700'
             }`}
           >
             {g}학년
@@ -386,12 +387,13 @@ export function Hero() {
   const weekLabel = formatIsoWeekKo(week.week)
 
   return (
-    <section className="bg-white text-zinc-900 px-6 pt-10 pb-12 font-mono">
-      <div className="max-w-5xl mx-auto">
+    <section className="relative overflow-hidden bg-white text-zinc-900 px-6 pt-10 pb-12 font-mono">
+      <MatrixBackdrop />
+      <div className="relative z-10 max-w-5xl mx-auto">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1" />
           <div className="flex-1 text-center">
-            <h1 className="text-emerald-600 text-3xl md:text-4xl font-extrabold tracking-[0.25em]">
+            <h1 className="text-blue-600 text-3xl md:text-4xl font-extrabold tracking-[0.25em]">
               LEADERBOARD
             </h1>
           </div>
@@ -402,13 +404,13 @@ export function Hero() {
                 onClick={() => goto(i)}
                 className={`px-2 py-0.5 rounded transition ${
                   slideIdx === i
-                    ? 'text-emerald-700 bg-emerald-100'
-                    : 'text-zinc-400 hover:text-emerald-700'
+                    ? 'text-blue-700 bg-blue-100'
+                    : 'text-zinc-400 hover:text-blue-700'
                 }`}
               >
                 {s.label}
                 {s.id === 'week' && weekLabel && (
-                  <span className="ml-1 text-emerald-600/70">{weekLabel}</span>
+                  <span className="ml-1 text-blue-600/70">{weekLabel}</span>
                 )}
               </button>
             ))}
@@ -440,7 +442,7 @@ export function Hero() {
                 aria-label={`go to ${s.label}`}
                 onClick={() => goto(i)}
                 className={`w-2 h-2 rounded-full transition ${
-                  slideIdx === i ? 'bg-emerald-600' : 'bg-zinc-300'
+                  slideIdx === i ? 'bg-blue-600' : 'bg-zinc-300'
                 }`}
               />
             ))}
@@ -453,7 +455,7 @@ export function Hero() {
           <span>[ENTER] view profile</span>
           {loggedIn ? (
             <span className="ml-auto flex items-center gap-3">
-              <span className="text-emerald-700">
+              <span className="text-blue-700">
                 ● {profile?.display_name ?? session?.user.email ?? 'guest'}
               </span>
               <span className="text-zinc-600 tabular-nums">
@@ -461,7 +463,7 @@ export function Hero() {
               </span>
               <button
                 onClick={handleLogout}
-                className="text-zinc-500 hover:text-emerald-700 transition"
+                className="text-zinc-500 hover:text-blue-700 transition"
               >
                 $ logout
               </button>
@@ -469,10 +471,10 @@ export function Hero() {
           ) : (
             <button
               onClick={handleLogin}
-              className="ml-auto flex items-center gap-1 text-zinc-700 hover:text-emerald-700 transition"
+              className="ml-auto flex items-center gap-1 text-zinc-700 hover:text-blue-700 transition"
             >
               <span>$ login --provider google</span>
-              <span className="inline-block w-2 h-3.5 bg-emerald-500 align-middle animate-pulse" />
+              <span className="inline-block w-2 h-3.5 bg-blue-500 align-middle animate-pulse" />
             </button>
           )}
         </div>

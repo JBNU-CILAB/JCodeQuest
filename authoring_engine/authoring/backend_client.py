@@ -158,6 +158,49 @@ def delete_notice(notice_id: int) -> dict:
         return r.json()
 
 
+# ── backend (/internal/reports) ──────────────────────────────────────────
+def list_reports(
+    *,
+    status: str | None = None,
+    category: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    params: dict[str, object] = {"limit": limit, "offset": offset}
+    if status is not None:
+        params["status"] = status
+    if category is not None:
+        params["category"] = category
+    with _client() as cli:
+        r = cli.get(f"{_backend_url()}/internal/reports", params=params)
+        r.raise_for_status()
+        return r.json()
+
+
+def get_report(report_id: int) -> dict:
+    with _client() as cli:
+        r = cli.get(f"{_backend_url()}/internal/reports/{report_id}")
+        r.raise_for_status()
+        return r.json()
+
+
+def update_report(report_id: int, payload: dict) -> dict:
+    with _client() as cli:
+        r = cli.patch(
+            f"{_backend_url()}/internal/reports/{report_id}",
+            json=payload,
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+def delete_report(report_id: int) -> dict:
+    with _client() as cli:
+        r = cli.delete(f"{_backend_url()}/internal/reports/{report_id}")
+        r.raise_for_status()
+        return r.json()
+
+
 # ── judge_engine (/api/sandbox/run) ──────────────────────────────────────
 def sandbox_run(
     code: str,

@@ -81,7 +81,7 @@ export function Header() {
           style={{
             color: "#000000",
             textShadow: `
-              2px 2px 0px rgba(74, 222, 128, 0.6),  /* 네온 그린 */
+              2px 2px 0px rgba(49, 130, 246, 0.6),  /* toss-blue */
               -2px -2px 0px rgba(244, 63, 94, 0.4)  /* 로즈 핑크 */
             `,
           }}

@@ -22,6 +22,7 @@ from .api.leaderboard import router as leaderboard_router
 from .api.me import router as me_router
 from .api.notices import router as notices_router
 from .api.problems import router as problems_router
+from .api.reports import router as reports_router
 from .api.submissions import router as submissions_router
 from .api.tutor import router as tutor_router
 from .events import SubmissionEventBroker
@@ -94,6 +95,7 @@ app.include_router(problems_router)
 app.include_router(submissions_router)
 app.include_router(leaderboard_router)
 app.include_router(notices_router)
+app.include_router(reports_router)
 app.include_router(internal_router)
 
 

@@ -508,3 +508,50 @@ class NoticeUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     body: str | None = Field(default=None, min_length=1, max_length=20_000)
     pinned: bool | None = None
+
+
+# ── Bug reports ──────────────────────────────────────────────────────────
+BugReportCategory = Literal["judging", "statement", "sample", "system", "other"]
+BugReportStatus = Literal["open", "in_progress", "resolved", "rejected"]
+
+
+class BugReportCreateRequest(BaseModel):
+    """사용자가 Solver 화면에서 제보. problem_id는 옵션 (시스템/UI 카테고리 대비).
+    code_snapshot은 BugReportModal의 includeCode 체크박스가 켜졌을 때만 채워서 보냄."""
+
+    category: BugReportCategory
+    title: str = Field(min_length=4, max_length=200)
+    body: str = Field(min_length=10, max_length=10_000)
+    problem_id: int | None = None
+    # MAX_CODE_LENGTH와 동일한 상한 — Solver의 코드 에디터에서 그대로 넘어옴.
+    code_snapshot: str | None = Field(default=None, max_length=MAX_CODE_LENGTH)
+
+
+class BugReportCreateResponse(BaseModel):
+    id: int
+    status: BugReportStatus = "open"
+
+
+class BugReport(BaseModel):
+    """관리자 목록/상세 응답. user_display_name/problem_title은 join으로 채움."""
+
+    id: int
+    user_id: int
+    user_display_name: str | None = None
+    problem_id: int | None = None
+    problem_title: str | None = None
+    category: BugReportCategory
+    title: str
+    body: str
+    code_snapshot: str | None = None
+    status: BugReportStatus
+    admin_notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class BugReportUpdateRequest(BaseModel):
+    """관리자 상태/메모 토글. None인 필드는 미변경."""
+
+    status: BugReportStatus | None = None
+    admin_notes: str | None = Field(default=None, max_length=10_000)

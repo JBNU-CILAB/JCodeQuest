@@ -18,7 +18,7 @@ import type {
 const STATUS_STYLE: Record<SubmissionStatus, { bg: string; label: string }> = {
   queued: { bg: 'bg-gray-200 text-gray-700', label: '대기' },
   running: { bg: 'bg-blue-100 text-blue-700', label: '채점 중' },
-  done: { bg: 'bg-emerald-100 text-emerald-700', label: '완료' },
+  done: { bg: 'bg-blue-100 text-blue-700', label: '완료' },
   failed: { bg: 'bg-rose-100 text-rose-700', label: '실패' },
 }
 
@@ -38,8 +38,8 @@ const VERDICT_STYLE: Record<
   { wrap: string; chip: string; emoji: string; label: string; sub: string }
 > = {
   AC: {
-    wrap: 'bg-emerald-50 border-emerald-200',
-    chip: 'bg-emerald-500 text-white',
+    wrap: 'bg-blue-50 border-blue-200',
+    chip: 'bg-blue-500 text-white',
     emoji: '🎉',
     label: 'Accepted',
     sub: '모든 테스트 통과 + 심사위원단 승인',
@@ -103,7 +103,7 @@ function TestResultsList({ results }: { results: TestResult[] }) {
               <span
                 className={`px-2 py-0.5 text-[11px] font-bold rounded ${
                   r.passed
-                    ? 'bg-emerald-100 text-emerald-700'
+                    ? 'bg-blue-100 text-blue-700'
                     : 'bg-rose-100 text-rose-700'
                 }`}
               >
@@ -154,7 +154,7 @@ function EnsembleVotes({ votes }: { votes: JudgeVote[] }) {
               <span
                 className={`px-2 py-0.5 text-[10px] font-bold rounded ${
                   v.verdict === 'AC'
-                    ? 'bg-emerald-100 text-emerald-700'
+                    ? 'bg-blue-100 text-blue-700'
                     : 'bg-rose-100 text-rose-700'
                 }`}
               >

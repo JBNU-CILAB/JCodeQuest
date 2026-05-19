@@ -13,7 +13,7 @@ import type {
 type Mode = 'all' | 'mine'
 
 const VERDICT_COLOR: Record<string, string> = {
-  AC: 'text-emerald-600',
+  AC: 'text-blue-600',
   SUS: 'text-red-600',
 }
 
@@ -151,8 +151,8 @@ export function RecentSubmissionsCard() {
               onClick={() => setMode('all')}
               className={`px-2 py-1 rounded transition ${
                 mode === 'all'
-                  ? 'bg-emerald-50 text-emerald-700 font-semibold'
-                  : 'text-gray-500 hover:text-emerald-700'
+                  ? 'bg-blue-50 text-blue-700 font-semibold'
+                  : 'text-gray-500 hover:text-blue-700'
               }`}
             >
               전체 보기
@@ -163,8 +163,8 @@ export function RecentSubmissionsCard() {
               onClick={() => setMode('mine')}
               className={`px-2 py-1 rounded transition ${
                 mode === 'mine'
-                  ? 'bg-emerald-50 text-emerald-700 font-semibold'
-                  : 'text-gray-500 hover:text-emerald-700'
+                  ? 'bg-blue-50 text-blue-700 font-semibold'
+                  : 'text-gray-500 hover:text-blue-700'
               }`}
             >
               내 제출 보기

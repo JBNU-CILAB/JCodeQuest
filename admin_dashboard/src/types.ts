@@ -7,7 +7,7 @@ export interface ConnSettings {
 
 export type ConnStatus = "idle" | "ok" | "error" | "loading";
 
-export type Route = "problems" | "submissions" | "notices" | "stats" | "users";
+export type Route = "problems" | "submissions" | "notices" | "reports" | "stats" | "users";
 
 export interface ProblemRow {
   id: number;
@@ -52,6 +52,25 @@ export interface NoticeRow {
   title: string;
   body: string;
   pinned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type BugReportCategory = "judging" | "statement" | "sample" | "system" | "other";
+export type BugReportStatus = "open" | "in_progress" | "resolved" | "rejected";
+
+export interface BugReportRow {
+  id: number;
+  user_id: number;
+  user_display_name?: string | null;
+  problem_id?: number | null;
+  problem_title?: string | null;
+  category: BugReportCategory;
+  title: string;
+  body: string;
+  code_snapshot?: string | null;
+  status: BugReportStatus;
+  admin_notes?: string | null;
   created_at: string;
   updated_at: string;
 }
