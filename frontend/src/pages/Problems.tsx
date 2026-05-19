@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { ProblemCard } from '../components/ProblemCard'
 import { ProfileSetupModal } from '../components/ProfileSetupModal'
+import { formatIsoWeekKo } from '../lib/isoWeek'
 import type { ProblemLevel, ProblemSummary } from '../types'
 
 const LEVEL_FILTERS: Array<{ value: ProblemLevel | 'all'; label: string }> = [
@@ -26,6 +27,22 @@ export function Problems() {
   const handleOpenProfileModal = useCallback(() => {
     setProfileModalOpen(true)
   }, [])
+
+  // 주차별 그룹핑 — 'YYYY-Www' 포맷은 사전식 내림차순 정렬이 곧 시간 내림차순.
+  // 각 그룹 내부는 백엔드가 돌려준 순서를 유지(보통 id 또는 points 정렬).
+  const groupedByWeek = useMemo(() => {
+    if (!problems) return [] as Array<{ week: string; items: ProblemSummary[] }>
+    const map = new Map<string, ProblemSummary[]>()
+    for (const p of problems) {
+      const key = p.iso_week || ''
+      const bucket = map.get(key)
+      if (bucket) bucket.push(p)
+      else map.set(key, [p])
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+      .map(([week, items]) => ({ week, items }))
+  }, [problems])
 
   useEffect(() => {
     setLoading(true)
@@ -118,9 +135,32 @@ export function Problems() {
         </div>
       )}
       {!loading && !error && problems && problems.length > 0 && (
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-          {problems.map((p) => (
-            <ProblemCard key={p.id} problem={p} onProfileRequired={handleOpenProfileModal} />
+        <div className="flex flex-col gap-10">
+          {groupedByWeek.map(({ week, items }) => (
+            <section key={week || 'unknown'}>
+              <div className="flex items-baseline gap-3 mb-3">
+                <h2 className="text-base font-bold text-gray-800">
+                  {week ? formatIsoWeekKo(week) : '주차 미지정'}
+                </h2>
+                {week && (
+                  <span className="text-xs text-gray-400 font-mono tabular-nums">
+                    {week}
+                  </span>
+                )}
+                <span className="ml-auto text-xs text-gray-500 tabular-nums">
+                  {items.length}개
+                </span>
+              </div>
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                {items.map((p) => (
+                  <ProblemCard
+                    key={p.id}
+                    problem={p}
+                    onProfileRequired={handleOpenProfileModal}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}

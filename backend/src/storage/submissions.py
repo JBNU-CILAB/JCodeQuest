@@ -245,15 +245,27 @@ def list_recent_submissions(
     """전체 사용자 최근 제출. (SubmissionRow, user_display_name, problem_title) 튜플 목록.
 
     공개 노출용이라 code/votes는 포함하지 않는다 — 호출자가 직렬화 시 추려야 한다.
+    UserRow.is_anonymous=True인 사용자의 display_name은 nickname으로 치환해서 반환한다
+    (nickname이 없으면 '익명' fallback). 리더보드와 동일 정책 — storage.leaderboard._public_name.
     """
+    from .leaderboard import _public_name
     from .models import ProblemRow, UserRow
 
     stmt = (
-        select(SubmissionRow, UserRow.display_name, ProblemRow.title)
+        select(
+            SubmissionRow,
+            UserRow.display_name,
+            UserRow.is_anonymous,
+            UserRow.nickname,
+            ProblemRow.title,
+        )
         .join(UserRow, UserRow.id == SubmissionRow.user_id)  # type: ignore[arg-type]
         .join(ProblemRow, ProblemRow.id == SubmissionRow.problem_id)  # type: ignore[arg-type]
         .order_by(SubmissionRow.created_at.desc(), SubmissionRow.id.desc())  # type: ignore[union-attr]
         .limit(limit)
     )
     rows = session.exec(stmt).all()
-    return [(s, name, title) for (s, name, title) in rows]
+    return [
+        (s, _public_name(name, nick, bool(anon)) if name is not None else None, title)
+        for (s, name, anon, nick, title) in rows
+    ]

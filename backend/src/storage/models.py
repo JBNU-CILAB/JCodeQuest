@@ -50,6 +50,10 @@ class UserRow(SQLModel, table=True):
     nickname: str | None = None
     grade: int | None = None        # 학년 (1~6)
     department: str | None = None   # 학과/전공
+    # True면 리더보드/최근 제출 등 타인에게 노출되는 모든 표면에서 display_name/avatar_url을
+    # 마스킹한다. 본인 화면(/me)은 마스킹하지 않음. Supabase user_metadata.anonymous와는
+    # /me PATCH 또는 로그인 시점에 동기화.
+    is_anonymous: bool = Field(default=False)
 
     # 게임 상태 — 누적 AC points (효율성 multiplier 적용된 값의 합).
     # save_grading에서 첫 AC 시점에만 가산 → SubmissionRow 풀스캔 없이 리더보드 정렬 가능.

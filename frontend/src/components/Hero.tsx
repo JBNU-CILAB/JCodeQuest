@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { apiGet } from '../lib/api'
+import { identiconUrl } from '../lib/avatar'
 import { formatIsoWeekKo } from '../lib/isoWeek'
 
 type LeaderboardEntry = {
@@ -32,9 +33,6 @@ type Grade = (typeof GRADES)[number]
 
 const AUTO_ROTATE_MS = 6000
 
-const githubIdenticon = (seed: number | string) =>
-  `https://github.com/identicons/${encodeURIComponent(String(seed))}.png`
-
 function Avatar({
   entry,
   size,
@@ -42,7 +40,7 @@ function Avatar({
   entry: LeaderboardEntry
   size: number
 }) {
-  const fallback = githubIdenticon(entry.user_id)
+  const fallback = identiconUrl(String(entry.user_id))
   const initial = entry.avatar_url || fallback
   const [src, setSrc] = useState(initial)
 

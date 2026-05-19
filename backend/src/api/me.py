@@ -35,6 +35,8 @@ def _to_me_response(user: UserRow) -> MeResponse:
         nickname=user.nickname,
         grade=user.grade,
         department=user.department,
+        is_anonymous=bool(user.is_anonymous),
+        avatar_url=user.avatar_url,
     )
 
 
@@ -74,6 +76,11 @@ def update_my_profile(
         fields["nickname"] = fields["nickname"].strip() or None
     if isinstance(fields.get("department"), str):
         fields["department"] = fields["department"].strip() or None
+    if isinstance(fields.get("avatar_url"), str):
+        fields["avatar_url"] = fields["avatar_url"].strip() or None
+    # is_anonymous는 명시적 true/false만 의미가 있다 — null이면 미변경 신호로 처리.
+    if fields.get("is_anonymous") is None:
+        fields.pop("is_anonymous", None)
     with get_session() as session:
         updated = update_user_profile(session, user.id, **fields)
         if updated is None:

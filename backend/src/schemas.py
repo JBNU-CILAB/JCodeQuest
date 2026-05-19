@@ -341,11 +341,25 @@ class MeResponse(BaseModel):
         description="학과/전공. 미설정이면 null.",
         examples=["컴퓨터공학부"],
     )
+    is_anonymous: bool = Field(
+        default=False,
+        description=(
+            "True면 리더보드/최근 제출 등 타인에게 노출되는 화면에서 "
+            "display_name과 avatar_url을 마스킹한다. 본인 /me 응답은 마스킹하지 않음."
+        ),
+    )
+    avatar_url: str | None = Field(
+        default=None,
+        description=(
+            "현재 사용자에게 보일 프로필 이미지 URL. 사용자가 직접 업로드한 커스텀 "
+            "이미지를 우선 저장하며, 비어 있으면 클라이언트가 identicon으로 fallback."
+        ),
+    )
 
 
 class ProfileUpdateRequest(BaseModel):
-    """PATCH /me — 학년/학과/닉네임 부분 갱신.
-    필드를 생략하면 미변경, null을 명시하면 해당 필드를 비운다."""
+    """PATCH /me — 학년/학과/닉네임/익명여부/아바타 URL 부분 갱신.
+    필드를 생략하면 미변경, null을 명시하면 해당 필드를 비운다(is_anonymous는 null 불가)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -367,6 +381,22 @@ class ProfileUpdateRequest(BaseModel):
         max_length=100,
         description="학과/전공 (최대 100자). null이면 기존 값을 비운다.",
         examples=["컴퓨터공학부"],
+    )
+    is_anonymous: bool | None = Field(
+        default=None,
+        description=(
+            "익명 표시 토글. true/false 명시 시에만 갱신, 생략(null)이면 미변경. "
+            "True면 타인에게 노출되는 화면에서 display_name/avatar_url이 마스킹된다."
+        ),
+    )
+    avatar_url: str | None = Field(
+        default=None,
+        max_length=1024,
+        description=(
+            "프로필 이미지 URL. 사용자가 Supabase Storage에 업로드한 공개 URL을 "
+            "그대로 저장한다. null을 명시하면 DB의 avatar_url을 비워서 리더보드 등에서 "
+            "identicon fallback이 적용된다. 생략 시 미변경."
+        ),
     )
 
 

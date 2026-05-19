@@ -12,6 +12,8 @@ export interface UserMe {
   nickname?: string | null
   grade?: number | null
   department?: string | null
+  is_anonymous?: boolean
+  avatar_url?: string | null
 }
 
 export interface SubmissionListItem {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { resolveAvatarUrl } from '../lib/avatar'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { ProfileSetupModal } from './ProfileSetupModal'
@@ -21,6 +22,7 @@ const TIER_STYLES: Record<string, string> = {
 
 export function Header() {
   const { session, profile } = useAuth()
+  const navigate = useNavigate()
   const loggedIn = session !== null
   const [frame, setFrame] = useState(0)
 
@@ -36,6 +38,7 @@ export function Header() {
   }, [])
 
   const metadata = (session?.user.user_metadata ?? {}) as {
+    custom_avatar_url?: string | null
     avatar_url?: string
     picture?: string
     full_name?: string
@@ -44,7 +47,8 @@ export function Header() {
     nickname?: string
     anonymous?: boolean
   }
-  const avatarUrl = metadata.avatar_url ?? metadata.picture
+  const avatarSeed = session?.user.id ?? session?.user.email ?? 'anon'
+  const avatarUrl = session ? resolveAvatarUrl(metadata, avatarSeed) : null
   const displayName = profile?.display_name ?? metadata.full_name ?? session?.user.email ?? ''
   const tier = profile?.tier ?? 'bronze'
   const exp = profile?.exp ?? 0
@@ -56,6 +60,14 @@ export function Header() {
   const showBadge = needsApiKey || needsProfile
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
+
+  const handleAvatarClick = () => {
+    if (needsProfile) {
+      setProfileModalOpen(true)
+    } else {
+      navigate('/mypage')
+    }
+  }
 
   return (
     <header className="h-[72px] px-10 flex items-center gap-6 text-black bg-white border-b border-black/10">
@@ -112,18 +124,21 @@ export function Header() {
           <div className="ml-7 flex items-center gap-3">
             {/* Avatar */}
             <div className="relative flex flex-col items-center gap-0.5 group">
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={displayName}
-                  referrerPolicy="no-referrer"
-                  className="w-9 h-9 rounded-full border-2 border-black/20 object-cover cursor-pointer"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 text-black text-lg border-2 border-black/20 flex items-center justify-center cursor-pointer">
-                  🙂
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={handleAvatarClick}
+                aria-label={needsProfile ? '프로필 설정' : '마이페이지'}
+                className="rounded-full focus:outline-none focus:ring-2 focus:ring-black/30"
+              >
+                {avatarUrl && (
+                  <img
+                    src={avatarUrl}
+                    alt={displayName}
+                    referrerPolicy="no-referrer"
+                    className="w-9 h-9 rounded-full border-2 border-black/20 object-cover bg-gray-50 cursor-pointer"
+                  />
+                )}
+              </button>
 
               {showBadge && (
                 <span
