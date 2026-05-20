@@ -6,14 +6,15 @@ from langchain_ollama import ChatOllama
 from ...backend_client import sandbox_run
 from ...config import (
     AUTHOR_MODEL,
+    AUTHOR_NUM_CTX,
+    AUTHOR_RETRY_TEMPERATURE,
     MAX_AUTHOR_RETRIES,
     OLLAMA_BASE_URL,
+    PERF_RATIO,
 )
 from ...schemas import AuthoringState
 from ..prompts import SOLUTION_SYSTEM, SOLUTION_USER
 
-# 레퍼런스 코드가 제한시간의 50% 이내에 동작해야 통과 (authoring-prompt.md §4 기준)
-_PERF_RATIO = 0.5
 _MIN_TEST_CASES = 4
 
 
@@ -52,7 +53,7 @@ def _run_verification(candidate: dict) -> tuple[list[dict], bool, str]:
                 f"ordinal={ti.get('ordinal', '?')}: {result.status} — {result.stderr[:300]}",
             )
 
-        limit = time_limit_ms * _PERF_RATIO
+        limit = time_limit_ms * PERF_RATIO
         if result.elapsed_ms > limit:
             return (
                 [],
@@ -109,13 +110,14 @@ def verify_candidates(state: AuthoringState) -> dict:
     """각 candidate의 reference_code를 sandbox에서 실행해 expected_stdout을 채운다.
 
     실패 시 author_solution을 최대 MAX_AUTHOR_RETRIES회 재시도한다.
+    재시도는 temperature를 올려 결정론적 반복 실패를 피한다.
     """
-    llm = ChatOllama(
+    retry_llm = ChatOllama(
         model=AUTHOR_MODEL,
-        temperature=0,
+        temperature=AUTHOR_RETRY_TEMPERATURE,
         format="json",
         base_url=OLLAMA_BASE_URL,
-        num_ctx=8192,
+        num_ctx=AUTHOR_NUM_CTX,
         keep_alive="30m",
     )
 
@@ -133,7 +135,7 @@ def verify_candidates(state: AuthoringState) -> dict:
                 break
 
             if attempt < MAX_AUTHOR_RETRIES:
-                ref_code, test_inputs = _regenerate_solution(c, llm)
+                ref_code, test_inputs = _regenerate_solution(c, retry_llm)
                 if ref_code:
                     c["reference_code"] = ref_code
                     c["test_inputs"] = test_inputs or c["test_inputs"]

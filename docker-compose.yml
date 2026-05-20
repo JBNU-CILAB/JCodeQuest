@@ -100,6 +100,12 @@ services:
       JCQ_AUTHOR_MODEL: "${JCQ_AUTHOR_MODEL:-qwen2.5-coder:14b-instruct-q5_K_M}"
       JCQ_VARIANT_COUNT: "${JCQ_VARIANT_COUNT:-5}"
       JCQ_AUTHOR_RETRIES: "${JCQ_AUTHOR_RETRIES:-2}"
+      # 복잡한 문제 JSON truncate 방지용 context window (기본 16384, qwen2.5-coder:14b는 32K까지)
+      JCQ_AUTHOR_NUM_CTX: "${JCQ_AUTHOR_NUM_CTX:-16384}"
+      # verify 재시도 시 temperature — 0이면 결정론적 반복 실패
+      JCQ_AUTHOR_RETRY_TEMPERATURE: "${JCQ_AUTHOR_RETRY_TEMPERATURE:-0.4}"
+      # reference_code가 time_limit_ms 대비 통과해야 하는 비율 (이전 0.5 → 0.8 완화)
+      JCQ_AUTHOR_PERF_RATIO: "${JCQ_AUTHOR_PERF_RATIO:-0.8}"
       JCQ_JUDGE_PASS_THRESHOLD: "${JCQ_JUDGE_PASS_THRESHOLD:-0.7}"
       JCQ_SOLVER_PASS_MIN_AC: "${JCQ_SOLVER_PASS_MIN_AC:-1}"
       # LangSmith — authoring 전용 키 (judge와 별도)
