@@ -262,6 +262,28 @@ class SubmissionListResponse(BaseModel):
     offset: int
 
 
+class RecentSubmissionItem(BaseModel):
+    """공개 최근 제출 — 코드/votes 미노출, display_name/문제 title만 포함."""
+
+    id: int = Field(description="제출 ID")
+    user_id: int
+    user_display_name: str | None = None
+    problem_id: int
+    problem_title: str | None = None
+    status: JobStatus
+    final_verdict: EnsembleVerdict | None = None
+    mode: EnsembleMode | None = None
+    points_awarded: int | None = None
+    max_elapsed_ms: int | None = None
+    peak_memory_kb: int | None = None
+    created_at: datetime
+
+
+class RecentSubmissionsResponse(BaseModel):
+    items: list[RecentSubmissionItem]
+    limit: int
+
+
 class DailySolve(BaseModel):
     date: str = Field(description="KST 날짜 (YYYY-MM-DD)")
     count: int = Field(description="그 날 처음 AC한 문제 수")
@@ -319,11 +341,25 @@ class MeResponse(BaseModel):
         description="학과/전공. 미설정이면 null.",
         examples=["컴퓨터공학부"],
     )
+    is_anonymous: bool = Field(
+        default=False,
+        description=(
+            "True면 리더보드/최근 제출 등 타인에게 노출되는 화면에서 "
+            "display_name과 avatar_url을 마스킹한다. 본인 /me 응답은 마스킹하지 않음."
+        ),
+    )
+    avatar_url: str | None = Field(
+        default=None,
+        description=(
+            "현재 사용자에게 보일 프로필 이미지 URL. 사용자가 직접 업로드한 커스텀 "
+            "이미지를 우선 저장하며, 비어 있으면 클라이언트가 identicon으로 fallback."
+        ),
+    )
 
 
 class ProfileUpdateRequest(BaseModel):
-    """PATCH /me — 학년/학과/닉네임 부분 갱신.
-    필드를 생략하면 미변경, null을 명시하면 해당 필드를 비운다."""
+    """PATCH /me — 학년/학과/닉네임/익명여부/아바타 URL 부분 갱신.
+    필드를 생략하면 미변경, null을 명시하면 해당 필드를 비운다(is_anonymous는 null 불가)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -345,6 +381,22 @@ class ProfileUpdateRequest(BaseModel):
         max_length=100,
         description="학과/전공 (최대 100자). null이면 기존 값을 비운다.",
         examples=["컴퓨터공학부"],
+    )
+    is_anonymous: bool | None = Field(
+        default=None,
+        description=(
+            "익명 표시 토글. true/false 명시 시에만 갱신, 생략(null)이면 미변경. "
+            "True면 타인에게 노출되는 화면에서 display_name/avatar_url이 마스킹된다."
+        ),
+    )
+    avatar_url: str | None = Field(
+        default=None,
+        max_length=1024,
+        description=(
+            "프로필 이미지 URL. 사용자가 Supabase Storage에 업로드한 공개 URL을 "
+            "그대로 저장한다. null을 명시하면 DB의 avatar_url을 비워서 리더보드 등에서 "
+            "identicon fallback이 적용된다. 생략 시 미변경."
+        ),
     )
 
 
@@ -389,6 +441,14 @@ class LeaderboardEntry(BaseModel):
             "points_awarded 합"
         ),
         examples=[1500],
+    )
+    avatar_url: str | None = Field(
+        default=None,
+        description=(
+            "OAuth IdP가 제공한 프로필 이미지 URL. NULL이면 클라이언트가 GitHub "
+            "identicon으로 fallback."
+        ),
+        examples=["https://lh3.googleusercontent.com/a/..."],
     )
 
 
@@ -448,3 +508,50 @@ class NoticeUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     body: str | None = Field(default=None, min_length=1, max_length=20_000)
     pinned: bool | None = None
+
+
+# ── Bug reports ──────────────────────────────────────────────────────────
+BugReportCategory = Literal["judging", "statement", "sample", "system", "other"]
+BugReportStatus = Literal["open", "in_progress", "resolved", "rejected"]
+
+
+class BugReportCreateRequest(BaseModel):
+    """사용자가 Solver 화면에서 제보. problem_id는 옵션 (시스템/UI 카테고리 대비).
+    code_snapshot은 BugReportModal의 includeCode 체크박스가 켜졌을 때만 채워서 보냄."""
+
+    category: BugReportCategory
+    title: str = Field(min_length=4, max_length=200)
+    body: str = Field(min_length=10, max_length=10_000)
+    problem_id: int | None = None
+    # MAX_CODE_LENGTH와 동일한 상한 — Solver의 코드 에디터에서 그대로 넘어옴.
+    code_snapshot: str | None = Field(default=None, max_length=MAX_CODE_LENGTH)
+
+
+class BugReportCreateResponse(BaseModel):
+    id: int
+    status: BugReportStatus = "open"
+
+
+class BugReport(BaseModel):
+    """관리자 목록/상세 응답. user_display_name/problem_title은 join으로 채움."""
+
+    id: int
+    user_id: int
+    user_display_name: str | None = None
+    problem_id: int | None = None
+    problem_title: str | None = None
+    category: BugReportCategory
+    title: str
+    body: str
+    code_snapshot: str | None = None
+    status: BugReportStatus
+    admin_notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class BugReportUpdateRequest(BaseModel):
+    """관리자 상태/메모 토글. None인 필드는 미변경."""
+
+    status: BugReportStatus | None = None
+    admin_notes: str | None = Field(default=None, max_length=10_000)

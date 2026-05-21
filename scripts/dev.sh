@@ -124,9 +124,9 @@ start_frontend() {
 }
 
 start_dashboard() {
-    # 정적 HTML — venv 불필요. python http.server로 충분.
-    cd "$REPO_ROOT/admin_dashboard"
-    nohup "$PY" -m http.server "$dashboard_port" --bind 127.0.0.1 \
+    # React/Vite 기반 admin dashboard — npm run dev로 기동.
+    cd "$REPO_ROOT/admin_dashboard_react"
+    nohup npm run dev -- --host 127.0.0.1 \
         > "$(logfile dashboard)" 2>&1 &
     echo $! > "$(pidfile dashboard)"
 }

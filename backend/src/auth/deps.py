@@ -43,6 +43,15 @@ def get_current_user(
         email = payload.get("email")
         meta = payload.get("user_metadata") or {}
         name = meta.get("full_name") or meta.get("name") or email or "(이름 없음)"
+        avatar_url = meta.get("avatar_url") or meta.get("picture")
+        # user_metadata.anonymous가 명시돼 있을 때만 DB값을 갱신한다.
+        # 미설정(None)이면 DB 쪽 값을 보존 — 토글이 backend PATCH로 들어온 직후에
+        # 캐싱된 stale JWT가 다시 덮어쓰는 케이스를 막기 위함.
+        raw_anonymous = meta.get("anonymous")
+        if isinstance(raw_anonymous, bool):
+            is_anonymous: bool | None = raw_anonymous
+        else:
+            is_anonymous = None
 
         if not sub:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token missing sub")
@@ -56,7 +65,8 @@ def get_current_user(
         with get_session() as s:
             user = get_or_create_user(
                 s, provider="supabase", external_id=sub,
-                display_name=name, email=email,
+                display_name=name, email=email, avatar_url=avatar_url,
+                is_anonymous=is_anonymous,
             )
             _touch(user)
             s.expunge(user)

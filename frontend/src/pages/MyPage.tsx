@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { AvatarEditorModal } from '../components/AvatarEditorModal'
 import { Card, CardHead } from '../components/Card'
 import { ProfileSetupModal } from '../components/ProfileSetupModal'
 import { useAuth } from '../lib/AuthContext'
-import { apiGet, ApiError } from '../lib/api'
+import { apiGet, apiPatch, ApiError } from '../lib/api'
+import { resolveAvatarUrl } from '../lib/avatar'
 import { supabase } from '../lib/supabase'
 import type { StreakResponse, SubmissionListResponse } from '../types'
 
@@ -23,16 +25,16 @@ const GRADE_LABEL: Record<number, string> = {
 }
 
 const VERDICT_COLOR: Record<string, string> = {
-  AC: 'text-emerald-600',
+  AC: 'text-blue-600',
   SUS: 'text-red-600',
 }
 
 const GRASS_COLOR = (count: number): string => {
   if (count <= 0) return 'bg-gray-200'
-  if (count === 1) return 'bg-emerald-200'
-  if (count === 2) return 'bg-emerald-400'
-  if (count === 3) return 'bg-emerald-600'
-  return 'bg-emerald-800'
+  if (count === 1) return 'bg-blue-200'
+  if (count === 2) return 'bg-blue-400'
+  if (count === 3) return 'bg-blue-600'
+  return 'bg-blue-800'
 }
 
 function formatDate(iso: string): string {
@@ -53,12 +55,14 @@ export function MyPage() {
   const [subsError, setSubsError] = useState<string | null>(null)
   const [subsLoading, setSubsLoading] = useState(false)
   const [profileModalOpen, setProfileModalOpen] = useState(false)
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false)
   const [anonymousPending, setAnonymousPending] = useState(false)
   const [anonymousError, setAnonymousError] = useState<string | null>(null)
   const [streak, setStreak] = useState<StreakResponse | null>(null)
   const [streakError, setStreakError] = useState<string | null>(null)
 
   const metadata = (session?.user.user_metadata ?? {}) as {
+    custom_avatar_url?: string | null
     avatar_url?: string
     picture?: string
     full_name?: string
@@ -67,12 +71,17 @@ export function MyPage() {
     nickname?: string
     anonymous?: boolean
   }
-  const avatarUrl = metadata.avatar_url ?? metadata.picture
+  const avatarSeed = session?.user.id ?? session?.user.email ?? 'anon'
+  const avatarUrl = resolveAvatarUrl(metadata, avatarSeed)
+  const hasCustomAvatar = !!metadata.custom_avatar_url
 
   const grade = profile?.grade ?? metadata.grade ?? null
   const department = profile?.department ?? metadata.department ?? null
   const nickname = profile?.nickname ?? metadata.nickname ?? null
-  const anonymous = metadata.anonymous ?? null
+  // 익명 표시는 backend가 단일 source of truth. profile이 로드되기 전엔
+  // Supabase user_metadata를 임시로 보여주되, 토글 갱신은 PATCH /me로만 한다.
+  const anonymous =
+    profile?.is_anonymous ?? metadata.anonymous ?? null
 
   useEffect(() => {
     if (!session) return
@@ -108,10 +117,15 @@ export function MyPage() {
     setAnonymousPending(true)
     setAnonymousError(null)
     try {
-      const { error: err } = await supabase.auth.updateUser({
-        data: { anonymous: next },
-      })
-      if (err) throw err
+      // backend가 단일 source of truth — 리더보드/최근 제출 마스킹이 이 값을 쓴다.
+      await apiPatch('/me', { is_anonymous: next })
+      // Supabase user_metadata는 ProblemCard의 "프로필 완료" 체크 같은 클라이언트 측
+      // 분기에서 아직 참조하므로 동기적으로 같이 업데이트한다. 실패해도 토글 자체는
+      // backend에 이미 반영됐으니 무시.
+      await supabase.auth
+        .updateUser({ data: { anonymous: next } })
+        .catch(() => undefined)
+      await refreshProfile()
     } catch (e) {
       setAnonymousError(e instanceof Error ? e.message : '저장 실패')
     } finally {
@@ -151,18 +165,25 @@ export function MyPage() {
         <Card className="lg:col-span-1">
           <CardHead title="내 프로필" icon={<span>👤</span>} />
           <div className="flex flex-col items-center gap-3 mb-5">
-            {avatarUrl ? (
+            <button
+              type="button"
+              onClick={() => setAvatarModalOpen(true)}
+              aria-label="프로필 이미지 변경"
+              title="프로필 이미지 변경"
+              className="group relative rounded-full focus:outline-none focus:ring-2 focus:ring-gray-800/30"
+            >
               <img
                 src={avatarUrl}
                 alt={displayName}
                 referrerPolicy="no-referrer"
-                className="w-20 h-20 rounded-full border-2 border-black/10 object-cover"
+                className="w-20 h-20 rounded-full border-2 border-black/10 object-cover bg-gray-50"
               />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 text-3xl border-2 border-black/10 flex items-center justify-center">
-                🙂
-              </div>
-            )}
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/0 group-hover:bg-black/40 transition">
+                <span className="text-[11px] font-medium text-white opacity-0 group-hover:opacity-100 transition">
+                  변경
+                </span>
+              </span>
+            </button>
             <div className="text-center">
               <div className="text-base font-semibold text-gray-900">{displayName}</div>
               {email && <div className="text-xs text-gray-500 mt-0.5">{email}</div>}
@@ -288,7 +309,7 @@ export function MyPage() {
             )}
             <div className="grid grid-cols-4 gap-3">
               <Stat label="누적 제출" value={stats.total} />
-              <Stat label="AC" value={stats.ac} valueClass="text-emerald-600" />
+              <Stat label="AC" value={stats.ac} valueClass="text-blue-600" />
               <Stat label="SUS" value={stats.sus} valueClass="text-red-600" />
               <Stat label="해결 문제" value={stats.solved} />
             </div>
@@ -389,11 +410,17 @@ export function MyPage() {
           void refreshProfile()
         }}
         initial={{
-          grade: metadata.grade,
-          department: metadata.department,
-          nickname: metadata.nickname,
-          anonymous: metadata.anonymous,
+          grade: profile?.grade,
+          department: profile?.department,
+          nickname: profile?.nickname,
         }}
+      />
+
+      <AvatarEditorModal
+        open={avatarModalOpen}
+        onClose={() => setAvatarModalOpen(false)}
+        currentUrl={avatarUrl}
+        hasCustom={hasCustomAvatar}
       />
     </main>
   )

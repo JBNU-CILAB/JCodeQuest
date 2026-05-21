@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import { apiGet, apiPost, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import { Button } from '../components/Button'
+import { BugReportModal } from '../components/BugReportModal'
+import type { BugReportPayload } from '../components/BugReportModal'
 import type {
   GradeAcceptedResponse,
   ProblemDetail,
@@ -42,6 +44,43 @@ export function Solver() {
   const [code, setCode] = useState(DEFAULT_CODE)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const [bugOpen, setBugOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+
+  const showToast = (msg: string) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    setToast(msg)
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2600)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    }
+  }, [])
+
+  const handleBugReport = async (payload: BugReportPayload) => {
+    setBugOpen(false)
+    if (!session) {
+      showToast('로그인 후 제보할 수 있어요')
+      return
+    }
+    try {
+      await apiPost<{ id: number; status: string }>('/reports', {
+        category: payload.category,
+        title: payload.title.trim(),
+        body: payload.body.trim(),
+        problem_id: problem?.id ?? null,
+        code_snapshot: payload.includeCode ? code : null,
+      })
+      showToast('버그 제보가 접수됐어요. 감사합니다 🙌')
+    } catch (err) {
+      const detail = err instanceof ApiError ? getErrorDetail(err) : '제보 전송 실패'
+      showToast(detail)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -215,10 +254,18 @@ export function Solver() {
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center justify-end gap-2.5">
           {!session && (
             <span className="text-xs text-gray-500">제출하려면 로그인이 필요합니다</span>
           )}
+          <button
+            type="button"
+            onClick={() => setBugOpen(true)}
+            title="이 문제에서 발견한 이슈를 운영진에게 전달합니다"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-sm font-semibold border border-red-200 bg-white text-red-700 hover:bg-red-50 hover:border-red-300 transition active:translate-y-px"
+          >
+            버그 제보
+          </button>
           <Button
             variant={session && !submitting && !overLimit ? 'primary' : 'disabled'}
             disabled={!session || submitting || overLimit}
@@ -228,6 +275,23 @@ export function Solver() {
           </Button>
         </div>
       </section>
+
+      <BugReportModal
+        open={bugOpen}
+        problem={problem ? { id: problem.id, title: problem.title, level: problem.level } : null}
+        onClose={() => setBugOpen(false)}
+        onSubmit={handleBugReport}
+      />
+
+      {toast && (
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-[2000] bg-gray-800 text-white px-4 py-3 rounded-xl text-[13px] shadow-[0_12px_30px_rgba(0,0,0,0.25)]"
+          style={{ bottom: 28, animation: 'toast-pop-in 0.18s ease-out' }}
+          role="status"
+        >
+          {toast}
+        </div>
+      )}
     </main>
   )
 }

@@ -45,18 +45,15 @@ services:
       JCQ_AUTH_ALLOW_DEV_STUB: "${JCQ_AUTH_ALLOW_DEV_STUB:-}"
       JCQ_COOKIE_INSECURE: "${JCQ_COOKIE_INSECURE:-}"
       JCQ_SUBMIT_COOLDOWN_S: "${JCQ_SUBMIT_COOLDOWN_S:-10}"
+      # CORS — 외부 origin은 쉼표 구분으로 JCQ_CORS_ORIGINS, IP 대역은 regex.
+      # 로컬 개발 origin(5173/5500/8001)은 코드에 기본값으로 박혀 있어 추가 설정 불필요.
+      JCQ_CORS_ORIGINS: "${JCQ_CORS_ORIGINS:-}"
+      JCQ_CORS_ORIGIN_REGEX: "${JCQ_CORS_ORIGIN_REGEX:-}"
     ports:
       - "8000:8000"
     depends_on:
-      judge:
-        condition: service_healthy
+      - judge
     networks: [jcq]
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 15s
 
   judge:
     build:
@@ -85,12 +82,6 @@ services:
       # 대시보드가 브라우저에서 직접 호출 — 호스트로 노출 필요.
       - "8002:8002"
     networks: [jcq]
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/api/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
 
   authoring:
     build:
@@ -109,6 +100,12 @@ services:
       JCQ_AUTHOR_MODEL: "${JCQ_AUTHOR_MODEL:-qwen2.5-coder:14b-instruct-q5_K_M}"
       JCQ_VARIANT_COUNT: "${JCQ_VARIANT_COUNT:-5}"
       JCQ_AUTHOR_RETRIES: "${JCQ_AUTHOR_RETRIES:-2}"
+      # 복잡한 문제 JSON truncate 방지용 context window (기본 16384, qwen2.5-coder:14b는 32K까지)
+      JCQ_AUTHOR_NUM_CTX: "${JCQ_AUTHOR_NUM_CTX:-16384}"
+      # verify 재시도 시 temperature — 0이면 결정론적 반복 실패
+      JCQ_AUTHOR_RETRY_TEMPERATURE: "${JCQ_AUTHOR_RETRY_TEMPERATURE:-0.4}"
+      # reference_code가 time_limit_ms 대비 통과해야 하는 비율 (이전 0.5 → 0.8 완화)
+      JCQ_AUTHOR_PERF_RATIO: "${JCQ_AUTHOR_PERF_RATIO:-0.8}"
       JCQ_JUDGE_PASS_THRESHOLD: "${JCQ_JUDGE_PASS_THRESHOLD:-0.7}"
       JCQ_SOLVER_PASS_MIN_AC: "${JCQ_SOLVER_PASS_MIN_AC:-1}"
       # LangSmith — authoring 전용 키 (judge와 별도)
@@ -123,17 +120,9 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      backend:
-        condition: service_healthy
-      judge:
-        condition: service_healthy
+      - backend
+      - judge
     networks: [jcq]
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/api/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 15s
 
   frontend:
     build:

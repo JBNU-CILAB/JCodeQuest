@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { resolveAvatarUrl } from '../lib/avatar'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { ProfileSetupModal } from './ProfileSetupModal'
@@ -37,6 +38,7 @@ export function Header() {
   }, [])
 
   const metadata = (session?.user.user_metadata ?? {}) as {
+    custom_avatar_url?: string | null
     avatar_url?: string
     picture?: string
     full_name?: string
@@ -45,20 +47,27 @@ export function Header() {
     nickname?: string
     anonymous?: boolean
   }
-  const avatarUrl = metadata.avatar_url ?? metadata.picture
+  const avatarSeed = session?.user.id ?? session?.user.email ?? 'anon'
+  const avatarUrl = session ? resolveAvatarUrl(metadata, avatarSeed) : null
   const displayName = profile?.display_name ?? metadata.full_name ?? session?.user.email ?? ''
   const tier = profile?.tier ?? 'bronze'
   const exp = profile?.exp ?? 0
-  const needsApiKey = loggedIn && !profile?.has_api_key
+  const needsApiKey = loggedIn && profile !== null && !profile?.has_api_key
   const needsProfile =
     loggedIn &&
-    (!metadata.grade ||
-      !metadata.department ||
-      !metadata.nickname ||
-      typeof metadata.anonymous !== 'boolean')
+    profile !== null &&
+    (!profile.grade || !profile.department || !profile.nickname)
   const showBadge = needsApiKey || needsProfile
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
+
+  const handleAvatarClick = () => {
+    if (needsProfile) {
+      setProfileModalOpen(true)
+    } else {
+      navigate('/mypage')
+    }
+  }
 
   return (
     <header className="h-[72px] px-10 flex items-center gap-6 text-black bg-white border-b border-black/10">
@@ -72,7 +81,7 @@ export function Header() {
           style={{
             color: "#000000",
             textShadow: `
-              2px 2px 0px rgba(74, 222, 128, 0.6),  /* 네온 그린 */
+              2px 2px 0px rgba(49, 130, 246, 0.6),  /* toss-blue */
               -2px -2px 0px rgba(244, 63, 94, 0.4)  /* 로즈 핑크 */
             `,
           }}
@@ -115,18 +124,21 @@ export function Header() {
           <div className="ml-7 flex items-center gap-3">
             {/* Avatar */}
             <div className="relative flex flex-col items-center gap-0.5 group">
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={displayName}
-                  referrerPolicy="no-referrer"
-                  className="w-9 h-9 rounded-full border-2 border-black/20 object-cover cursor-pointer"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 text-black text-lg border-2 border-black/20 flex items-center justify-center cursor-pointer">
-                  🙂
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={handleAvatarClick}
+                aria-label={needsProfile ? '프로필 설정' : '마이페이지'}
+                className="rounded-full focus:outline-none focus:ring-2 focus:ring-black/30"
+              >
+                {avatarUrl && (
+                  <img
+                    src={avatarUrl}
+                    alt={displayName}
+                    referrerPolicy="no-referrer"
+                    className="w-9 h-9 rounded-full border-2 border-black/20 object-cover bg-gray-50 cursor-pointer"
+                  />
+                )}
+              </button>
 
               {showBadge && (
                 <span
@@ -192,19 +204,6 @@ export function Header() {
                   )}
 
                   <div className="flex flex-col py-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (needsProfile) {
-                          setProfileModalOpen(true)
-                        } else {
-                          navigate('/mypage')
-                        }
-                      }}
-                      className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
-                    >
-                      프로필 설정
-                    </button>
                     <Link
                       to="/mypage"
                       className="px-3 py-1.5 text-left hover:bg-black/5 hover:text-black transition"
@@ -229,10 +228,9 @@ export function Header() {
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
         initial={{
-          grade: metadata.grade,
-          department: metadata.department,
-          nickname: metadata.nickname,
-          anonymous: metadata.anonymous,
+          grade: profile?.grade,
+          department: profile?.department,
+          nickname: profile?.nickname,
         }}
       />
     </header>

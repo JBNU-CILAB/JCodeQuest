@@ -37,6 +37,8 @@ from ..schemas import (
     AuthoringProblemCreateResponse,
     AuthoringProblemSummary,
     AuthoringTestCase,
+    BugReport,
+    BugReportUpdateRequest,
     GradeEvent,
     Notice,
     NoticeCreateRequest,
@@ -52,7 +54,20 @@ from ..schemas import (
     UserDeleteResponse,
 )
 from ..storage import get_session
-from ..storage.models import NoticeRow, ProblemRow, SubmissionRow, UserRow, iso_week_of
+from ..storage.bug_reports import (
+    delete_bug_report,
+    get_bug_report_admin,
+    list_bug_reports_admin,
+    update_bug_report_admin,
+)
+from ..storage.models import (
+    BugReportRow,
+    NoticeRow,
+    ProblemRow,
+    SubmissionRow,
+    UserRow,
+    iso_week_of,
+)
 from ..storage.notices import (
     create_notice,
     delete_notice,
@@ -782,3 +797,119 @@ def delete_notice_admin(
     if not ok:
         raise HTTPException(404, f"notice {notice_id} not found")
     return {"id": notice_id}
+
+
+# ── bug reports (admin) ──────────────────────────────────────────────────
+def _report_to_dto(
+    row: BugReportRow,
+    user_name: str | None,
+    problem_title: str | None,
+) -> BugReport:
+    assert row.id is not None
+    return BugReport(
+        id=row.id,
+        user_id=row.user_id,
+        user_display_name=user_name,
+        problem_id=row.problem_id,
+        problem_title=problem_title,
+        category=row.category,  # type: ignore[arg-type]
+        title=row.title,
+        body=row.body,
+        code_snapshot=row.code_snapshot,
+        status=row.status,  # type: ignore[arg-type]
+        admin_notes=row.admin_notes,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@router.get(
+    "/reports",
+    response_model=list[BugReport],
+    summary="버그 제보 목록 (admin)",
+    description="최신순. status/category 필터 + 페이지네이션. code_snapshot 포함.",
+)
+def list_reports_admin(
+    authorization: Annotated[str | None, Header()] = None,
+    status: Annotated[
+        str | None, Query(description="open | in_progress | resolved | rejected")
+    ] = None,
+    category: Annotated[
+        str | None,
+        Query(description="judging | statement | sample | system | other"),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[BugReport]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        rows = list_bug_reports_admin(
+            session,
+            status=status,
+            category=category,
+            limit=limit,
+            offset=offset,
+        )
+    return [_report_to_dto(r, u, p) for (r, u, p) in rows]
+
+
+@router.get(
+    "/reports/{report_id}",
+    response_model=BugReport,
+    summary="버그 제보 상세 (admin)",
+    responses={404: {"description": "제보 없음"}},
+)
+def get_report_admin(
+    report_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> BugReport:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        result = get_bug_report_admin(session, report_id)
+    if result is None:
+        raise HTTPException(404, f"report {report_id} not found")
+    return _report_to_dto(*result)
+
+
+@router.patch(
+    "/reports/{report_id}",
+    response_model=BugReport,
+    summary="버그 제보 상태/메모 수정 (admin)",
+    responses={404: {"description": "제보 없음"}},
+)
+def update_report_admin(
+    report_id: Annotated[int, Path()],
+    req: BugReportUpdateRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> BugReport:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        updated = update_bug_report_admin(
+            session,
+            report_id,
+            status=req.status,
+            admin_notes=req.admin_notes,
+        )
+        if updated is None:
+            raise HTTPException(404, f"report {report_id} not found")
+        # 갱신 후 user/problem 다시 join — DTO 일관성.
+        result = get_bug_report_admin(session, report_id)
+    assert result is not None
+    return _report_to_dto(*result)
+
+
+@router.delete(
+    "/reports/{report_id}",
+    summary="버그 제보 삭제 (admin)",
+    responses={404: {"description": "제보 없음"}},
+)
+def delete_report_admin(
+    report_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, int]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        ok = delete_bug_report(session, report_id)
+    if not ok:
+        raise HTTPException(404, f"report {report_id} not found")
+    return {"id": report_id}

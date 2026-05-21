@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { SlideModal } from './SlideModal'
-import { supabase } from '../lib/supabase'
+import { apiPatch } from '../lib/api'
+import { useAuth } from '../lib/AuthContext'
 
 export interface ProfileMeta {
-  grade?: number
-  department?: string
-  nickname?: string
-  anonymous?: boolean
+  grade?: number | null
+  department?: string | null
+  nickname?: string | null
 }
 
 interface Props {
@@ -16,22 +15,20 @@ interface Props {
   initial?: ProfileMeta
 }
 
-type GradeValue = 1 | 2 | 3 | 4 | 5
+type GradeValue = 1 | 2 | 3 | 4
 
 const GRADE_LABEL: Record<GradeValue, string> = {
   1: '1학년',
   2: '2학년',
   3: '3학년',
   4: '4학년',
-  5: '대학원',
 }
 
 export function ProfileSetupModal({ open, onClose, initial }: Props) {
-  const navigate = useNavigate()
+  const { refreshProfile } = useAuth()
   const [grade, setGrade] = useState<GradeValue | null>(null)
   const [department, setDepartment] = useState('')
   const [nickname, setNickname] = useState('')
-  const [anonymous, setAnonymous] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -40,7 +37,6 @@ export function ProfileSetupModal({ open, onClose, initial }: Props) {
     setGrade((initial?.grade as GradeValue | undefined) ?? null)
     setDepartment(initial?.department ?? '')
     setNickname(initial?.nickname ?? '')
-    setAnonymous(initial?.anonymous ?? true)
     setError(null)
     setSubmitting(false)
   }, [open, initial])
@@ -53,17 +49,13 @@ export function ProfileSetupModal({ open, onClose, initial }: Props) {
     setSubmitting(true)
     setError(null)
     try {
-      const { error: err } = await supabase.auth.updateUser({
-        data: {
-          grade,
-          department: department.trim(),
-          nickname: nickname.trim(),
-          anonymous,
-        },
+      await apiPatch('/me', {
+        grade,
+        department: department.trim(),
+        nickname: nickname.trim(),
       })
-      if (err) throw err
       onClose()
-      navigate('/mypage')
+      void refreshProfile()
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패')
     } finally {
@@ -123,18 +115,6 @@ export function ProfileSetupModal({ open, onClose, initial }: Props) {
         placeholder="닉네임"
         className="mt-6 w-full rounded-md border border-black/10 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-800/30 focus:border-gray-800/40"
       />
-      <label className="mt-4 flex items-start gap-2 cursor-pointer select-none group">
-        <input
-          type="checkbox"
-          checked={anonymous}
-          onChange={(e) => setAnonymous(e.target.checked)}
-          className="mt-0.5 w-4 h-4 rounded accent-gray-900 cursor-pointer"
-        />
-        <span className="text-sm text-gray-700 leading-snug">
-          닉네임으로 표시{' '}
-          <span className="text-gray-400">(해제 시 실명이 노출됩니다)</span>
-        </span>
-      </label>
     </div>,
 
     <div className="px-12 py-8" key="confirm">
@@ -151,10 +131,6 @@ export function ProfileSetupModal({ open, onClose, initial }: Props) {
         <span className={`text-gray-900 ${!department.trim() ? 'opacity-50 text-gray-400' : ''}`}>{department || '-'}</span>
         <span className={`text-gray-500 ${!nickname.trim() ? 'opacity-50' : ''}`}>닉네임</span>
         <span className={`text-gray-900 ${!nickname.trim() ? 'opacity-50 text-gray-400' : ''}`}>{nickname || '-'}</span>
-        <span className="text-gray-500">표시</span>
-        <span className="text-gray-900">
-          {anonymous ? '닉네임' : '실명'}
-        </span>
       </div>
       {error && (
         <p className="mt-4 text-sm text-red-600 text-center">{error}</p>

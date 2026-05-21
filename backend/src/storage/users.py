@@ -16,8 +16,17 @@ def get_or_create_user(
     external_id: str,
     display_name: str,
     email: str | None = None,
+    avatar_url: str | None = None,
+    is_anonymous: bool | None = None,
 ) -> UserRow:
-    """IdP 콜백/스텁이 호출. (provider, external_id)로 멱등."""
+    """IdP 콜백/스텁이 호출. (provider, external_id)로 멱등.
+
+    avatar_url과 is_anonymous는 *신규 가입 시점에만* IdP가 준 값을 초기값으로 쓴다.
+    기존 row에는 덮어쓰지 않는다 — PATCH /me가 단일 source of truth. 그렇지 않으면
+    사용자가 업로드한 커스텀 아바타를 매 요청마다 OAuth picture URL로 되돌려놓아
+    리더보드에서 새로고침할 때마다 기본 이미지로 떨어진다.
+    (캐싱된 stale JWT가 PATCH 직후 새 값을 덮어쓰는 레이스 방지가 핵심.)
+    """
     stmt = select(UserRow).where(
         UserRow.provider == provider,
         UserRow.external_id == external_id,
@@ -31,6 +40,8 @@ def get_or_create_user(
         external_id=external_id,
         display_name=display_name,
         email=email,
+        avatar_url=avatar_url,
+        is_anonymous=bool(is_anonymous) if is_anonymous is not None else False,
     )
     session.add(row)
     session.commit()
@@ -48,9 +59,12 @@ def update_user_profile(
     nickname: str | None | object = _UNSET,
     grade: int | None | object = _UNSET,
     department: str | None | object = _UNSET,
+    is_anonymous: bool | object = _UNSET,
+    avatar_url: str | None | object = _UNSET,
 ) -> UserRow | None:
-    """학년/학과/닉네임을 부분 갱신. 인자 미전달(_UNSET)이면 그 필드는 안 건드림.
-    None을 명시적으로 넘기면 해당 필드를 NULL로 비운다."""
+    """학년/학과/닉네임/익명여부/아바타 URL을 부분 갱신. 인자 미전달(_UNSET)이면 그 필드는 안 건드림.
+    None을 명시적으로 넘기면 해당 필드를 NULL로 비운다(is_anonymous는 None 비허용).
+    avatar_url에 None을 넘기면 리더보드/타인 노출 화면에서 identicon fallback으로 떨어진다."""
     row = session.get(UserRow, user_id)
     if row is None:
         return None
@@ -61,6 +75,10 @@ def update_user_profile(
         row.grade = grade  # type: ignore[assignment]
     if department is not _UNSET:
         row.department = department  # type: ignore[assignment]
+    if is_anonymous is not _UNSET:
+        row.is_anonymous = bool(is_anonymous)
+    if avatar_url is not _UNSET:
+        row.avatar_url = avatar_url  # type: ignore[assignment]
 
     row.updated_at = _utcnow()
     session.add(row)

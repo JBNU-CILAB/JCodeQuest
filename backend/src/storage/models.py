@@ -41,12 +41,19 @@ class UserRow(SQLModel, table=True):
     provider: str = Field(index=True)
     external_id: str = Field(index=True)
     email: str | None = None
+    # OAuth IdP(Google 등)가 user_metadata로 넘기는 프로필 이미지 URL. 매 로그인마다
+    # 최신값으로 갱신해 두고, 비어 있으면 클라이언트가 GitHub identicon으로 fallback.
+    avatar_url: str | None = None
 
     # 사용자 커스터마이즈 필드 — OAuth 가입 직후엔 모두 NULL, /me PATCH로 채움.
     # nickname은 display_name(IdP 제공)과 별개의 표시 별명.
     nickname: str | None = None
     grade: int | None = None        # 학년 (1~6)
     department: str | None = None   # 학과/전공
+    # True면 리더보드/최근 제출 등 타인에게 노출되는 모든 표면에서 display_name/avatar_url을
+    # 마스킹한다. 본인 화면(/me)은 마스킹하지 않음. Supabase user_metadata.anonymous와는
+    # /me PATCH 또는 로그인 시점에 동기화.
+    is_anonymous: bool = Field(default=False)
 
     # 게임 상태 — 누적 AC points (효율성 multiplier 적용된 값의 합).
     # save_grading에서 첫 AC 시점에만 가산 → SubmissionRow 풀스캔 없이 리더보드 정렬 가능.
@@ -163,5 +170,31 @@ class NoticeRow(SQLModel, table=True):
     body: str
     # 상단 고정 여부 — true면 created_at 무관하게 위에 노출.
     pinned: bool = Field(default=False, index=True)
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
+
+
+class BugReportRow(SQLModel, table=True):
+    """사용자가 제보한 버그/문제 신고. 인증 사용자만 등록, 운영자가 admin_dashboard에서 처리.
+
+    problem_id는 nullable — 시스템/UI 카테고리는 특정 문제와 무관할 수 있다.
+    code_snapshot은 옵션 — 사용자가 includeCode 체크박스 켰을 때만 채워짐 (재현용)."""
+
+    __tablename__ = "bug_report"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    # 사용자가 문제 화면 밖에서 제보할 가능성 + 문제 삭제 시 dangling 참조 방지로 nullable.
+    problem_id: int | None = Field(default=None, foreign_key="problem.id", index=True)
+    # judging | statement | sample | system | other — BugReportModal CATEGORIES와 동일.
+    category: str = Field(index=True)
+    title: str
+    body: str
+    # 사용자가 첨부 체크박스를 켰을 때만 — 재현·디버깅용. None이면 미첨부.
+    code_snapshot: str | None = None
+    # open | in_progress | resolved | rejected — 운영자가 admin에서 토글.
+    status: str = Field(default="open", index=True)
+    # 운영자 내부 메모. 사용자에게 공개되지 않음.
+    admin_notes: str | None = None
     created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
     updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())

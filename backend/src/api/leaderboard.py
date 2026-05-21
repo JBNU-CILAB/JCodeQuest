@@ -8,7 +8,11 @@ from fastapi import APIRouter, Query
 
 from ..schemas import LeaderboardEntry, LeaderboardPeriod, LeaderboardResponse
 from ..storage import get_session
-from ..storage.leaderboard import list_leaderboard_all, list_leaderboard_week
+from ..storage.leaderboard import (
+    list_leaderboard_all,
+    list_leaderboard_by_grade,
+    list_leaderboard_week,
+)
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 
@@ -46,7 +50,43 @@ def get_leaderboard(
             display_name=name,
             tier=tier,
             points=points,
+            avatar_url=avatar_url,
         )
-        for i, (uid, name, tier, points) in enumerate(rows)
+        for i, (uid, name, tier, points, avatar_url) in enumerate(rows)
     ]
     return LeaderboardResponse(period=period, week=week_label, entries=entries)
+
+
+@router.get(
+    "/by-grade",
+    response_model=LeaderboardResponse,
+    summary="리더보드 (학년별 누적)",
+    description=(
+        "특정 학년(1~4)에 속한 사용자만 골라 누적 EXP 내림차순으로 반환. "
+        "UserRow.grade가 NULL(프로필 미설정)인 사용자는 제외. "
+        "응답 schema는 /leaderboard 와 동일하며 period='all', week=null 로 고정."
+    ),
+)
+def get_leaderboard_by_grade(
+    grade: Annotated[
+        int, Query(ge=1, le=4, description="대상 학년 (1~4)")
+    ],
+    limit: Annotated[
+        int, Query(ge=1, le=100, description="상위 N (1–100)")
+    ] = 50,
+) -> LeaderboardResponse:
+    with get_session() as session:
+        rows = list_leaderboard_by_grade(session, grade=grade, limit=limit)
+
+    entries = [
+        LeaderboardEntry(
+            rank=i + 1,
+            user_id=uid,
+            display_name=name,
+            tier=tier,
+            points=points,
+            avatar_url=avatar_url,
+        )
+        for i, (uid, name, tier, points, avatar_url) in enumerate(rows)
+    ]
+    return LeaderboardResponse(period="all", week=None, entries=entries)

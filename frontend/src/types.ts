@@ -12,6 +12,8 @@ export interface UserMe {
   nickname?: string | null
   grade?: number | null
   department?: string | null
+  is_anonymous?: boolean
+  avatar_url?: string | null
 }
 
 export interface SubmissionListItem {
@@ -31,6 +33,26 @@ export interface SubmissionListResponse {
   total: number
   limit: number
   offset: number
+}
+
+export interface RecentSubmissionItem {
+  id: number
+  user_id: number
+  user_display_name: string | null
+  problem_id: number
+  problem_title: string | null
+  status: SubmissionStatus
+  final_verdict: Verdict | null
+  mode: 'unanimous' | 'majority' | null
+  points_awarded: number | null
+  max_elapsed_ms: number | null
+  peak_memory_kb: number | null
+  created_at: string
+}
+
+export interface RecentSubmissionsResponse {
+  items: RecentSubmissionItem[]
+  limit: number
 }
 
 export interface DailySolve {
@@ -54,6 +76,16 @@ export interface ProblemSummary {
   level: ProblemLevel
   points: number
   one_line_summary: string
+  iso_week: string
+}
+
+export interface WeeklyProblemBucket {
+  week: string
+  count: number
+}
+
+export interface WeeklyProblemBucketsResponse {
+  buckets: WeeklyProblemBucket[]
 }
 
 export interface PublicTestCase {
