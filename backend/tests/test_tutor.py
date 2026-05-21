@@ -328,14 +328,14 @@ def test_render_user_message_includes_all_sections(sample_problem):
             },
         ],
     )
-    assert "[문제]" in msg
-    assert "[출제자 의도]" in msg
+    assert "[Problem]" in msg
+    assert "[Author's intent]" in msg
     assert "print('hi')" in msg
-    assert "[테스트 결과] 1/3 통과" in msg
+    assert "[Test results] 1/3 passed" in msg
     assert "ZeroDivisionError" in msg
-    assert "[판사 의견]" in msg
+    assert "[Judge opinions]" in msg
     assert "Melchior" in msg
-    assert "[최종 판정] SUS" in msg
+    assert "[Final verdict] SUS" in msg
 
 
 def test_render_user_message_skips_votes_when_none(sample_problem):
@@ -350,6 +350,6 @@ def test_render_user_message_skips_votes_when_none(sample_problem):
             {"ordinal": 1, "passed": False, "status": "TLE"},
         ],
     )
-    assert "[판사 의견]" not in msg
-    assert "[최종 판정] SUS" in msg
+    assert "[Judge opinions]" not in msg
+    assert "[Final verdict] SUS" in msg
     assert "TLE" in msg

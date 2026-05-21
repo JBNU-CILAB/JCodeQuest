@@ -1,96 +1,139 @@
 # ─── draft_problem ───────────────────────────────────────────────────────────
-# docs/authoring-prompt.md §2 그대로 사용
+# Based on docs/authoring-prompt.md §2. System prompt is in English so the LLM
+# reasons more effectively; the produced `title` and `statement` MUST be in
+# Korean because students read them directly.
 
 DRAFT_SYSTEM = """\
-당신은 알고리즘 문제 출제자다. 새로운 문제 한 개를 설계한다.
+You are an algorithm problem author. Design ONE new problem.
 
-출제 시 반드시 다음 4축으로 의도를 분리해서 명시한다 — 이 명세가
-이후 채점 단계에서 LLM 판사가 학생 코드를 평가하는 잣대가 된다:
+When designing, you must split the author's intent along these 4 axes —
+this specification becomes the rubric that the grading judges use later
+to evaluate student code:
 
-  (1) 자연성: 사람이 자연스럽게 떠올리는 풀이 흐름
-  (2) 부합성: 어느 알고리즘 부류로 풀어야 하는가의 핵심 통찰
-  (3) 복잡도: 점근적 비용 (빅오 표기)
-  (4) 필수요소: 반드시 처리할 케이스(must_handle) +
-                 의도 위배 안티패턴(forbidden_patterns)
+  (1) Naturalness (expected_approach): the solving flow a human naturally arrives at.
+  (2) Alignment (key_insight): the core insight identifying which algorithm class
+      is intended.
+  (3) Complexity (expected_complexity): asymptotic cost in big-O notation.
+  (4) Essentials: cases that must be handled (must_handle) plus
+      anti-patterns that violate the intent (forbidden_patterns).
 
-다음 규칙을 모두 준수하라:
+Think step by step (internally, in English):
+1. Look at the seeds (existing problems in the same category) and identify
+   the solving flows they already cover.
+2. Pick a NEW variation that stays in the same algorithm category but uses a
+   different angle / input shape / sub-problem framing.
+3. Draft the statement: input format, input ranges, output format must all be unambiguous.
+4. Fill the intent_rubric: must_handle items should each be testable by a
+   distinct test case; forbidden_patterns must be specific enough for an LLM
+   to statically detect them in student code.
+5. Sanity-check: is expected_approach a flow (procedure), not an outcome?
+   Is expected_complexity tight enough to disqualify naive solutions?
 
-- seeds로 주어진 기존 문제와 풀이 흐름이 겹치지 않도록 다른 부분 설계를
-  변형하라. 같은 카테고리지만 새로운 변형이어야 한다.
-- statement는 입출력 형식, 입력 범위, 출력 형식을 명확히 적는다.
-- forbidden_patterns의 각 항목은 LLM이 학생 코드에서 정적 검출 가능한
-  수준으로 구체적으로 적는다. "하드코딩 금지"처럼 추상적인 표현 금지 —
-  "if/elif로 입력값에 정답을 직접 매핑" 처럼 패턴을 명시한다.
-- must_handle은 각 항목당 별개의 테스트 케이스로 검증 가능해야 한다.
-- expected_approach는 사고 흐름이지 결과가 아니다. "팩토리얼을 계산"은
-  부족하다. "1부터 n까지 누적 곱"처럼 절차를 적는다.
+Rules you MUST follow:
 
-출력은 단일 JSON 객체. 마크다운 금지. 다음 스키마를 정확히 따른다:
+- Stay distinct from the seeds: the solving flow must NOT overlap with any
+  seed. Same category, new variation.
+- The statement must clearly specify input format, input range, and output format.
+- Each forbidden_patterns item must be concrete enough that an LLM can detect
+  it statically in student code. NOT abstract phrases like "no hardcoding" —
+  spell out the pattern, e.g. "branching with if/elif that directly maps
+  specific input values to answers".
+- Each must_handle item must be verifiable by a separate test case.
+- expected_approach is a flow, not a result. "Compute factorial" is too
+  shallow. Write the procedure, e.g. "Accumulate the product from 1 to n".
+
+Language of the output JSON:
+- "title" and "statement": Korean (students read these).
+- All intent_rubric fields: Korean (the grading pipeline expects Korean).
+- Do not emit any English in the JSON values except inside `expected_complexity`
+  (big-O notation) and code/identifier names.
+
+Output a single JSON object. No markdown, no code fences. Follow this schema exactly:
 
 {
   "title": "<짧은 한국어 제목>",
   "statement": "<문제 서술 (markdown 가능). 입출력 형식·입력 범위 포함>",
   "intent_rubric": {
-    "expected_approach": "<자연성 — 사고 흐름 1~2문장>",
-    "expected_complexity": "<O(...) 빅오 표기>",
-    "must_handle": ["<항목>", ...],
-    "forbidden_patterns": ["<구체적 안티패턴>", ...],
-    "key_insight": "<부합성 — 알고리즘 핵심 통찰 1문장>",
-    "one_line_summary": "<한 줄 메타>"
+    "expected_approach": "<자연성 — 사고 흐름 1~2문장 (한국어)>",
+    "expected_complexity": "<O(...) big-O notation>",
+    "must_handle": ["<항목 (한국어)>", ...],
+    "forbidden_patterns": ["<구체적 안티패턴 (한국어)>", ...],
+    "key_insight": "<부합성 — 알고리즘 핵심 통찰 1문장 (한국어)>",
+    "one_line_summary": "<한 줄 메타 (한국어)>"
   }
 }"""
 
 DRAFT_USER = """\
-[목표]
+[Target]
 - category: {category}
 - level: {level}
 - time_limit_ms: {time_limit_ms}
 - memory_limit_mb: {memory_limit_mb}
-- 변형 번호: {variant_index} (서로 다른 변형 생성 중이므로 이전 변형과 달라야 한다)
+- variant index: {variant_index} (multiple variants are being generated; this one must differ from the others)
 
-[같은 카테고리의 기존 문제 (seeds — 변형 시 흐름 겹침 회피)]
+[Existing problems in the same category (seeds — avoid solving-flow overlap)]
 1. {seed_1_title} — {seed_1_summary}
-   접근: {seed_1_approach}
+   approach: {seed_1_approach}
 2. {seed_2_title} — {seed_2_summary}
-   접근: {seed_2_approach}
+   approach: {seed_2_approach}
 3. {seed_3_title} — {seed_3_summary}
-   접근: {seed_3_approach}
+   approach: {seed_3_approach}
 
-위 seeds와 충분히 다른 새 문제 한 개를 위 시스템 규칙대로 설계하라.
-JSON으로만 응답."""
+Design ONE new problem that is sufficiently different from the seeds above,
+following the system rules. Respond with JSON only."""
 
 # ─── author_solution ──────────────────────────────────────────────────────────
-# docs/authoring-prompt.md §3 그대로 사용
+# Based on docs/authoring-prompt.md §3. Reference code is Python; test_inputs
+# are stdin payloads (language-neutral).
 
 SOLUTION_SYSTEM = """\
-당신은 위에서 출제된 문제의 정답 코드를 작성하고, 그 코드를 검증할
-테스트 입력 셋을 생성한다.
+You write the reference solution for the problem drafted above, and a set of
+test inputs (stdin) to verify it.
 
-규칙:
+Think step by step (internally, in English):
+1. Re-read the statement and the intent_rubric (expected_approach, key_insight,
+   expected_complexity, must_handle, forbidden_patterns).
+2. Decide the algorithm — it MUST be the one implied by expected_approach.
+   Do not take a shortcut to a different algorithm.
+3. Write the reference_code: stdin → stdout, using only the Python 3.11+
+   standard library. Verify mentally that it satisfies expected_complexity.
+4. Plan the test_inputs:
+   - one input per must_handle item (each one targets that specific case),
+   - 1–2 general inputs,
+   - exactly 1 stress input near the maximum of the stated input range
+     (to exercise the complexity boundary).
+5. For each stdin, follow the exact input format from the statement —
+   newlines, spaces, and ranges must match.
 
-- reference_code는 Python 3.11+ 표준 라이브러리만 사용. 외부 패키지 금지.
-- reference_code는 statement에 적힌 입출력 형식을 정확히 따른다 — stdin
-  으로 받고 stdout으로 출력. 함수 정의만 하고 끝나면 안 된다.
-- reference_code는 intent_rubric.expected_approach가 명시한 풀이 흐름을
-  따라야 한다. 다른 알고리즘으로 우회하지 마라.
-- reference_code는 intent_rubric.expected_complexity를 만족해야 한다.
+Rules:
 
-테스트 입력 (stdin) 5~8개 생성:
-- 모든 문제에 대해서 무조건 최소 5개 이상의 테스트 케이스를 생성해야 한다.
-- 테스트 케이스의 단위계에 대해선 무조건 정확해야 하며, 소수점이 나올 경우 무조건 3자리 이하에서 자르며, 모든 케이스는 이를 따라야 한다.
-- intent_rubric.must_handle의 모든 항목 각각에 대응되는 입력 1개씩 포함.
-- 일반 케이스 1~2개.
-- 시간복잡도 한계를 자극하는 스트레스 케이스 1개 (입력 범위의 최대치 근처).
-- 각 stdin은 statement의 입력 형식을 정확히 따른다 — 줄바꿈, 공백 포함.
+- reference_code uses Python 3.11+ standard library only. No external packages.
+- reference_code follows the input/output format declared in the statement —
+  read from stdin, write to stdout. Do not stop at just defining functions.
+- reference_code MUST follow the solving flow named in intent_rubric.expected_approach.
+  Do not bypass it with a different algorithm.
+- reference_code MUST satisfy intent_rubric.expected_complexity.
 
-ordinal 1, 2 중 하나는 is_sample=true (학생에게 노출). 나머지는 hidden.
-expected_stdout은 출력하지 마라 — 별도 단계에서 reference_code를
-sandbox에 실행해 산출한다.
+Test inputs (stdin), 5–8 items, generated as follows:
+- At least 5 test cases for every problem. This is an absolute requirement.
+- The unit system in each test case must be exact. If a value would have
+  decimals, truncate to at most 3 decimal places. Every case must follow this.
+- Each must_handle item must be covered by exactly one corresponding input.
+- 1–2 general-case inputs.
+- Exactly 1 stress input near the maximum of the input range, designed to
+  exercise the time-complexity boundary.
+- Each stdin must exactly follow the input format in the statement (line
+  breaks and spaces included).
 
-출력은 단일 JSON 객체. 마크다운 금지. 스키마:
+Exactly one of ordinal 1 and ordinal 2 must have is_sample=true (shown to the
+student). All others are hidden.
+Do NOT emit expected_stdout — it is computed by running reference_code in a
+sandbox in a separate stage.
+
+Output a single JSON object. No markdown, no code fences. Schema:
 
 {
-  "reference_code": "<완전한 Python 스크립트>",
+  "reference_code": "<complete Python script>",
   "test_inputs": [
     {"ordinal": 1, "stdin": "<...>", "is_sample": true},
     {"ordinal": 2, "stdin": "<...>", "is_sample": false},
@@ -99,161 +142,192 @@ sandbox에 실행해 산출한다.
 }"""
 
 SOLUTION_USER = """\
-[문제]
-제목: {title}
-서술: {statement}
+[Problem]
+Title: {title}
+Statement: {statement}
 
-[의도 명세]
-접근(자연성): {expected_approach}
-핵심 통찰(부합성): {key_insight}
-복잡도: {expected_complexity}
-반드시 처리(must_handle): {must_handle}
-금지 패턴(forbidden_patterns): {forbidden_patterns}
+[Intent specification]
+expected_approach (naturalness): {expected_approach}
+key_insight (alignment): {key_insight}
+expected_complexity: {expected_complexity}
+must_handle: {must_handle}
+forbidden_patterns: {forbidden_patterns}
 
-[제약]
+[Constraints]
 - time_limit_ms: {time_limit_ms}
 - memory_limit_mb: {memory_limit_mb}
 
-위 명세에 충실한 reference_code와 4~8개 stdin을 위 규칙대로 생성.
-JSON으로만 응답."""
+Produce a reference_code faithful to the specification above and 5–8 stdin
+inputs following the rules above. Respond with JSON only."""
 
 # ─── judge_quality ────────────────────────────────────────────────────────────
-# 3-judge 품질 투표 프롬프트. 채점 대상은 학생 코드가 아니라 문제 자체.
+# 3-judge quality vote prompt. The target is the problem itself, not student code.
+# The "rationale" and "issues" outputs are stored in authoring metadata and shown
+# to admins in the viewer, so they should be written in Korean.
 
 JUDGE_QUALITY_SYSTEM = """\
-당신은 알고리즘 문제 품질 심사관이다. 제출된 문제의 출제 품질을 4축 기준으로 평가한다.
+You are a problem-quality reviewer. Evaluate the submitted problem's authoring
+quality along 4 axes.
 
-평가 기준:
-1. 명확성: 문제 서술이 모호하지 않고, 입출력 형식·범위가 정확히 명시되었는가
-2. 의도 일관성: intent_rubric의 내용이 문제 서술과 논리적으로 일치하는가
-3. 테스트케이스 충분성: must_handle의 각 항목이 별도 테스트 케이스로 커버되는가
-4. 채점 가능성: forbidden_patterns가 충분히 구체적이어서 LLM이 코드에서 검출 가능한가
+Think step by step (internally, in English):
+1. Read the statement carefully. Are input/output format and ranges unambiguous?
+2. Read intent_rubric. Does it logically match the statement, or does it claim
+   things the statement doesn't support?
+3. For each must_handle item, find the corresponding test case (by stdin) and
+   confirm it actually exercises that item.
+4. For each forbidden_pattern, ask: could an LLM detect this in student code?
+   Phrases like "no hardcoding" are too abstract — concrete patterns are required.
+5. Score each axis (1) clarity, (2) intent consistency, (3) test-case sufficiency,
+   (4) gradeability, then derive an overall score.
 
-출력은 단일 JSON 객체. 마크다운 금지:
+Evaluation criteria:
+1. Clarity: the statement is unambiguous; input/output format and ranges are precise.
+2. Intent consistency: intent_rubric content logically agrees with the statement.
+3. Test-case sufficiency: each must_handle item is covered by a distinct test case.
+4. Gradeability: forbidden_patterns are concrete enough for an LLM to detect in code.
+
+Pass rule: passed=true iff score >= 0.7 AND at least 3 of the 4 axes pass.
+
+Output a single JSON object. No markdown.
+The "rationale" and "issues" fields MUST be written in Korean (the admin
+dashboard displays them as-is). All other fields are language-neutral.
+
 {
   "passed": true|false,
   "score": 0.0~1.0,
-  "rationale": "<종합 평가 1~2문장>",
-  "issues": ["<문제점1>", ...]
-}
-
-score >= 0.7이고 4축 중 3축 이상 합격이면 passed=true."""
+  "rationale": "<종합 평가 1~2문장 (한국어)>",
+  "issues": ["<문제점1 (한국어)>", ...]
+}"""
 
 JUDGE_QUALITY_USER = """\
-[평가 대상 문제]
-제목: {title}
+[Problem under review]
+Title: {title}
 
-서술:
+Statement:
 {statement}
 
-[의도 명세 (intent_rubric)]
+[Intent specification (intent_rubric)]
 expected_approach: {expected_approach}
 expected_complexity: {expected_complexity}
 key_insight: {key_insight}
 must_handle: {must_handle}
 forbidden_patterns: {forbidden_patterns}
 
-[테스트케이스 목록]
+[Test cases]
 {test_cases_summary}
 
-위 문제를 4축 품질 기준으로 심사하라. JSON으로만 응답."""
+Review this problem against the 4 quality criteria above. Respond with JSON only."""
 
 # ─── solve_problem ────────────────────────────────────────────────────────────
-# Ollama LLM이 문제를 직접 풀어 검증하는 프롬프트
+# Ollama LLM directly solves the problem to verify solvability.
 
 SOLVER_SYSTEM = """\
-당신은 알고리즘 문제를 푸는 전문 프로그래머다.
-주어진 문제를 읽고 Python 3.11 코드로 정확히 해결하라.
+You are an expert competitive programmer.
+Read the given problem and solve it correctly with Python 3.11 code.
 
-규칙:
-- 표준 라이브러리만 사용 (외부 패키지 금지)
-- stdin으로 입력을 받고 stdout으로 출력
-- 입출력 형식을 statement에 명시된 대로 정확히 따른다
-- 코드만 출력. 설명, 마크다운 펜스, 백틱 없이 순수 Python 코드만."""
+Rules:
+- Use only the Python standard library (no external packages).
+- Read input from stdin, write output to stdout.
+- Follow the input/output format exactly as specified in the statement.
+- Output Python code ONLY. No explanation, no markdown fences, no backticks —
+  just raw Python code."""
 
 SOLVER_USER = """\
-[문제]
+[Problem]
 {title}
 
 {statement}
 
-[샘플 테스트케이스]
+[Sample test cases]
 {sample_cases}
 
-Python 코드만 출력하라."""
+Output Python code only."""
 
 # ─── compare_to_original ──────────────────────────────────────────────────────
-# 단일 judge가 원본 문제와 변형 후보를 나란히 놓고 3축 수치를 매긴다.
-# 게이트가 아니라 순수 기록 — authoring_meta에 그대로 저장돼 viewer가 노출한다.
+# A single judge scores the variant against the original on 3 axes.
+# Not a gate — purely recorded. authoring_meta stores it; the viewer surfaces it.
+# The rationale output is shown in the viewer, so write it in Korean.
 
 COMPARE_SYSTEM = """\
-당신은 알고리즘 문제 변형 품질을 정량 평가하는 심사관이다. 원본 문제와
-변형 후보를 비교해 다음 3축을 각각 0.0~1.0 실수로 채점한다.
+You quantitatively review the quality of an algorithm-problem variant. Given
+the original problem and the candidate variant, score each of the 3 axes below
+as a real number in [0.0, 1.0].
 
-평가 축:
+Think step by step (internally, in English):
+1. Compare statements: which constraints / input shapes overlap, which differ?
+2. Compare intent_rubric (expected_approach, expected_complexity, key_insight):
+   same algorithm class? same complexity class?
+3. Check the variant for internal contradictions (statement vs. rubric vs. test cases).
+4. Derive the three scores and a brief overall rationale.
 
-1. hallucination_score (0=환각 없음, 1=환각 심함)
-   - 변형의 statement·intent_rubric·test_cases가 서로 모순되는가
-   - 원본 카테고리에 존재하지 않는 자료구조/연산을 가정하는가
-   - statement에서 언급한 적 없는 제약/입력 형식을 reference에서 요구하는가
-   - intent_rubric.must_handle 항목이 statement에서 추론 불가능한가
-   * 환각이 적을수록 0에 가깝게.
+Evaluation axes:
 
-2. intent_similarity (0=원본과 의도 무관, 1=원본 의도와 동일 부류)
-   - 같은 알고리즘 카테고리/풀이 부류를 유지하는가
-   - key_insight·expected_approach가 원본과 같은 사고 흐름인가
-   - 표면적 서술만 다르고 풀이 본질이 동일한가
-   * 카테고리 이탈은 0에 가깝게. 동일 부류 안에서의 변형은 1에 가깝게.
-   * 원본과 글자 그대로 똑같으면 변형 실패지만 이 축에서는 1로 본다
-     (변형 다양성은 별도 축이 아니라 이 시스템에선 평가하지 않는다).
+1. hallucination_score (0=no hallucination, 1=heavy hallucination)
+   - Does the variant's statement / intent_rubric / test_cases contradict each other?
+   - Does it assume data structures or operations outside the original's category?
+   - Does reference_code require constraints / input formats never mentioned in the statement?
+   - Are any intent_rubric.must_handle items un-inferable from the statement?
+   * Less hallucination → closer to 0.
 
-3. difficulty_similarity (0=난이도 크게 다름, 1=거의 동일)
-   - expected_complexity가 같은 빅오 클래스인가
-   - 입력 범위·time_limit_ms·memory_limit_mb가 원본과 비슷한가
-   - must_handle 항목 수와 엣지 케이스 분량이 비슷한가
-   * 한 단계 더 쉬움/어려움 → 0.5 부근, 비슷 → 0.8 이상.
+2. intent_similarity (0=unrelated intent, 1=same intent class as original)
+   - Does it stay in the same algorithm category / solving class?
+   - Are key_insight and expected_approach the same reasoning flow as the original?
+   - Is only the surface description different while the solving essence is the same?
+   * Category drift → close to 0. Variation within the same class → close to 1.
+   * If the candidate is literally identical to the original, the variation
+     failed, but on THIS axis we still score 1 (variation diversity is not
+     measured by this system).
 
-출력은 단일 JSON 객체. 마크다운 금지. 스키마:
+3. difficulty_similarity (0=very different difficulty, 1=nearly identical)
+   - Is expected_complexity the same big-O class?
+   - Are input range / time_limit_ms / memory_limit_mb close to the original?
+   - Are must_handle count and edge-case volume comparable?
+   * One step easier/harder → around 0.5. Similar → 0.8 or above.
+
+Output a single JSON object. No markdown.
+The "rationale" field MUST be written in Korean (the viewer displays it as-is).
+All score fields are language-neutral.
 
 {
   "hallucination_score": 0.0~1.0,
   "intent_similarity": 0.0~1.0,
   "difficulty_similarity": 0.0~1.0,
-  "rationale": "<3축을 한 단락에 종합 설명. 어느 축이 왜 그 점수인지 간단히>"
+  "rationale": "<3축을 한 단락에 종합 설명 (한국어). 어느 축이 왜 그 점수인지 간단히>"
 }"""
 
 COMPARE_USER = """\
-[원본 문제]
-제목: {orig_title}
-카테고리: {orig_category} / 레벨: {orig_level}
+[Original problem]
+Title: {orig_title}
+Category: {orig_category} / Level: {orig_level}
 time_limit_ms: {orig_time_limit_ms} / memory_limit_mb: {orig_memory_limit_mb}
 
-서술:
+Statement:
 {orig_statement}
 
-원본 intent_rubric:
+Original intent_rubric:
 - expected_approach: {orig_expected_approach}
 - expected_complexity: {orig_expected_complexity}
 - key_insight: {orig_key_insight}
 - must_handle: {orig_must_handle}
 - forbidden_patterns: {orig_forbidden_patterns}
 
-[변형 후보]
-제목: {cand_title}
-카테고리: {cand_category} / 레벨: {cand_level}
+[Candidate variant]
+Title: {cand_title}
+Category: {cand_category} / Level: {cand_level}
 time_limit_ms: {cand_time_limit_ms} / memory_limit_mb: {cand_memory_limit_mb}
 
-서술:
+Statement:
 {cand_statement}
 
-후보 intent_rubric:
+Candidate intent_rubric:
 - expected_approach: {cand_expected_approach}
 - expected_complexity: {cand_expected_complexity}
 - key_insight: {cand_key_insight}
 - must_handle: {cand_must_handle}
 - forbidden_patterns: {cand_forbidden_patterns}
 
-후보 테스트케이스 요약:
+Candidate test-case summary:
 {cand_test_cases_summary}
 
-위 두 문제를 비교해 3축 점수와 rationale을 JSON으로만 응답하라."""
+Compare the two problems and produce the 3-axis scores and rationale.
+Respond with JSON only."""
