@@ -22,12 +22,22 @@ Think step by step (internally, in English):
    the solving flows they already cover.
 2. Pick a NEW variation that stays in the same algorithm category but uses a
    different angle / input shape / sub-problem framing.
-3. Draft the statement: input format, input ranges, output format must all be unambiguous.
-4. Fill the intent_rubric: must_handle items should each be testable by a
+3. Choose an EVERYDAY concrete scenario to frame the problem (shopping,
+   school, food, sports, simple games, public transport, weather, pets,
+   delivery, library, etc.). The scenario should make the problem feel like
+   a real situation, not a textbook exercise.
+4. Draft the statement in that scenario. Input format, input ranges, and
+   output format must all be unambiguous, but the surrounding narrative
+   should not require prior CS or math vocabulary.
+5. Fill the intent_rubric: must_handle items should each be testable by a
    distinct test case; forbidden_patterns must be specific enough for an LLM
    to statically detect them in student code.
-5. Sanity-check: is expected_approach a flow (procedure), not an outcome?
-   Is expected_complexity tight enough to disqualify naive solutions?
+6. Sanity-check:
+   - Is expected_approach a flow (procedure), not an outcome?
+   - Is expected_complexity tight enough to disqualify naive solutions?
+   - Could a student who has never taken a CS / data-structures course
+     still UNDERSTAND THE QUESTION (even if solving it requires CS skill)?
+     If not, rewrite the statement.
 
 Rules you MUST follow:
 
@@ -41,6 +51,47 @@ Rules you MUST follow:
 - Each must_handle item must be verifiable by a separate test case.
 - expected_approach is a flow, not a result. "Compute factorial" is too
   shallow. Write the procedure, e.g. "Accumulate the product from 1 to n".
+
+Statement style rules (these apply to "title" and "statement" only — the
+intent_rubric remains technical because judges read it):
+
+- Prefer everyday scenarios over abstract "given an array / graph / string"
+  framings. Numbers should represent something concrete (prices, distances,
+  scores, times, counts of items) rather than nameless integers when feasible.
+- Do NOT name algorithms or data structures in the statement. Forbidden words
+  include (한국어 기준): 동적계획법/DP, BFS, DFS, 너비우선/깊이우선 탐색,
+  이분 탐색/이진 탐색, 최소신장트리/MST, 다익스트라, 그리디, 백트래킹,
+  해시맵, 스택/큐, 그래프, 트리, 순열, 조합, 누적합, 슬라이딩 윈도우 등.
+  Describe the WHAT, not the HOW. The student is supposed to discover the
+  algorithm; do not name it for them.
+- Do not assume domain knowledge outside everyday life. No chess notation,
+  no music theory, no physics formulas, no chemistry, no obscure cultural or
+  historical references. If the scenario needs a term, pick one a middle/high
+  school student would already know.
+- If a math term is unavoidable (예: 공약수, 소수, 나머지, 절댓값), define
+  it briefly inline inside the statement so the student does not need to
+  look it up. Prefer the description over the term when both work.
+- Keep the narrative SHORT. A single paragraph of context, then a clear
+  task sentence ("…일 때, …를 출력하라."), then the input/output format
+  blocks. Do not pad with flavor text.
+- The title should describe the scenario concretely, not the algorithm.
+  GOOD: "카페 매출 구간". BAD: "최대 부분 배열 합".
+
+Statement style examples (illustrative — do not copy these exact problems):
+
+Example 1 — same problem, two framings:
+  BAD  (too technical): "정수 배열이 주어졌을 때, 연속된 부분 배열의 합 중 최댓값을 구하라."
+  GOOD (everyday):     "민준이는 카페에서 한 시간 단위로 매출을 기록한다. 어떤 시간엔 손해를 보고 어떤 시간엔 이익을 봤다.
+                        연속된 몇 시간을 합쳐 봤을 때 가장 큰 매출이 나오는 구간의 합을 출력하라."
+
+Example 2:
+  BAD  (jargon):       "BFS를 이용해 시작점에서 도착점까지의 최단 거리를 구하라."
+  GOOD (everyday):     "지하철 노선도가 주어진다. A역에서 B역까지 가는 데 필요한 최소 환승 횟수를 출력하라."
+
+Example 3:
+  BAD  (background-heavy): "체스판 위에서 나이트의 최단 이동 횟수를 구하라."
+  GOOD (everyday):         "8x8 칸으로 된 보드 위에 한 마리의 말이 있다. 이 말은 한 번에 'ㄱ'자 모양으로만 이동할 수 있다
+                            (가로 2칸·세로 1칸, 또는 가로 1칸·세로 2칸). 시작 칸에서 목표 칸까지 가는 데 필요한 최소 이동 횟수를 출력하라."
 
 Language of the output JSON:
 - "title" and "statement": Korean (students read these).
