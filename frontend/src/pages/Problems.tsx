@@ -276,7 +276,7 @@ function WeekSection({
 }
 
 export function Problems() {
-  const { session, profile } = useAuth()
+  const { session, profile, profileError } = useAuth()
   const navigate = useNavigate()
   const [problems, setProblems] = useState<ProblemSummary[] | null>(null)
   const [allCategories, setAllCategories] = useState<string[]>([])
@@ -294,22 +294,22 @@ export function Problems() {
     setProfileModalOpen(true)
   }, [])
 
-  const metadata = (session?.user.user_metadata ?? {}) as {
-    grade?: number
-    department?: string
-    nickname?: string
-    anonymous?: boolean
-  }
+  // 프로필 완성 여부는 backend(/me)가 단일 source of truth — Header.tsx의
+  // needsProfile과 동일 기준. Supabase user_metadata는 프로필 설정 플로우가
+  // 기록하지 않으므로 여기서 참조하면 안 된다.
   const hasCompleteProfile =
-    session !== null &&
-    Boolean(metadata.grade) &&
-    Boolean(metadata.department) &&
-    Boolean(metadata.nickname) &&
-    typeof metadata.anonymous === 'boolean'
+    profile !== null &&
+    Boolean(profile.grade) &&
+    Boolean(profile.department) &&
+    Boolean(profile.nickname)
+  // 로그인은 됐지만 /me 응답이 아직 안 온 상태. 이때 모달을 띄우면 깜빡이므로
+  // 판정을 보류하고 그대로 진입시킨다 (실패한 경우는 profileError로 구분).
+  const profilePending =
+    session !== null && profile === null && profileError === null
 
   const handleOpenProblem = useCallback(
     (id: number) => {
-      if (!session) {
+      if (!session || profilePending) {
         navigate(`/problems/${id}`)
         return
       }
@@ -320,7 +320,7 @@ export function Problems() {
       }
       navigate(`/problems/${id}`)
     },
-    [session, hasCompleteProfile, navigate],
+    [session, profilePending, hasCompleteProfile, navigate],
   )
 
   const groupedByWeek = useMemo(() => {
