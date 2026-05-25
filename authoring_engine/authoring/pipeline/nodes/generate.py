@@ -4,7 +4,14 @@ from jcq_shared.schemas import IntentRubric
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
-from ...config import AUTHOR_MODEL, AUTHOR_NUM_CTX, OLLAMA_BASE_URL, VARIANT_COUNT
+from ...config import (
+    AUTHOR_MODEL,
+    AUTHOR_NUM_CTX,
+    AUTHOR_TEMPERATURE,
+    OLLAMA_BASE_URL,
+    OLLAMA_KEEP_ALIVE,
+    VARIANT_COUNT,
+)
 from ...schemas import AuthoringState, CandidateProblem
 from ..prompts import DRAFT_SYSTEM, DRAFT_USER, SOLUTION_SYSTEM, SOLUTION_USER
 
@@ -41,11 +48,11 @@ def generate_variants(state: AuthoringState) -> dict:
 
     llm = ChatOllama(
         model=AUTHOR_MODEL,
-        temperature=0,
+        temperature=AUTHOR_TEMPERATURE,
         format="json",
         base_url=OLLAMA_BASE_URL,
         num_ctx=AUTHOR_NUM_CTX,
-        keep_alive="30m",
+        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     candidates: list[CandidateProblem] = []

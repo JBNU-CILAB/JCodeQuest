@@ -4,16 +4,20 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
 from ...backend_client import sandbox_run
-from ...config import OLLAMA_BASE_URL, SOLVER_PASS_MIN_AC
+from ...config import (
+    ENSEMBLE_MODELS,
+    ENSEMBLE_NUM_CTX,
+    ENSEMBLE_TEMPERATURE,
+    OLLAMA_BASE_URL,
+    OLLAMA_KEEP_ALIVE,
+    SOLVER_PASS_MIN_AC,
+    SOLVER_SAMPLE_LIMIT,
+)
 from ...schemas import AuthoringState
 from ..prompts import SOLVER_SYSTEM, SOLVER_USER
 
-# 품질 심사와 동일한 3 LLM이 이번엔 문제 풀이자로 참가
-_SOLVER_MODELS = [
-    ("Melchior", "qwen2.5-coder:14b-instruct-q5_K_M"),
-    ("Balthasar", "deepseek-coder-v2:lite"),
-    ("Casper", "llama3.1:8b"),
-]
+# 품질 심사와 동일한 3 LLM이 이번엔 문제 풀이자로 참가 (config.ENSEMBLE_MODELS, env로 설정)
+_SOLVER_MODELS = ENSEMBLE_MODELS
 
 
 def _extract_code(text: str) -> str:
@@ -34,7 +38,7 @@ def _solve_one(
     sample_cases = [tc for tc in test_cases if tc.get("is_sample")]
 
     sample_text_parts = []
-    for tc in sample_cases[:2]:
+    for tc in sample_cases[:SOLVER_SAMPLE_LIMIT]:
         sample_text_parts.append(
             f"입력:\n{tc.get('stdin', '')}\n출력:\n{tc.get('expected_stdout', '')}"
         )
@@ -42,10 +46,10 @@ def _solve_one(
 
     llm = ChatOllama(
         model=model,
-        temperature=0,
+        temperature=ENSEMBLE_TEMPERATURE,
         base_url=OLLAMA_BASE_URL,
-        num_ctx=8192,
-        keep_alive="30m",
+        num_ctx=ENSEMBLE_NUM_CTX,
+        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     try:
