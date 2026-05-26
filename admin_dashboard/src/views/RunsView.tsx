@@ -19,6 +19,90 @@ type PendingDelete =
   | { kind: "one"; id: string; title: string }
   | { kind: "many"; ids: string[] };
 
+/* ── run 결과 판정 (오판 방지) ──────────────────────────────────────────
+   인프라 실패(failed) vs 전량 탈락(done·saved 0) vs 부분/완전 성공을 구분.
+   거친 라벨은 RunSummary만으로, 상세 사유는 node_states 탈락 퍼널로 계산. */
+type OutcomeTone = "gray" | "red" | "amber" | "blue" | "green";
+interface RunOutcome { kind: "running" | "failed" | "empty" | "partial" | "success"; chip: string; tone: OutcomeTone; }
+
+function runOutcome(r: { status: string; saved_count?: number; target_count?: number }): RunOutcome {
+  if (r.status === "running") return { kind: "running", chip: "진행 중", tone: "gray" };
+  if (r.status === "failed") return { kind: "failed", chip: "실패", tone: "red" };
+  const saved = r.saved_count ?? 0;
+  const target = r.target_count ?? 0;
+  if (saved === 0) return { kind: "empty", chip: "전량 탈락", tone: "amber" };
+  if (target && saved < target) return { kind: "partial", chip: `부분 ${saved}/${target}`, tone: "blue" };
+  return { kind: "success", chip: `성공 ${saved}`, tone: "green" };
+}
+
+/* 게이트 노드 순서 + 사람이 읽는 라벨 — 탈락 퍼널 산출용. persist는 sink라 제외. */
+const GATE_ORDER = ["verify_candidates", "judge_candidates", "solve_candidates", "attack_candidates", "compare_to_original"];
+const GATE_LABEL: Record<string, string> = {
+  verify_candidates: "verify(레퍼런스 실행)",
+  judge_candidates: "judge(품질 심사)",
+  solve_candidates: "solve(풀이 가능성)",
+  attack_candidates: "attack(테스트 변별력)",
+  compare_to_original: "compare(환각/의도)",
+};
+
+/* node_states의 candidates_in/out 을 게이트 순서로 이어 '어디서 가장 많이 떨어졌나' 산출. */
+function attritionReason(detail: RunDetailT): { gen0: boolean; text: string | null } {
+  const ns = detail.node_states || {};
+  const gen = ns["generate_variants"];
+  if (gen && gen.status === "done" && (gen.candidates_out ?? 0) === 0) {
+    return { gen0: true, text: "generate_variants가 후보를 만들지 못함" };
+  }
+  let worst: { node: string; inn: number; drop: number } | null = null;
+  const drops: string[] = [];
+  for (const g of GATE_ORDER) {
+    const s = ns[g];
+    if (!s || s.candidates_in == null || s.candidates_out == null) continue;
+    const drop = s.candidates_in - s.candidates_out;
+    if (drop > 0) {
+      drops.push(`${GATE_LABEL[g] ?? g} −${drop}`);
+      if (!worst || drop > worst.drop) worst = { node: g, inn: s.candidates_in, drop };
+    }
+  }
+  if (worst) {
+    const lead = `${GATE_LABEL[worst.node] ?? worst.node}에서 ${worst.drop}/${worst.inn} 탈락`;
+    return { gen0: false, text: drops.length > 1 ? `${lead} · 분산(${drops.join(", ")})` : lead };
+  }
+  return { gen0: false, text: null };
+}
+
+/* run 상단 결과 요약 배너 — outcome 칩 + 한 줄 사유 + fail-open 경고. */
+function RunOutcomeBanner({ detail }: { detail: RunDetailT }) {
+  const oc = runOutcome(detail);
+  if (oc.kind === "running") return null;
+  const failOpen = detail.errors?.length ?? 0;
+  let long = "";
+  let reason: string | null = null;
+  if (oc.kind === "failed") {
+    long = detail.failed_at_node ? `인프라 실패 — ${detail.failed_at_node} 노드에서 중단` : "인프라 실패";
+    reason = (detail.node_states?.[detail.failed_at_node ?? ""]?.error ?? "").slice(0, 140) || null;
+  } else if (oc.kind === "empty") {
+    const a = attritionReason(detail);
+    long = a.gen0 ? "생성 0 — 후보가 만들어지지 않음" : "전량 탈락 — 모든 후보가 게이트에서 탈락";
+    reason = a.text;
+  } else if (oc.kind === "partial") {
+    long = `부분 성공 — ${detail.saved_count}/${detail.target_count} 저장`;
+    reason = attritionReason(detail).text;
+  } else {
+    long = `성공 — ${detail.saved_count}개 저장`;
+  }
+  return (
+    <div className={`run-outcome tone-${oc.tone}`}>
+      <span className={`outcome-chip tone-${oc.tone}`}>{oc.chip}</span>
+      <span className="run-outcome-text">{long}{reason ? ` · ${reason}` : ""}</span>
+      {failOpen > 0 && (
+        <span className="outcome-warn" title="fail-open으로 무시된 오류 — 일부 게이트가 우회됐을 수 있음">
+          ⚠ fail-open {failOpen}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ── Runs Sidebar ──────────────────────────────────────────────────────── */
 function RunsSidebar({
   runs, selectedId, onSelect, onNew, onRequestDelete,
@@ -112,9 +196,7 @@ function RunsSidebar({
                 onClick={() => (selectMode ? onToggleSelect(r.id) : onSelect(r.id))}
               >
                 <div className="run-card-head">
-                  <span className={`pill ${r.status}`} style={{ padding: "2px 7px", fontSize: 10 }}>
-                    <span className="dot" />{r.status}
-                  </span>
+                  {(() => { const oc = runOutcome(r); return <span className={`outcome-chip tone-${oc.tone}`}>{oc.chip}</span>; })()}
                   <span className="run-card-id">{r.id.slice(0, 12)}…</span>
                 </div>
                 <div className="run-card-title">
@@ -460,16 +542,100 @@ function CodeBlock({ text, kind }: { text: string; kind?: "error" | "plain" }) {
   );
 }
 
-/* 메시지 말풍선 묶음. */
+/* 문자열이 JSON(객체/배열)이면 파싱해서 반환 — ```json 펜스/앞뒤 잡텍스트 관대 처리. 아니면 null. */
+function tryParseJson(text: string): unknown {
+  if (!text) return null;
+  let t = text.trim();
+  const fence = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fence) t = fence[1].trim();
+  if (!(t.startsWith("{") || t.startsWith("["))) {
+    const s = t.indexOf("{"), e = t.lastIndexOf("}");
+    if (s >= 0 && e > s) t = t.slice(s, e + 1); else return null;
+  }
+  try {
+    const v = JSON.parse(t);
+    return v && typeof v === "object" ? v : null;
+  } catch { return null; }
+}
+
+/* 단일 JSON 값 렌더 — 숫자(0~1이면 가로 막대)·불리언(칩)·문자열·배열·중첩객체. */
+function JsonValue({ v }: { v: unknown }) {
+  if (typeof v === "number") {
+    if (Number.isFinite(v) && v >= 0 && v <= 1) {
+      return (
+        <div className="jbar">
+          <div className="jbar-track"><div className="jbar-fill" style={{ width: `${v * 100}%` }} /></div>
+          <span className="jbar-val">{v.toFixed(3)}</span>
+        </div>
+      );
+    }
+    return <span className="jnum">{v}</span>;
+  }
+  if (typeof v === "boolean") return <span className={`jbool ${v ? "on" : "off"}`}>{v ? "✓ true" : "✗ false"}</span>;
+  if (v == null) return <span className="text-dim">null</span>;
+  if (typeof v === "string") return v ? <div className="jstr">{v}</div> : <span className="text-dim">""</span>;
+  if (Array.isArray(v)) {
+    if (!v.length) return <span className="text-dim">비어 있음</span>;
+    const prim = v.every((x) => x == null || typeof x !== "object");
+    if (prim) return <ul className="jlist">{v.map((x, i) => <li key={i}>{String(x)}</li>)}</ul>;
+    return <div className="jnest">{v.map((x, i) => <div key={i}><StructuredJson data={x} /></div>)}</div>;
+  }
+  if (typeof v === "object") return <div className="jnest"><StructuredJson data={v} /></div>;
+  return <span>{String(v)}</span>;
+}
+
+/* JSON 객체/배열 → key·value 행 목록. 숫자 비율은 막대, 점수/불리언이 한눈에. */
+function StructuredJson({ data }: { data: unknown }) {
+  const entries: [string, unknown][] = Array.isArray(data)
+    ? data.map((v, i) => [String(i), v])
+    : data && typeof data === "object"
+      ? Object.entries(data as Record<string, unknown>)
+      : [];
+  if (!entries.length) return <JsonValue v={data} />;
+  return (
+    <div className="jview">
+      {entries.map(([k, v]) => (
+        <div className="jrow" key={k}>
+          <span className="jkey">{k}</span>
+          <div className="jval"><JsonValue v={v} /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* span.inputs/outputs(이미 객체) 렌더 — 객체/JSON이면 구조화, 너무 크면 raw 폴백. */
+function IOValue({ v }: { v: unknown }) {
+  if (v == null) return <span className="text-dim">—</span>;
+  let obj: unknown = v;
+  if (typeof v === "string") {
+    const j = tryParseJson(v);
+    if (!j) return <CodeBlock text={v} />;
+    obj = j;
+  }
+  if (typeof obj !== "object") return <JsonValue v={obj} />;
+  let size = 0;
+  try { size = JSON.stringify(obj).length; } catch { size = Infinity; }
+  // 거대한 LangGraph state는 구조화 트리가 무거우니 raw로 표시(스크롤·복사 가능)
+  if (size > 40000) return <CodeBlock text={jsonPreview(obj)} />;
+  return <StructuredJson data={obj} />;
+}
+
+/* 메시지 말풍선 묶음 — system 외 메시지가 JSON이면 구조화 렌더. */
 function ChatView({ messages }: { messages: ChatMsg[] }) {
   return (
     <div className="chat-view">
-      {messages.map((m, i) => (
-        <div key={i} className={`chat-msg role-${m.role}`}>
-          <div className="chat-role">{m.role}</div>
-          <div className="chat-content">{m.content || "—"}</div>
-        </div>
-      ))}
+      {messages.map((m, i) => {
+        const j = m.role !== "system" ? tryParseJson(m.content) : null;
+        return (
+          <div key={i} className={`chat-msg role-${m.role}`}>
+            <div className="chat-role">{m.role}{j ? " · json" : ""}</div>
+            {j
+              ? <div className="chat-content struct"><StructuredJson data={j} /></div>
+              : <div className="chat-content">{m.content || "—"}</div>}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -484,16 +650,169 @@ function IOBlock({ dir, label, children }: { dir: "in" | "out"; label: string; c
   );
 }
 
+/* ── persist_approved 전용: 후보를 생성/탈락으로 분류 ──────────────────── */
+type Cand = Record<string, unknown>;
+const _snum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/* persist span의 inputs/outputs에서 candidates 배열을 찾는다. */
+function findCandidates(span: SpanT): Cand[] | null {
+  for (const src of [span.outputs, span.inputs]) {
+    const c = src && (src as Record<string, unknown>).candidates;
+    if (Array.isArray(c) && c.length) return c as Cand[];
+  }
+  return null;
+}
+
+/* 탈락 1차 사유 — persist 게이트(solver·discrimination·compare) + judge 순. */
+function failReason(c: Cand): string {
+  if (c.solver_passed === false) return "풀이 불가 (solve)";
+  if (c.discrimination_passed === false) return "테스트 변별력 부족 (attack)";
+  if (c.compare_passed === false) return "환각/의도 불일치 (compare)";
+  if (c.judge_passed === false) return "품질 미달 (judge)";
+  if (c.verify_passed === false) return "레퍼런스 검증 실패 (verify)";
+  return "저장 실패";
+}
+
+function GateChip({ label, st, val }: { label: string; st: "ok" | "bad" | "na"; val?: number | null }) {
+  return (
+    <span className={`gate-chip ${st}`}>
+      {st === "ok" ? "✓" : st === "bad" ? "✗" : "·"} {label}
+      {typeof val === "number" ? ` ${val.toFixed(2)}` : ""}
+    </span>
+  );
+}
+
+function CandRow({ c, saved, onPreview }: { c: Cand; saved: boolean; onPreview?: (c: Cand) => void }) {
+  const gate = (k: string): "ok" | "bad" | "na" => (c[k] === true ? "ok" : c[k] === false ? "bad" : "na");
+  const hall = _snum(c.comparison_hallucination);
+  const intent = _snum(c.comparison_intent_similarity);
+  const quality = _snum(c.judge_score);
+  const note = (c.comparison_error || c.comparison_rationale) as string | undefined;
+  const title = (typeof c.title === "string" && c.title) || `후보 #${c.index ?? "?"}`;
+  return (
+    <button
+      className={`pcand ${saved ? "saved" : "failed"}`}
+      onClick={() => onPreview?.(c)}
+      title="문제 미리보기 열기"
+    >
+      <div className="pcand-head">
+        <span className="pcand-title">{title}</span>
+        {saved
+          ? <span className="pcand-tag ok">생성 #{String(c.saved_id)}</span>
+          : <span className="pcand-tag bad">탈락 · {failReason(c)}</span>}
+      </div>
+      <div className="pcand-gates">
+        <GateChip label="judge" st={gate("judge_passed")} val={quality} />
+        <GateChip label="solve" st={gate("solver_passed")} />
+        <GateChip label="attack" st={gate("discrimination_passed")} val={_snum(c.discrimination_score)} />
+        <GateChip label="compare" st={gate("compare_passed")} />
+      </div>
+      {(hall != null || intent != null) && (
+        <div className="pcand-metrics">
+          {hall != null && <span>환각 {hall.toFixed(2)}</span>}
+          {intent != null && <span>의도 {intent.toFixed(2)}</span>}
+        </div>
+      )}
+      {!saved && note && <div className="pcand-note">{note.slice(0, 180)}</div>}
+      <span className="pcand-go">문제 미리보기 →</span>
+    </button>
+  );
+}
+
+function PersistClassification({ cands, onPreview }: { cands: Cand[]; onPreview?: (c: Cand) => void }) {
+  const savedC = cands.filter((c) => c.saved_id != null);
+  const failedC = cands.filter((c) => c.saved_id == null);
+  return (
+    <div className="persist-class">
+      <div className="pclass-group">
+        <div className="pclass-head ok">생성 <span className="n">{savedC.length}</span></div>
+        {savedC.length
+          ? savedC.map((c, i) => <CandRow key={i} c={c} saved onPreview={onPreview} />)
+          : <div className="pclass-empty">없음</div>}
+      </div>
+      <div className="pclass-group">
+        <div className="pclass-head bad">탈락 <span className="n">{failedC.length}</span></div>
+        {failedC.length
+          ? failedC.map((c, i) => <CandRow key={i} c={c} saved={false} onPreview={onPreview} />)
+          : <div className="pclass-empty">없음</div>}
+      </div>
+    </div>
+  );
+}
+
+/* 후보 → 실제 문제 페이지 미리보기 (학생 화면처럼 statement·예제·제약). */
+function ProblemPreview({ cand, onBack }: { cand: Cand; onBack: () => void }) {
+  const s = (v: unknown) => (typeof v === "string" ? v : "");
+  const title = s(cand.title) || `후보 #${cand.index ?? "?"}`;
+  const saved = cand.saved_id != null;
+  const tests = (Array.isArray(cand.test_cases) ? cand.test_cases : []) as Record<string, unknown>[];
+  let samples = tests.filter((t) => t && t.is_sample === true);
+  if (!samples.length) samples = tests.slice(0, 2);
+  const refCode = s(cand.reference_code);
+  const pts = _snum(cand.points), tl = _snum(cand.time_limit_ms), mem = _snum(cand.memory_limit_mb);
+  return (
+    <div className="prob-preview">
+      <div className="prob-preview-bar">
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>← 후보 목록</button>
+        {saved
+          ? <span className="pcand-tag ok">생성 #{String(cand.saved_id)}</span>
+          : <span className="pcand-tag bad">탈락 후보 · 미리보기</span>}
+      </div>
+      <article className="prob-doc">
+        <h1 className="prob-title">{title}</h1>
+        <div className="prob-meta">
+          {s(cand.category) && <span className="prob-chip cat">{s(cand.category)}</span>}
+          {s(cand.level) && <span className="prob-chip lvl">{s(cand.level)}</span>}
+          {pts != null && <span className="prob-meta-item">{pts}점</span>}
+          {tl != null && <span className="prob-meta-item">{tl}ms</span>}
+          {mem != null && <span className="prob-meta-item">{mem}MB</span>}
+        </div>
+        <section className="prob-section">
+          <h3>문제</h3>
+          <div className="prob-statement">{s(cand.statement) || "—"}</div>
+        </section>
+        {samples.length > 0 && (
+          <section className="prob-section">
+            <h3>예제</h3>
+            <div className="prob-samples">
+              {samples.map((t, i) => (
+                <div className="prob-sample" key={i}>
+                  <div className="prob-sample-col">
+                    <div className="prob-io-label">입력 {i + 1}</div>
+                    <pre className="prob-io">{s(t.stdin) || "—"}</pre>
+                  </div>
+                  <div className="prob-sample-col">
+                    <div className="prob-io-label">출력 {i + 1}</div>
+                    <pre className="prob-io">{s(t.expected_stdout) || "—"}</pre>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {refCode && (
+          <details className="prob-section prob-ref">
+            <summary>레퍼런스 코드</summary>
+            <pre className="prob-code">{refCode}</pre>
+          </details>
+        )}
+      </article>
+    </div>
+  );
+}
+
 /* 한 span의 I/O 카드 — 헤더 클릭으로 카드 전체를 접고 폄(길이 조절).
-   LLM이면 프롬프트(말풍선)/완성(텍스트)을 우선, 아니면 JSON. raw 토글 제공. */
-function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
+   persist_approved는 생성/탈락 분류, LLM이면 프롬프트/완성, 그 외 JSON. raw 토글 제공. */
+function SpanCard({ span, depth, onPreview }: { span: SpanT; depth: number; onPreview?: (c: Cand) => void }) {
   const tok = span.tokens?.total ?? 0;
   const isLlm = span.run_type === "llm";
   const msgs = isLlm ? findMessages(span.inputs) : null;
   const completion = isLlm ? findCompletion(span.outputs) : null;
   const pretty = msgs != null || completion != null;
-  // LLM/에러 span은 기본 펼침(흥미로운 내용), 래퍼 chain은 기본 접힘 → 목록이 간결.
-  const [open, setOpen] = useState(isLlm || !!span.error);
+  // persist_approved span은 후보 생성/탈락 분류 뷰로 특별 처리
+  const persistCands = span.name === "persist_approved" ? findCandidates(span) : null;
+  // LLM/persist/에러 span은 기본 펼침(흥미로운 내용), 래퍼 chain은 기본 접힘 → 목록이 간결.
+  const [open, setOpen] = useState(isLlm || !!span.error || persistCands != null);
 
   return (
     <div className={`span-card${open ? " open" : ""}`} style={{ marginLeft: depth * 12 }}>
@@ -511,18 +830,31 @@ function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
         <div className="span-card-body">
           {span.error && <CodeBlock text={span.error} kind="error" />}
 
-          {pretty ? (
+          {persistCands ? (
+            <>
+              <PersistClassification cands={persistCands} onPreview={onPreview} />
+              <details className="span-io span-raw"><summary>raw JSON</summary>
+                <div className="span-io-label" style={{ marginTop: 6 }}>inputs</div>
+                <CodeBlock text={jsonPreview(span.inputs)} />
+                <div className="span-io-label">outputs</div>
+                <CodeBlock text={jsonPreview(span.outputs)} />
+              </details>
+            </>
+          ) : pretty ? (
             <>
               {msgs && (
                 <IOBlock dir="in" label={`Input · prompt (${msgs.length} messages)`}>
                   <ChatView messages={msgs} />
                 </IOBlock>
               )}
-              {completion != null && (
-                <IOBlock dir="out" label="Output · completion">
-                  <CodeBlock text={completion || "—"} />
-                </IOBlock>
-              )}
+              {completion != null && (() => {
+                const cj = tryParseJson(completion);
+                return (
+                  <IOBlock dir="out" label={cj ? "Output · completion (구조화)" : "Output · completion"}>
+                    {cj ? <StructuredJson data={cj} /> : <CodeBlock text={completion || "—"} />}
+                  </IOBlock>
+                );
+              })()}
               <details className="span-io span-raw"><summary>raw JSON</summary>
                 <div className="span-io-label" style={{ marginTop: 6 }}>inputs</div>
                 <CodeBlock text={jsonPreview(span.inputs)} />
@@ -532,8 +864,14 @@ function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
             </>
           ) : (
             <>
-              <IOBlock dir="in" label="Input"><CodeBlock text={jsonPreview(span.inputs)} /></IOBlock>
-              <IOBlock dir="out" label="Output"><CodeBlock text={jsonPreview(span.outputs)} /></IOBlock>
+              <IOBlock dir="in" label="Input"><IOValue v={span.inputs} /></IOBlock>
+              <IOBlock dir="out" label="Output"><IOValue v={span.outputs} /></IOBlock>
+              <details className="span-io span-raw"><summary>raw JSON</summary>
+                <div className="span-io-label" style={{ marginTop: 6 }}>inputs</div>
+                <CodeBlock text={jsonPreview(span.inputs)} />
+                <div className="span-io-label">outputs</div>
+                <CodeBlock text={jsonPreview(span.outputs)} />
+              </details>
             </>
           )}
         </div>
@@ -560,12 +898,20 @@ function NodeDrawer({
   const state = detail.node_states?.[nodeKey] ?? { status: "queued" };
   const [tab, setTab] = useState("overview");
   const [collapsed, setCollapsed] = useState(false);
+  const [preview, setPreview] = useState<Cand | null>(null);
+  const prevPreviewOpen = useRef(false);
   // 판사 서브노드를 선택해 열면 해당 LLM I/O가 핵심이므로 inputs/outputs 탭으로 시작.
-  useEffect(() => { setTab(judgeFilter ? "inputs/outputs" : "overview"); setCollapsed(false); }, [nodeKey, judgeFilter]);
+  useEffect(() => { setTab(judgeFilter ? "inputs/outputs" : "overview"); setCollapsed(false); setPreview(null); }, [nodeKey, judgeFilter]);
   // inputs/outputs 탭을 열면 그때 trace span을 lazy 로드 (LangSmith가 느릴 수 있어 on-demand).
   useEffect(() => {
     if (tab === "inputs/outputs" && !collapsed && traceId && spans == null) onLoadSpans(traceId);
   }, [tab, collapsed, traceId, spans, onLoadSpans]);
+  // 미리보기를 '열 때 한 번만' 드로어를 넓힌다 — 이후 사용자가 좁히면 그대로 둔다.
+  useEffect(() => {
+    const isOpen = preview != null;
+    if (isOpen && !prevPreviewOpen.current && !wide) onToggleWide();
+    prevPreviewOpen.current = isOpen;
+  }, [preview, wide, onToggleWide]);
   if (!def) return null;
 
   const tokens = state.tokens ?? {};
@@ -605,6 +951,9 @@ function NodeDrawer({
         </div>
       </div>
 
+      {preview && <ProblemPreview cand={preview} onBack={() => setPreview(null)} />}
+
+      <div className="drawer-main" hidden={!!preview}>
       <div className="drawer-tabs">
         {tabs.map((t) => {
           const active = tab === t;
@@ -753,7 +1102,7 @@ function NodeDrawer({
                   <div className="section-title">{ioLabel} ({nodeSpans.length} spans)</div>
                   <div className="span-tree">
                     {nodeSpans.map((s) => (
-                      <SpanCard key={s.id} span={s} depth={!judgeFilter && s.name === nodeKey ? 0 : 1} />
+                      <SpanCard key={s.id} span={s} depth={!judgeFilter && s.name === nodeKey ? 0 : 1} onPreview={setPreview} />
                     ))}
                   </div>
                 </>
@@ -793,6 +1142,7 @@ function NodeDrawer({
             ].filter(Boolean).map((l, i) => <div key={i}>{l as string}</div>)}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
@@ -1111,6 +1461,8 @@ export default function RunsView({ settings }: Props) {
             <span className="run-head-title">파이프라인 runs</span>
           )}
         </div>
+
+        {detail && !showNew && <RunOutcomeBanner detail={detail} />}
 
         <div className="graph-canvas">
           {showNew || !detail ? (
