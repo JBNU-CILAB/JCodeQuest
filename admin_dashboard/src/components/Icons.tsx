@@ -2,6 +2,14 @@
 type P = React.SVGProps<SVGSVGElement>;
 
 export const RailIcons = {
+  home: (p: P) => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" {...p}>
+      <rect x="3" y="3" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="13" y="3" width="8" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="13" y="10" width="8" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="3" y="13" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  ),
   runs: (p: P) => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" {...p}>
       <rect x="3" y="6" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.6" />

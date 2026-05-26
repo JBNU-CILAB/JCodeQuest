@@ -7,7 +7,7 @@ export interface ConnSettings {
 
 export type ConnStatus = "idle" | "ok" | "error" | "loading";
 
-export type Route = "runs" | "problems" | "submissions" | "notices" | "reports" | "stats" | "users";
+export type Route = "home" | "runs" | "problems" | "submissions" | "notices" | "reports" | "stats" | "users";
 
 export interface ProblemRow {
   id: number;

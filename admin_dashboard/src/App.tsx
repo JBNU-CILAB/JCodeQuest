@@ -3,6 +3,7 @@ import type { ConnSettings, ConnStatus, Route } from "./types";
 import { loadSettings, saveSettings, adminFetch } from "./api";
 import { RailIcons } from "./components/Icons";
 import SettingsModal from "./components/SettingsModal";
+import HomeView from "./views/HomeView";
 import RunsView from "./views/RunsView";
 import ProblemsView from "./views/ProblemsView";
 import SubmissionsView from "./views/SubmissionsView";
@@ -12,6 +13,7 @@ import StatsView from "./views/StatsView";
 import UsersView from "./views/UsersView";
 
 const NAV: { route: Route; label: string; Icon: (p: React.SVGProps<SVGSVGElement>) => JSX.Element }[] = [
+  { route: "home",        label: "통합 현황",       Icon: RailIcons.home },
   { route: "runs",        label: "파이프라인 runs", Icon: RailIcons.runs },
   { route: "stats",       label: "통계",            Icon: RailIcons.stats },
   { route: "problems",    label: "문제 관리",       Icon: RailIcons.problems },
@@ -22,6 +24,7 @@ const NAV: { route: Route; label: string; Icon: (p: React.SVGProps<SVGSVGElement
 ];
 
 const ROUTE_TITLE: Record<Route, string> = {
+  home:        "통합 현황",
   runs:        "파이프라인 runs",
   stats:       "통계 · 분석",
   problems:    "문제 관리",
@@ -42,7 +45,7 @@ export default function App() {
   const [settings, setSettings] = useState<ConnSettings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [connStatus, setConnStatus] = useState<ConnStatus>("idle");
-  const [route, setRoute] = useState<Route>("runs");
+  const [route, setRoute] = useState<Route>("home");
 
   const pingHealth = useCallback(async (s: ConnSettings) => {
     setConnStatus("loading");
@@ -116,6 +119,7 @@ export default function App() {
       </header>
 
       {/* ── Main view ── */}
+      {route === "home" && <HomeView settings={settings} />}
       {route === "runs" && <RunsView settings={settings} />}
       {route === "stats" && <StatsView settings={settings} />}
       {route === "problems" && <ProblemsView settings={settings} />}

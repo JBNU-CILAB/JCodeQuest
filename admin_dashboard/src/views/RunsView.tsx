@@ -228,7 +228,7 @@ function PipelineGraph({
   onSelectNode: (k: string) => void;
   zoom: number;
 }) {
-  // 실패/선택 노드를 화면 중앙으로 자동 스크롤 — 포렌식 핵심 어포던스.
+  // 실패/선택 노드를 세로 중앙으로 자동 스크롤 — 포렌식 핵심 어포던스.
   useEffect(() => {
     const target = selectedNode || detail?.failed_at_node;
     if (!target) return;
@@ -236,13 +236,13 @@ function PipelineGraph({
       const el = document.querySelector<HTMLElement>(`[data-node="${target}"]`);
       const wrap = el?.closest<HTMLElement>(".graph-canvas");
       if (!el || !wrap) return;
-      const desired = el.offsetLeft - (wrap.clientWidth - el.offsetWidth) / 2;
-      wrap.scrollTo({ left: Math.max(0, desired), behavior: "smooth" });
+      const desired = el.offsetTop - (wrap.clientHeight - el.offsetHeight) / 2;
+      wrap.scrollTo({ top: Math.max(0, desired), behavior: "smooth" });
     });
   }, [detail?.id, selectedNode, detail?.failed_at_node]);
 
   return (
-    <div className="graph-stage" style={{ transform: `scale(${zoom})` }}>
+    <div className="graph-stage vertical" style={{ transform: `scale(${zoom})` }}>
       <div className="node-row">
         {NODE_DEFS.map((def, i) => {
           const state = statusOf(detail, def.key);
@@ -495,16 +495,23 @@ function NodeDrawer({
   const def = NODE_DEFS.find((n) => n.key === nodeKey);
   const state = detail.node_states?.[nodeKey] ?? { status: "queued" };
   const [tab, setTab] = useState("overview");
-  useEffect(() => { setTab("overview"); }, [nodeKey]);
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => { setTab("overview"); setCollapsed(false); }, [nodeKey]);
   // inputs/outputs 탭을 열면 그때 trace span을 lazy 로드 (LangSmith가 느릴 수 있어 on-demand).
   useEffect(() => {
-    if (tab === "inputs/outputs" && traceId && spans == null) onLoadSpans(traceId);
-  }, [tab, traceId, spans, onLoadSpans]);
+    if (tab === "inputs/outputs" && !collapsed && traceId && spans == null) onLoadSpans(traceId);
+  }, [tab, collapsed, traceId, spans, onLoadSpans]);
   if (!def) return null;
 
   const tokens = state.tokens ?? {};
   const tokTotal = tokens.total ?? 0;
   const tabs = ["overview", "candidates", state.error ? "error" : "inputs/outputs", "logs"];
+
+  // 활성 탭을 다시 누르면 내용 패널 접기/펴기 토글, 다른 탭은 그 탭으로 펼치며 전환.
+  function onTabClick(t: string) {
+    if (t === tab) setCollapsed((c) => !c);
+    else { setTab(t); setCollapsed(false); }
+  }
 
   return (
     <div className="drawer">
@@ -526,12 +533,29 @@ function NodeDrawer({
       </div>
 
       <div className="drawer-tabs">
-        {tabs.map((t) => (
-          <button key={t} className={`drawer-tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>{t}</button>
-        ))}
+        {tabs.map((t) => {
+          const active = tab === t;
+          return (
+            <button
+              key={t}
+              className={`drawer-tab${active ? " active" : ""}${active && collapsed ? " collapsed" : ""}`}
+              onClick={() => onTabClick(t)}
+              title={active ? (collapsed ? "내용 펼치기" : "내용 접기") : t}
+            >
+              {t}
+              {active && <span className="drawer-tab-caret"><Icon.Chevron /></span>}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="drawer-body">
+      {collapsed && (
+        <button className="drawer-collapsed-hint" onClick={() => setCollapsed(false)}>
+          <span className="drawer-tab-caret"><Icon.Chevron /></span> {tab} 내용이 접혔습니다 — 탭을 눌러 펼치기
+        </button>
+      )}
+
+      <div className="drawer-body" hidden={collapsed}>
         {tab === "overview" && (
           <>
             <p style={{ margin: "0 0 16px", color: "var(--muted)", fontSize: 13, lineHeight: 1.6 }}>{def.note}</p>

@@ -1113,8 +1113,14 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .main.runs { grid-template-columns: 300px 1fr 0px; transition: grid-template-columns 0.32s var(--ease); }
 .main.runs.drawer-open { grid-template-columns: 300px 1fr 440px; }
 .main.runs.drawer-open.drawer-wide { grid-template-columns: 300px minmax(0, 1fr) min(62vw, 880px); }
-.main.stats, .main.problems, .main.notices, .main.users,
+.main.home, .main.stats, .main.problems, .main.notices, .main.users,
 .main.submissions, .main.reports { display: block; padding: 28px 36px; overflow: auto; }
+/* 통합 현황 — 레퍼런스 대시보드 느낌의 점 배경 */
+.main.home {
+  background-color: var(--bg-page);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
 
 /* ── Runs sidebar ──────────────────────────────────────────────────────── */
 .runs-sidebar { background: var(--bg-panel); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
@@ -1242,9 +1248,11 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .arrow::after { content: ''; position: absolute; right: -1px; top: 50%; width: 8px; height: 8px; border-top: 2px solid var(--border-strong); border-right: 2px solid var(--border-strong); transform: translateY(-50%) rotate(45deg); }
 .arrow.skipped { background: var(--muted-x); opacity: 0.4; }
 .arrow.skipped::after { border-color: var(--muted-x); }
-.graph-stage.vertical .node-row { flex-direction: column; }
+.graph-stage.vertical { display: block; min-width: 100%; padding: 44px 40px; transform-origin: 50% 0; }
+.graph-stage.vertical .node-row { flex-direction: column; align-items: center; }
 .graph-stage.vertical .arrow { width: 2px; height: 28px; }
 .graph-stage.vertical .arrow::after { right: 50%; top: auto; bottom: -1px; transform: translateX(50%) rotate(135deg); }
+.graph-stage.vertical .graph-legend { justify-content: center; margin-top: 36px; }
 .node-card .badge-side { position: absolute; top: -8px; right: 10px; background: #fef3c7; color: #92400e; font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.06em; text-transform: uppercase; }
 .candidates-strip { display: flex; gap: 3px; margin-top: 4px; align-items: center; }
 .cand-dot { width: 9px; height: 9px; border-radius: 3px; background: var(--st-skipped); transition: background .15s; }
@@ -1266,10 +1274,22 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .drawer-close { background: transparent; border: none; color: var(--muted); padding: 6px; border-radius: 6px; cursor: pointer; display: inline-flex; }
 .drawer-close:hover { background: var(--bg-soft); color: var(--ink); }
 .drawer-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-soft); padding: 0 12px; }
-.drawer-tab { background: transparent; border: none; padding: 10px 14px; font-size: 12.5px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
+.drawer-tab { display: inline-flex; align-items: center; gap: 4px; background: transparent; border: none; padding: 10px 12px; font-size: 12.5px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
 .drawer-tab.active { color: var(--brand-dark); border-bottom-color: var(--brand); }
 .drawer-tab:hover:not(.active) { color: var(--ink-2); }
+/* 활성 탭의 caret — 펼침=아래(90°), 접힘=오른쪽(0°) */
+.drawer-tab-caret { display: inline-flex; color: var(--brand); transform: rotate(90deg); transition: transform .15s var(--ease); }
+.drawer-tab.collapsed .drawer-tab-caret { transform: rotate(0deg); }
+.drawer-collapsed-hint {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 9px 20px; border: none; border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-soft); color: var(--muted); font-size: 12px; font-family: inherit;
+  cursor: pointer; text-align: left;
+}
+.drawer-collapsed-hint:hover { background: var(--bg-muted); color: var(--ink-2); }
+.drawer-collapsed-hint .drawer-tab-caret { color: var(--muted); transform: rotate(0deg); }
 .drawer-body { flex: 1; overflow-y: auto; padding: 18px 20px; }
+.drawer-body[hidden] { display: none; }
 .kv { display: grid; grid-template-columns: 92px 1fr; gap: 8px 12px; font-size: 13px; }
 .kv dt { color: var(--muted); font-weight: 500; }
 .kv dd { margin: 0; color: var(--ink); font-family: var(--font-mono); font-size: 12.5px; word-break: break-all; }
