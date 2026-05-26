@@ -71,6 +71,10 @@ services:
       JCQ_QUEUE_CONCURRENCY: "${JCQ_QUEUE_CONCURRENCY:-1}"
       # DEV ONLY — 3-LLM 앙상블 스킵 (Ollama 없이 개발할 때). prod 금지.
       JCQ_SKIP_ENSEMBLE: "${JCQ_SKIP_ENSEMBLE:-}"
+      # 채점 3-LLM 앙상블 모델 (Melchior/Balthasar/Casper) — authoring과 동일 env로 단일 소스화.
+      JCQ_ENSEMBLE_MODEL_MELCHIOR: "${JCQ_ENSEMBLE_MODEL_MELCHIOR:-qwen3.6:27b}"
+      JCQ_ENSEMBLE_MODEL_BALTHASAR: "${JCQ_ENSEMBLE_MODEL_BALTHASAR:-deepseek-coder-v2:lite}"
+      JCQ_ENSEMBLE_MODEL_CASPER: "${JCQ_ENSEMBLE_MODEL_CASPER:-llama3.1:8b}"
       # LangSmith (선택) — judge 전용 키
       LANGSMITH_API_KEY: "${LANGSMITH_API_KEY_JUDGE:-}"
       LANGSMITH_PROJECT: "${LANGSMITH_PROJECT_JUDGE:-jcq-judge}"
@@ -97,9 +101,9 @@ services:
       JCQ_JUDGE_URL: "http://judge:8002"
       JCQ_INTERNAL_SECRET: "${JCQ_INTERNAL_SECRET}"
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
-      JCQ_AUTHOR_MODEL: "${JCQ_AUTHOR_MODEL:-qwen2.5-coder:14b-instruct-q5_K_M}"
+      JCQ_AUTHOR_MODEL: "${JCQ_AUTHOR_MODEL:-qwen3.6:27b}"
       # 출제 엔진 3-LLM 앙상블 (Melchior/Balthasar/Casper). solve + judge 공통, compare는 Melchior 단독.
-      JCQ_ENSEMBLE_MODEL_MELCHIOR: "${JCQ_ENSEMBLE_MODEL_MELCHIOR:-qwen2.5-coder:14b-instruct-q5_K_M}"
+      JCQ_ENSEMBLE_MODEL_MELCHIOR: "${JCQ_ENSEMBLE_MODEL_MELCHIOR:-qwen3.6:27b}"
       JCQ_ENSEMBLE_MODEL_BALTHASAR: "${JCQ_ENSEMBLE_MODEL_BALTHASAR:-deepseek-coder-v2:lite}"
       JCQ_ENSEMBLE_MODEL_CASPER: "${JCQ_ENSEMBLE_MODEL_CASPER:-llama3.1:8b}"
       # 앙상블 context window (solve/judge/compare 공통). generate/verify의 JCQ_AUTHOR_NUM_CTX와 별개.
@@ -113,7 +117,7 @@ services:
       JCQ_SOLVER_SAMPLE_LIMIT: "${JCQ_SOLVER_SAMPLE_LIMIT:-2}"
       JCQ_VARIANT_COUNT: "${JCQ_VARIANT_COUNT:-5}"
       JCQ_AUTHOR_RETRIES: "${JCQ_AUTHOR_RETRIES:-2}"
-      # 복잡한 문제 JSON truncate 방지용 context window (기본 16384, qwen2.5-coder:14b는 32K까지)
+      # 복잡한 문제 JSON truncate 방지용 context window
       JCQ_AUTHOR_NUM_CTX: "${JCQ_AUTHOR_NUM_CTX:-16384}"
       # verify 재시도 시 temperature — 0이면 결정론적 반복 실패
       JCQ_AUTHOR_RETRY_TEMPERATURE: "${JCQ_AUTHOR_RETRY_TEMPERATURE:-0.4}"
@@ -121,6 +125,17 @@ services:
       JCQ_AUTHOR_PERF_RATIO: "${JCQ_AUTHOR_PERF_RATIO:-0.8}"
       JCQ_JUDGE_PASS_THRESHOLD: "${JCQ_JUDGE_PASS_THRESHOLD:-0.7}"
       JCQ_SOLVER_PASS_MIN_AC: "${JCQ_SOLVER_PASS_MIN_AC:-1}"
+      # judge self-consistency — 1이면 기존 단일 호출, >1이면 N회 샘플 후 다수결/중앙값
+      JCQ_JUDGE_SAMPLES: "${JCQ_JUDGE_SAMPLES:-1}"
+      JCQ_JUDGE_SELFCONSIST_TEMP: "${JCQ_JUDGE_SELFCONSIST_TEMP:-0.3}"
+      # 테스트 변별력 게이트 — 결함 풀이 N개를 만들어 테스트가 최소 MIN_REJECT개를 탈락시켜야 통과
+      JCQ_DISCRIMINATION_ENABLED: "${JCQ_DISCRIMINATION_ENABLED:-1}"
+      JCQ_DISCRIMINATION_ATTACKS: "${JCQ_DISCRIMINATION_ATTACKS:-2}"
+      JCQ_DISCRIMINATION_MIN_REJECT: "${JCQ_DISCRIMINATION_MIN_REJECT:-1}"
+      # compare 게이트 승격 — 환각 임계 초과 / 의도유사도 미달이면 폐기 (난이도는 기록만)
+      JCQ_COMPARE_GATE_ENABLED: "${JCQ_COMPARE_GATE_ENABLED:-1}"
+      JCQ_COMPARE_MAX_HALLUCINATION: "${JCQ_COMPARE_MAX_HALLUCINATION:-0.5}"
+      JCQ_COMPARE_MIN_INTENT_SIM: "${JCQ_COMPARE_MIN_INTENT_SIM:-0.4}"
       # LangSmith — authoring 전용 키 (judge와 별도)
       LANGSMITH_API_KEY: "${LANGSMITH_API_KEY_AUTHORING:-}"
       LANGSMITH_PROJECT: "${LANGSMITH_PROJECT_AUTHORING:-jcq-authoring}"

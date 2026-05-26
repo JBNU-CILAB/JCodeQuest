@@ -17,9 +17,19 @@ class RunRequest(BaseModel):
         default=5, ge=1, le=20,
         description="생성할 변형 개수 (검증/심사 통과 시에만 저장됨)",
     )
+    by_user: str | None = Field(
+        default=None, description="실행한 관리자 표시명 (RunsView 메타용, 옵션)"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={"examples": [{"problem_id": 1, "count": 5}]}
+    )
+
+
+class RetryRequest(BaseModel):
+    from_node: str | None = Field(
+        default=None,
+        description="실패 노드부터 재실행 힌트(현재는 전체 재실행으로 폴백).",
     )
 
 

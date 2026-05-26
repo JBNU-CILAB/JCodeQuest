@@ -82,88 +82,77 @@ export default function UsersView({ settings }: Props) {
   }
 
   return (
-    <div>
-      <p className="card-desc mb-12">
-        유저 목록을 조회하고 API 키 강제 제거 및 유저 삭제를 수행합니다.
-      </p>
-
-      <div className="card">
-        <div className="filter-row">
-          <div className="field wide">
-            <label>검색</label>
-            <input
-              type="text" value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && load(0)}
-              placeholder="이름, 이메일..."
-            />
-          </div>
-          <div className="field" style={{ maxWidth: 100, marginTop: "auto" }}>
-            <button className="btn btn-primary" onClick={() => load(0)} disabled={loading}>
-              {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "검색"}
-            </button>
-          </div>
+    <div className="main users">
+      <div className="page-head">
+        <h1>유저 / 권한</h1>
+        <span className="sub">{rows.length}명{pageInfo ? ` · ${pageInfo}` : ""}</span>
+        <div className="page-head-actions">
+          <input
+            className="search-wide"
+            type="text" value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && load(0)}
+            placeholder="이름 · 이메일 검색"
+            style={{ minWidth: 220 }}
+          />
+          <button className="btn btn-primary btn-sm" onClick={() => load(0)} disabled={loading}>
+            {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "검색"}
+          </button>
         </div>
-        {output.msg && <div className={`output-panel ${output.kind}`}>{output.msg}</div>}
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th><th>이름</th><th>이메일</th><th>Provider</th>
-                <th>EXP</th><th>제출 수</th><th>API Key</th><th>가입일</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr className="empty-row"><td colSpan={9}>결과 없음 — 검색을 눌러주세요</td></tr>
-              ) : rows.map((u) => (
-                <tr key={u.id}>
-                  <td className="num">{u.id}</td>
-                  <td>
-                    {u.display_name}
-                    {u.nickname && <span className="hint">({u.nickname})</span>}
-                  </td>
-                  <td className="text-sm text-muted">{u.email ?? "—"}</td>
-                  <td>
-                    <span className="badge badge-blue">{u.provider}</span>
-                  </td>
-                  <td className="num">{u.exp.toLocaleString()}</td>
-                  <td className="num">{u.submission_count}</td>
-                  <td>
-                    {u.has_api_key
-                      ? <span className="badge badge-green">SET</span>
-                      : <span className="badge badge-gray">없음</span>
-                    }
-                  </td>
-                  <td className="text-sm text-muted">{fmtDate(u.created_at).slice(0, 10)}</td>
-                  <td className="actions">
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      disabled={!u.has_api_key}
-                      onClick={() => clearApiKey(u)}
-                    >
-                      키 제거
-                    </button>
-                    <button className="btn btn-danger btn-sm" onClick={() => deleteUser(u)}>
-                      삭제
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {output.msg && <div className={`output-panel ${output.kind}`} style={{ marginBottom: 14 }}>{output.msg}</div>}
+
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th style={{ width: 220 }}>유저</th>
+            <th>이메일</th>
+            <th style={{ width: 100 }}>Provider</th>
+            <th style={{ width: 100 }}>EXP</th>
+            <th style={{ width: 70 }}>제출</th>
+            <th style={{ width: 90 }}>API Key</th>
+            <th style={{ width: 110 }}>가입일</th>
+            <th style={{ width: 140 }} />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={8}><div className="empty">결과 없음 — 검색을 눌러주세요</div></td></tr>
+          ) : rows.map((u) => (
+            <tr key={u.id}>
+              <td>
+                <span className="avatar-pip">{(u.display_name || "?")[0].toUpperCase()}</span>
+                <strong>{u.display_name}</strong>
+                {u.nickname && <span style={{ color: "var(--muted)", marginLeft: 6, fontSize: 12 }}>({u.nickname})</span>}
+              </td>
+              <td className="mono-cell" style={{ fontSize: 12.5 }}>{u.email ?? "—"}</td>
+              <td><span className="tag role-student">{u.provider}</span></td>
+              <td className="mono-cell" style={{ fontVariantNumeric: "tabular-nums" }}>{u.exp.toLocaleString()} xp</td>
+              <td style={{ fontVariantNumeric: "tabular-nums" }}>{u.submission_count}</td>
+              <td>
+                {u.has_api_key
+                  ? <span className="pill done"><span className="dot" />SET</span>
+                  : <span className="pill queued"><span className="dot" />없음</span>}
+              </td>
+              <td className="mono-cell" style={{ fontSize: 12 }}>{fmtDate(u.created_at).slice(0, 10)}</td>
+              <td>
+                <button className="btn btn-ghost btn-sm" disabled={!u.has_api_key} onClick={() => clearApiKey(u)}>키 제거</button>
+                <button className="btn btn-danger-outline btn-sm" onClick={() => deleteUser(u)}>삭제</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {rows.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+          <span className="text-muted text-sm">{pageInfo}</span>
+          <span className="spacer" />
+          <button className="btn btn-outline btn-sm" disabled={offset === 0} onClick={() => load(Math.max(0, offset - limit))}>← 이전</button>
+          <button className="btn btn-outline btn-sm" disabled={rows.length < limit} onClick={() => load(offset + limit)}>다음 →</button>
         </div>
-        {rows.length > 0 && (
-          <div className="pagination" style={{ padding: "10px 16px" }}>
-            <span className="page-info">{pageInfo}</span>
-            <button className="btn btn-ghost btn-sm" disabled={offset === 0} onClick={() => load(Math.max(0, offset - limit))}>← 이전</button>
-            <button className="btn btn-ghost btn-sm" disabled={rows.length < limit} onClick={() => load(offset + limit)}>다음 →</button>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

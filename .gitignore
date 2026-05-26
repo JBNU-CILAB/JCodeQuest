@@ -27,3 +27,6 @@ backend/tests/artifacts/*
 # 출제 엔진
 authoring_engine/data/
 .dev-logs/
+
+presentation/
+

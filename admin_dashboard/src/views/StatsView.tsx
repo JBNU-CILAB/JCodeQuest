@@ -687,13 +687,15 @@ export default function StatsView({ settings }: Props) {
   const [tab, setTab] = useState<StatsTab>("problems");
 
   return (
-    <div>
-      <p className="card-desc mb-12">
-        {tab === "problems"
-          ? "문제별 채점 통계와 LLM-as-Judge 앙상블 동향을 한눈에 확인합니다. 행을 클릭하면 상세 차트가 펼쳐집니다."
-          : "LangGraph 변형 파이프라인이 매긴 원본-변형 4축 점수를 시각화합니다."
-        }
-      </p>
+    <div className="main stats">
+      <div className="page-head">
+        <h1>통계 · 분석</h1>
+        <span className="sub">
+          {tab === "problems"
+            ? "문제별 채점 통계 · LLM-as-Judge 앙상블 동향 (행 클릭 시 상세 차트)"
+            : "원본-변형 4축 점수 (hallucination / intent / difficulty / judge)"}
+        </span>
+      </div>
 
       <div className="tabs">
         {([

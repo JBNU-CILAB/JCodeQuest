@@ -163,10 +163,34 @@ class AuthoringProblemCreate(BaseModel):
         default=None,
         description="'YYYY-Www' 라벨. 비우면 backend가 현재 UTC 주차로 채움.",
     )
+    embedding: list[float] | None = Field(
+        default=None,
+        description="신규성(중복) 검사용 문제 임베딩 벡터. None이면 미계산 — 백필 대상.",
+    )
 
 
 class AuthoringProblemCreateResponse(BaseModel):
     id: int = Field(description="새로 저장된 ProblemRow.id")
+
+
+class ProblemEmbedding(BaseModel):
+    """backend → authoring_engine. 같은 카테고리 approved 문제의 저장된 임베딩.
+    embedding이 None이면 아직 백필되지 않은 문제 — 유사도 비교에서 제외.
+
+    level / judge_score는 RAG exemplar 선정(레벨 윈도 필터·품질 가중)에 쓰인다.
+    judge_score는 authoring_meta에서 끌어오며, 수기 출제 원본 등 메타가 없으면 None."""
+
+    id: int
+    title: str
+    embedding: list[float] | None = None
+    level: ProblemLevel | None = None
+    judge_score: float | None = None
+
+
+class EmbeddingUpdateRequest(BaseModel):
+    """authoring_engine → backend. 기존 문제의 임베딩 백필/갱신."""
+
+    embedding: list[float] = Field(description="문제 임베딩 벡터.")
 
 
 class AuthoringTestCase(BaseModel):
@@ -342,3 +366,72 @@ class UserDeleteCascade(BaseModel):
 class UserDeleteResponse(BaseModel):
     id: int
     cascade: UserDeleteCascade
+
+
+# ── 출제 파이프라인 run (admin RunsView · forensics) ─────────────────────
+# authoring_engine이 run 시작 시 backend에 영속화하고, 노드 진행/종료마다 갱신한다.
+# node_states는 노드 키 → 상태 스냅샷(opaque). 프론트 RunsView가 그래프로 렌더링.
+# 인메모리 레지스트리는 살아있는 run만 들고 있으므로, 과거 run 조회는 이 영속화에 의존.
+
+class RunNodeState(BaseModel):
+    """파이프라인 한 노드의 실행 스냅샷."""
+
+    status: str = "queued"  # queued | running | done | failed | skipped
+    duration_ms: int | None = None
+    retries: int = 0
+    # {prompt, completion, total} — LLM 노드만. 스트림 청크엔 없어 보통 0 (LangSmith가 정밀치).
+    tokens: dict[str, int] = Field(default_factory=dict)
+    error: str | None = None
+    candidates_in: int | None = None
+    candidates_out: int | None = None
+    # [{idx, status: pass|fail|warn, note}] — 후보 단위 결과를 만드는 노드만.
+    candidate_results: list[dict] = Field(default_factory=list)
+    outputs_preview: dict | None = None
+
+
+class RunCreate(BaseModel):
+    """run 시작 시 1회 — authoring_engine → backend."""
+
+    id: str = Field(description="authoring_engine이 생성한 hex run_id. PK로 사용.")
+    trace_id: str | None = None
+    problem_id: int | None = None
+    problem_title: str | None = None
+    target_count: int = 0
+    by_user: str | None = None
+
+
+class RunUpdate(BaseModel):
+    """부분 갱신 — None인 필드는 건드리지 않는다. node_states는 전체 교체."""
+
+    status: str | None = None
+    failed_at_node: str | None = None
+    total_duration_ms: int | None = None
+    ended_at: str | None = None
+    saved_problem_ids: list[int] | None = None
+    errors: list[str] | None = None
+    node_states: dict[str, dict] | None = None
+
+
+class RunSummary(BaseModel):
+    """run 목록 행 — 무거운 node_states 제외."""
+
+    id: str
+    trace_id: str | None = None
+    problem_id: int | None = None
+    problem_title: str | None = None
+    target_count: int = 0
+    by_user: str | None = None
+    status: str = "running"  # running | done | failed
+    failed_at_node: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    total_duration_ms: int | None = None
+    saved_count: int = 0
+
+
+class RunDetail(RunSummary):
+    """run 상세 — 노드별 상태 스냅샷 포함."""
+
+    node_states: dict[str, dict] = Field(default_factory=dict)
+    saved_problem_ids: list[int] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)

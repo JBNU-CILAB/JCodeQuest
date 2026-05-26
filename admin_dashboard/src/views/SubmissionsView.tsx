@@ -72,12 +72,13 @@ export default function SubmissionsView({ settings }: Props) {
   }
 
   return (
-    <div>
-      <p className="card-desc mb-12">
-        제출 행을 필터·페이지네이션으로 조회합니다. 행 클릭 시 코드·votes·test_results를 확인할 수 있습니다.
-      </p>
+    <div className="main submissions">
+      <div className="page-head">
+        <h1>풀이 기록</h1>
+        <span className="sub">{pageInfo || "제출 조회"} · 행 클릭 시 코드·votes·test_results</span>
+      </div>
 
-      <div className="card">
+      <div className="card" style={{ marginBottom: 14 }}>
         <div className="filter-row">
           <div className="field narrow">
             <label>User ID</label>
@@ -108,47 +109,39 @@ export default function SubmissionsView({ settings }: Props) {
         {error && <div className="output-panel err">{error}</div>}
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th><th>유저</th><th>문제</th><th>Verdict</th>
-                <th>Status</th><th>ms</th><th>점수</th><th>제출 시각</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr className="empty-row"><td colSpan={8}>결과 없음 — 검색을 눌러주세요</td></tr>
-              ) : rows.map((s) => (
-                <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => showDetail(s.id)}>
-                  <td className="num">{s.id}</td>
-                  <td>
-                    {s.user_display_name ?? `#${s.user_id}`}
-                    <span className="hint">#{s.user_id}</span>
-                  </td>
-                  <td>
-                    {s.problem_title ?? `#${s.problem_id}`}
-                    <span className="hint">#{s.problem_id}</span>
-                  </td>
-                  <td><VerdictBadge verdict={s.final_verdict} /></td>
-                  <td><span className="badge badge-gray">{s.status}</span></td>
-                  <td className="num">{s.max_elapsed_ms ?? "—"}</td>
-                  <td className="num">{s.points_awarded ?? "—"}</td>
-                  <td className="text-sm text-muted">{fmtDate(s.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th style={{ width: 64 }}>ID</th><th>유저</th><th>문제</th>
+            <th style={{ width: 90 }}>Verdict</th><th style={{ width: 90 }}>Status</th>
+            <th style={{ width: 70 }}>ms</th><th style={{ width: 60 }}>점수</th><th style={{ width: 150 }}>제출 시각</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={8}><div className="empty">결과 없음 — 검색을 눌러주세요</div></td></tr>
+          ) : rows.map((s) => (
+            <tr key={s.id} className="clickable" onClick={() => showDetail(s.id)}>
+              <td className="mono-cell">#{s.id}</td>
+              <td>{s.user_display_name ?? `#${s.user_id}`}<span className="hint">#{s.user_id}</span></td>
+              <td>{s.problem_title ?? `#${s.problem_id}`}<span className="hint">#{s.problem_id}</span></td>
+              <td><VerdictBadge verdict={s.final_verdict} /></td>
+              <td><span className={`pill ${s.status === "done" ? "done" : s.status === "failed" ? "failed" : s.status === "running" ? "running" : "queued"}`}><span className="dot" />{s.status}</span></td>
+              <td className="mono-cell">{s.max_elapsed_ms ?? "—"}</td>
+              <td className="mono-cell">{s.points_awarded ?? "—"}</td>
+              <td className="mono-cell" style={{ fontSize: 12 }}>{fmtDate(s.created_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+          <span className="text-muted text-sm">{pageInfo}</span>
+          <span className="spacer" />
+          <button className="btn btn-outline btn-sm" disabled={offset === 0} onClick={() => load(Math.max(0, offset - limit))}>← 이전</button>
+          <button className="btn btn-outline btn-sm" disabled={rows.length < limit} onClick={() => load(offset + limit)}>다음 →</button>
         </div>
-        {rows.length > 0 && (
-          <div className="pagination" style={{ padding: "10px 16px" }}>
-            <span className="page-info">{pageInfo}</span>
-            <button className="btn btn-ghost btn-sm" disabled={offset === 0} onClick={() => load(Math.max(0, offset - limit))}>← 이전</button>
-            <button className="btn btn-ghost btn-sm" disabled={rows.length < limit} onClick={() => load(offset + limit)}>다음 →</button>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Detail panel */}
       {(detail || detailLoading) && (

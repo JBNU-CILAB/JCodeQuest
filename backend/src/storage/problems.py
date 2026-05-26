@@ -34,6 +34,58 @@ def get_problem(session: Session, problem_id: int) -> Problem | None:
     return _to_domain(row) if row else None
 
 
+def list_category_embeddings(
+    session: Session, problem_id: int
+) -> list[tuple[int, str, list[float] | None, str, float | None]] | None:
+    """problem_id와 같은 카테고리의 approved 문제(자기 자신 제외)의
+    (id, title, embedding, level, judge_score)를 반환한다.
+
+    두 용도를 함께 받친다:
+      - 신규성 검사: 카테고리 형제 전체와 후보를 비교하는 모집단 (id/title/embedding).
+      - RAG exemplar 선정: level(레벨 윈도 필터)·judge_score(품질 가중) 추가.
+
+    embedding이 NULL인 문제도 포함해 반환하며(백필 여부 가시화), 호출 측이 NULL을 건너뛴다.
+    judge_score는 authoring_meta JSON에서 끌어오고, 메타가 없거나 숫자가 아니면 None.
+    대상 문제가 없으면 None."""
+    target = session.get(ProblemRow, problem_id)
+    if target is None:
+        return None
+    stmt = (
+        select(
+            ProblemRow.id,
+            ProblemRow.title,
+            ProblemRow.embedding,
+            ProblemRow.level,
+            ProblemRow.authoring_meta,
+        )
+        .where(ProblemRow.status == "approved")
+        .where(ProblemRow.category == target.category)
+        .where(ProblemRow.id != problem_id)  # type: ignore[arg-type]
+    )
+    out: list[tuple[int, str, list[float] | None, str, float | None]] = []
+    for rid, title, emb, level, meta in session.exec(stmt).all():
+        score = None
+        if isinstance(meta, dict):
+            raw = meta.get("judge_score")
+            if isinstance(raw, (int, float)):
+                score = float(raw)
+        out.append((rid, title, emb, level, score))
+    return out
+
+
+def set_problem_embedding(
+    session: Session, problem_id: int, embedding: list[float]
+) -> bool:
+    """기존 문제의 임베딩을 채운다(백필/갱신). 문제가 없으면 False."""
+    row = session.get(ProblemRow, problem_id)
+    if row is None:
+        return False
+    row.embedding = embedding
+    session.add(row)
+    session.commit()
+    return True
+
+
 def list_problems(
     session: Session,
     *,
@@ -92,6 +144,7 @@ def create_problem(
     langsmith_trace_id: str | None = None,
     authoring_meta: dict | None = None,
     iso_week: str | None = None,
+    embedding: list[float] | None = None,
 ) -> int:
     # 출제 주차는 호출자가 명시할 수 있고, 생략 시 ProblemRow.default_factory가
     # 현재 UTC 주차를 박는다(출제 엔진은 명시 전달 — persist 노드/manual create 참조).
@@ -112,6 +165,7 @@ def create_problem(
         parent_id=parent_id,
         langsmith_trace_id=langsmith_trace_id,
         authoring_meta=authoring_meta,
+        embedding=embedding,
         **row_kwargs,
         test_cases=[
             TestCaseRow(

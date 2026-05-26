@@ -193,16 +193,22 @@ JSON으로만 응답.
 
 ---
 
-## 4. 후속 단계 (LLM 미관여)
+## 4. 후속 단계
 
-§3의 출력이 들어오면 LangGraph는 다음을 LLM 호출 없이 처리:
+§3의 출력이 들어오면 LangGraph가 다음을 순서대로 처리한다(`verify_executes`만 LLM 미관여,
+나머지는 모두 LLM 호출). 게이트 임계·동작 상세는 CLAUDE.md "Conventions" 참조.
 
-1. `verify_executes`: `reference_code`를 각 `stdin`에 대해 sandbox 실행
-   - 모두 `status="OK"`이고 `elapsed_ms ≤ time_limit_ms × 0.5` → 진행
+1. `verify_executes` (LLM 미관여): `reference_code`를 각 `stdin`에 대해 sandbox 실행
+   - 모두 `status="OK"`이고 `elapsed_ms ≤ time_limit_ms × JCQ_AUTHOR_PERF_RATIO`(기본 0.8) → 진행
    - 실패 시 → `author_solution`로 자기루프 (max 2회). 그래도 실패 시 `status="draft"`로 보류
    - 각 케이스의 `stdout`을 `expected_stdout`으로 박음
-2. `judge_quality`: 3-judge ensemble이 problem 전체를 4축 기준으로 품질 투표 (별도 프롬프트, 본 문서 범위 밖)
-3. `persist_final`: 임베딩 중복 체크 후 `status="approved"` 또는 `"draft"`로 저장
+2. `judge_quality`: 3-judge ensemble이 problem 전체를 4축 기준으로 품질 투표 — 점수 **중앙값**이
+   threshold 이상 + 2/3 pass면 통과 (별도 프롬프트, 본 문서 범위 밖)
+3. `solve_candidates`: 3-LLM이 직접 문제를 풀어 sandbox로 풀이 가능성 검증 (≥1 AC면 통과)
+4. `attack_candidates`: 결함을 심은 공격 풀이로 테스트 **변별력**을 검사 — 테스트가 결함을
+   못 걸러내면(공격이 전부 AC) 폐기. 게이트, 별도 프롬프트(본 문서 범위 밖)
+5. `compare_to_original`: 원본 대비 환각·의도·난이도 3축을 기록하고 환각/의도유사도를 **게이트**로 적용
+6. `persist_approved`: 위 게이트(solver·변별력·compare)를 모두 통과한 후보만 `status="approved"`로 저장
 
 ---
 

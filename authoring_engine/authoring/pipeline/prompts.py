@@ -122,16 +122,38 @@ DRAFT_USER = """\
 - memory_limit_mb: {memory_limit_mb}
 - variant index: {variant_index} (multiple variants are being generated; this one must differ from the others)
 
+{reference_block}
+Design ONE new problem that is in the same category but clearly DIFFERENT from
+the reference problems above (different input shape / sub-problem framing /
+solving procedure), following the system rules. Use the references only to
+calibrate style and difficulty — do NOT copy their scenario or solving flow.
+{novelty_feedback}
+Respond with JSON only."""
+
+# reference_block 포맷 — retrieve_exemplars가 고른 모범 사례 1건당 ~5줄.
+# 전체 statement가 아니라 IntentRubric 압축본만 넣어 작은 모델 컨텍스트 부담을 줄이고,
+# 모델이 '구조만 배우고 내용은 안 베끼게' 한다. exemplar가 없으면 seed 폴백 블록을 쓴다.
+EXEMPLAR_BLOCK_HEADER = (
+    "[Reference problems in the same category"
+    " — STUDY the style/difficulty, do NOT copy]"
+)
+EXEMPLAR_ITEM = """\
+#{n}
+- title: {title}
+- summary: {one_line_summary}
+- approach: {expected_approach}
+- insight: {key_insight}
+- complexity: {expected_complexity}"""
+
+# exemplar가 비었을 때(RAG 비활성·빈 코퍼스)의 폴백 — 기존 seed 기반 블록.
+SEED_BLOCK = """\
 [Existing problems in the same category (seeds — avoid solving-flow overlap)]
 1. {seed_1_title} — {seed_1_summary}
    approach: {seed_1_approach}
 2. {seed_2_title} — {seed_2_summary}
    approach: {seed_2_approach}
 3. {seed_3_title} — {seed_3_summary}
-   approach: {seed_3_approach}
-
-Design ONE new problem that is sufficiently different from the seeds above,
-following the system rules. Respond with JSON only."""
+   approach: {seed_3_approach}"""
 
 # ─── author_solution ──────────────────────────────────────────────────────────
 # Based on docs/authoring-prompt.md §3. Reference code is Python; test_inputs
@@ -237,7 +259,26 @@ Evaluation criteria:
 3. Test-case sufficiency: each must_handle item is covered by a distinct test case.
 4. Gradeability: forbidden_patterns are concrete enough for an LLM to detect in code.
 
+Score calibration (anchor your number to these bands — do NOT default to 0.7):
+- 0.90-1.00: all 4 axes clearly pass; statement precise, every must_handle covered,
+  forbidden_patterns concrete. Publishable as-is.
+- 0.70-0.89: 3+ axes pass; minor gaps (e.g. one must_handle weakly covered) but usable.
+- 0.50-0.69: a real defect (one axis fails: an ambiguous range, an uncovered
+  must_handle, or an abstract forbidden_pattern). Needs author fixes.
+- 0.00-0.49: two or more axes fail, or the rubric contradicts the statement.
+
 Pass rule: passed=true iff score >= 0.7 AND at least 3 of the 4 axes pass.
+
+Calibration examples (study the mapping, then judge the real problem):
+
+[Example A — strong] A problem with exact integer ranges (1<=N<=1e5), an I/O format
+section, must_handle ["N=1", "all equal", "max N timing"] each matched by a distinct
+test case, and forbidden_patterns ["O(N^2) double loop", "recomputing prefix sum per
+query"]. → {"passed": true, "score": 0.92, "rationale": "범위·입출력 명확, must_handle 3개가 각각 테스트로 커버, 금지 패턴 구체적.", "issues": []}
+
+[Example B — weak] A problem whose statement never states the range of N, whose
+must_handle ["edge cases"] is vague and untested, and forbidden_patterns
+["비효율적인 코드"]. → {"passed": false, "score": 0.38, "rationale": "N 범위 미명시(명료성 탈락), must_handle가 모호하고 테스트 미커버(충분성 탈락), 금지 패턴이 추상적(채점가능성 탈락).", "issues": ["입력 N의 범위가 statement에 없음", "must_handle 'edge cases'가 추상적이고 대응 테스트 없음", "forbidden_patterns가 코드에서 탐지 불가능할 만큼 모호함"]}
 
 Output a single JSON object. No markdown.
 The "rationale" and "issues" fields MUST be written in Korean (the admin
@@ -293,6 +334,49 @@ SOLVER_USER = """\
 {sample_cases}
 
 Output Python code only."""
+
+# ─── attack (test-set discrimination) ──────────────────────────────────────────
+# An LLM writes a DELIBERATELY FLAWED solution targeting the rubric. A strong test
+# set rejects it (non-AC); if a flawed solution still gets AC, the tests are too weak.
+# The model must produce a plausible-but-wrong solution, NOT a correct one.
+
+ATTACK_SYSTEM = """\
+You are a test-suite auditor for competitive-programming problems. Your job is to
+expose WEAK test sets by writing a solution that is plausible but DELIBERATELY
+WRONG, so that a strong test set will reject it.
+
+You will be told which attack strategy to use. Follow it exactly:
+- "naive": write the most straightforward brute-force solution that IGNORES the
+  expected_complexity. It may be correct but too slow — the goal is to see whether
+  the time limit / large test cases catch it (TLE). Do NOT optimize.
+- "edge_skip": write a solution that handles the typical case but DELIBERATELY
+  mishandles the listed must_handle edge cases (e.g. ignore empty input, off-by-one
+  at boundaries, integer overflow assumptions). It should look correct at a glance.
+
+Hard rules:
+- The solution MUST be a genuine attempt at the stated strategy's flaw — never a
+  fully correct, fully optimized solution.
+- Use only the Python standard library. Read stdin, write stdout, follow the I/O
+  format in the statement.
+- Output Python code ONLY. No explanation, no markdown fences, no backticks."""
+
+ATTACK_USER = """\
+[Attack strategy] {strategy}
+
+[Problem]
+{title}
+
+{statement}
+
+[Intent specification — these are what the tests SHOULD enforce]
+expected_complexity: {expected_complexity}
+must_handle: {must_handle}
+forbidden_patterns: {forbidden_patterns}
+
+[Sample test cases]
+{sample_cases}
+
+Write the flawed solution for the "{strategy}" strategy. Output Python code only."""
 
 # ─── compare_to_original ──────────────────────────────────────────────────────
 # A single judge scores the variant against the original on 3 axes.
