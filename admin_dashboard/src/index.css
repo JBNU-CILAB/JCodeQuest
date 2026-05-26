@@ -1253,6 +1253,77 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .graph-stage.vertical .arrow { width: 2px; height: 28px; }
 .graph-stage.vertical .arrow::after { right: 50%; top: auto; bottom: -1px; transform: translateX(50%) rotate(135deg); }
 .graph-stage.vertical .graph-legend { justify-content: center; margin-top: 36px; }
+
+/* ── 3-LLM 앙상블 노드: 펼침 토글 + 가로 트리 판사 서브노드 ──────────── */
+.ensemble-group { display: flex; flex-direction: column; align-items: center; }
+.ensemble-main { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ensemble-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px; border: 1px solid var(--purple); border-radius: 999px;
+  background: var(--purple-bg); color: #6b21a8; font-size: 11px; font-weight: 700;
+  font-family: inherit; cursor: pointer; transition: background .15s;
+}
+.ensemble-toggle:hover { background: #e6dcff; }
+.ensemble-caret { display: inline-flex; transition: transform .18s var(--ease); }
+.ensemble-toggle.open .ensemble-caret { transform: rotate(90deg); }
+
+/* 가로 트리: 부모 → 세로 stem → 가로 bar → 3 leaf 로 분기 */
+.ensemble-children { position: relative; margin-top: 6px; padding-top: 14px; }
+.ensemble-children::before {
+  content: ""; position: absolute; top: 0; left: 50%; width: 2px; height: 14px;
+  background: #cbb6f0; transform: translateX(-50%);
+}
+.ensemble-tree { display: flex; justify-content: center; align-items: flex-start; }
+.ensemble-leaf { position: relative; padding-top: 18px; margin: 0 10px; }
+.ensemble-leaf::after {
+  content: ""; position: absolute; top: 0; left: -10px; right: -10px; height: 2px; background: #cbb6f0;
+}
+.ensemble-leaf:first-child::after { left: 50%; }
+.ensemble-leaf:last-child::after { right: 50%; }
+.ensemble-leaf:only-child::after { display: none; }
+.ensemble-leaf::before {
+  content: ""; position: absolute; top: 0; left: 50%; width: 2px; height: 18px;
+  background: #cbb6f0; transform: translateX(-50%);
+}
+
+.sub-node {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; width: 128px;
+  padding: 11px 10px 10px; border: 1px solid #e6dcff; border-radius: var(--radius-card);
+  background: var(--bg-panel); cursor: pointer; font-family: inherit;
+  box-shadow: var(--shadow-card);
+  opacity: 0; transform: translateY(-6px) scale(0.97);
+  animation: subNodeIn .26s var(--ease) forwards;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.sub-node:hover { border-color: var(--purple); transform: translateY(-1px); }
+.sub-node.selected { border-color: var(--purple); background: var(--purple-bg); box-shadow: 0 0 0 1px var(--purple) inset; }
+.sub-node-ico {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 9px; background: var(--purple-bg); color: #6b21a8;
+}
+.sub-node-name { font-size: 12.5px; font-weight: 700; color: var(--ink); font-family: var(--font-mono); }
+.sub-node-model { font-size: 10px; color: var(--muted); font-family: var(--font-mono); max-width: 108px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes subNodeIn { to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* 드로어 헤더 판사 배지 */
+.judge-badge {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
+  padding: 2px 8px; border-radius: 999px; background: var(--purple-bg); color: #6b21a8;
+  font-size: 11px; font-weight: 700; font-family: var(--font-ui); vertical-align: middle;
+}
+
+/* ── inputs/outputs 구분 블록 (IN 파랑↓ / OUT 초록↑) ─────────────────── */
+.io-block { border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; margin-top: 9px; }
+.io-block.in  { border-color: #cfe0fd; }
+.io-block.out { border-color: #c6e9d4; }
+.io-block-head {
+  display: flex; align-items: center; gap: 6px; padding: 5px 11px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.io-block.in  .io-block-head { background: var(--brand-soft); color: var(--brand-dark); }
+.io-block.out .io-block-head { background: var(--st-done-bg); color: var(--st-done); }
+.io-arrow { font-size: 12px; font-weight: 800; line-height: 1; }
+.io-block-body { padding: 9px 10px; background: var(--bg-panel); }
 .node-card .badge-side { position: absolute; top: -8px; right: 10px; background: #fef3c7; color: #92400e; font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.06em; text-transform: uppercase; }
 .candidates-strip { display: flex; gap: 3px; margin-top: 4px; align-items: center; }
 .cand-dot { width: 9px; height: 9px; border-radius: 3px; background: var(--st-skipped); transition: background .15s; }

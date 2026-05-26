@@ -221,13 +221,23 @@ function NodeCard({
 
 /* ── Pipeline Graph ────────────────────────────────────────────────────── */
 function PipelineGraph({
-  detail, selectedNode, onSelectNode, zoom,
+  detail, selectedNode, selectedJudge, onSelectNode, onSelectJudge, zoom,
 }: {
   detail: RunDetailT | null;
   selectedNode: string | null;
+  selectedJudge: string | null;
   onSelectNode: (k: string) => void;
+  onSelectJudge: (nodeKey: string, judgeId: string) => void;
   zoom: number;
 }) {
+  // 앙상블 노드 펼침 상태 (노드 key → 펼침). 판사 서브노드를 클릭하면 자동으로 펼친다.
+  const [openEnsembles, setOpenEnsembles] = useState<Set<string>>(new Set());
+  const toggleEnsemble = (key: string) =>
+    setOpenEnsembles((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
   // 실패/선택 노드를 세로 중앙으로 자동 스크롤 — 포렌식 핵심 어포던스.
   useEffect(() => {
     const target = selectedNode || detail?.failed_at_node;
@@ -241,21 +251,70 @@ function PipelineGraph({
     });
   }, [detail?.id, selectedNode, detail?.failed_at_node]);
 
+  // 판사 서브노드가 선택되면 해당 앙상블 노드를 자동으로 펼친다.
+  useEffect(() => {
+    if (selectedJudge && selectedNode) {
+      setOpenEnsembles((p) => (p.has(selectedNode) ? p : new Set(p).add(selectedNode)));
+    }
+  }, [selectedJudge, selectedNode]);
+
   return (
     <div className="graph-stage vertical" style={{ transform: `scale(${zoom})` }}>
       <div className="node-row">
         {NODE_DEFS.map((def, i) => {
           const state = statusOf(detail, def.key);
           const isLast = i === NODE_DEFS.length - 1;
+          const open = openEnsembles.has(def.key);
           return (
             <span key={def.key} style={{ display: "contents" }}>
-              <NodeCard
-                idx={i}
-                def={def}
-                state={state}
-                selected={selectedNode === def.key}
-                onClick={() => onSelectNode(def.key)}
-              />
+              {def.ensemble ? (
+                <div className="ensemble-group">
+                  <div className="ensemble-main">
+                    <NodeCard
+                      idx={i}
+                      def={def}
+                      state={state}
+                      selected={selectedNode === def.key && !selectedJudge}
+                      onClick={() => onSelectNode(def.key)}
+                    />
+                    <button
+                      className={`ensemble-toggle${open ? " open" : ""}`}
+                      onClick={() => toggleEnsemble(def.key)}
+                      title={open ? "판사 접기" : "3 판사 펼치기"}
+                    >
+                      <span className="ensemble-caret"><Icon.Chevron /></span>
+                      {open ? "판사 접기" : `${def.ensemble.length} 판사 펼치기`}
+                    </button>
+                  </div>
+                  {open && (
+                    <div className="ensemble-children">
+                      <div className="ensemble-tree">
+                        {def.ensemble.map((m, k) => (
+                          <div className="ensemble-leaf" key={m.id}>
+                            <button
+                              className={`sub-node${selectedNode === def.key && selectedJudge === m.id ? " selected" : ""}`}
+                              style={{ animationDelay: `${k * 70}ms` }}
+                              onClick={() => onSelectJudge(def.key, m.id)}
+                            >
+                              <span className="sub-node-ico"><Icon.LLM /></span>
+                              <span className="sub-node-name">{m.id}</span>
+                              <span className="sub-node-model">{m.model}</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <NodeCard
+                  idx={i}
+                  def={def}
+                  state={state}
+                  selected={selectedNode === def.key}
+                  onClick={() => onSelectNode(def.key)}
+                />
+              )}
               {!isLast && <span className={`arrow ${state.status === "skipped" ? "skipped" : ""}`} />}
             </span>
           );
@@ -415,6 +474,16 @@ function ChatView({ messages }: { messages: ChatMsg[] }) {
   );
 }
 
+/* 입력/출력 구분 블록 — IN(파랑·↓) / OUT(초록·↑) 헤더로 시각 분리. */
+function IOBlock({ dir, label, children }: { dir: "in" | "out"; label: string; children: React.ReactNode }) {
+  return (
+    <div className={`io-block ${dir}`}>
+      <div className="io-block-head"><span className="io-arrow">{dir === "in" ? "↓" : "↑"}</span> {label}</div>
+      <div className="io-block-body">{children}</div>
+    </div>
+  );
+}
+
 /* 한 span의 I/O 카드 — 헤더 클릭으로 카드 전체를 접고 폄(길이 조절).
    LLM이면 프롬프트(말풍선)/완성(텍스트)을 우선, 아니면 JSON. raw 토글 제공. */
 function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
@@ -445,16 +514,14 @@ function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
           {pretty ? (
             <>
               {msgs && (
-                <div className="span-io">
-                  <div className="span-io-label">prompt · {msgs.length} messages</div>
+                <IOBlock dir="in" label={`Input · prompt (${msgs.length} messages)`}>
                   <ChatView messages={msgs} />
-                </div>
+                </IOBlock>
               )}
               {completion != null && (
-                <div className="span-io">
-                  <div className="span-io-label">completion</div>
+                <IOBlock dir="out" label="Output · completion">
                   <CodeBlock text={completion || "—"} />
-                </div>
+                </IOBlock>
               )}
               <details className="span-io span-raw"><summary>raw JSON</summary>
                 <div className="span-io-label" style={{ marginTop: 6 }}>inputs</div>
@@ -465,12 +532,8 @@ function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
             </>
           ) : (
             <>
-              <details className="span-io" open><summary>inputs</summary>
-                <CodeBlock text={jsonPreview(span.inputs)} />
-              </details>
-              <details className="span-io" open><summary>outputs</summary>
-                <CodeBlock text={jsonPreview(span.outputs)} />
-              </details>
+              <IOBlock dir="in" label="Input"><CodeBlock text={jsonPreview(span.inputs)} /></IOBlock>
+              <IOBlock dir="out" label="Output"><CodeBlock text={jsonPreview(span.outputs)} /></IOBlock>
             </>
           )}
         </div>
@@ -480,10 +543,11 @@ function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
 }
 
 function NodeDrawer({
-  detail, nodeKey, onClose, onRetry, traceId, spans, onLoadSpans, wide, onToggleWide,
+  detail, nodeKey, judgeFilter, onClose, onRetry, traceId, spans, onLoadSpans, wide, onToggleWide,
 }: {
   detail: RunDetailT;
   nodeKey: string;
+  judgeFilter?: string | null;
   onClose: () => void;
   onRetry: () => void;
   traceId?: string | null;
@@ -496,7 +560,8 @@ function NodeDrawer({
   const state = detail.node_states?.[nodeKey] ?? { status: "queued" };
   const [tab, setTab] = useState("overview");
   const [collapsed, setCollapsed] = useState(false);
-  useEffect(() => { setTab("overview"); setCollapsed(false); }, [nodeKey]);
+  // 판사 서브노드를 선택해 열면 해당 LLM I/O가 핵심이므로 inputs/outputs 탭으로 시작.
+  useEffect(() => { setTab(judgeFilter ? "inputs/outputs" : "overview"); setCollapsed(false); }, [nodeKey, judgeFilter]);
   // inputs/outputs 탭을 열면 그때 trace span을 lazy 로드 (LangSmith가 느릴 수 있어 on-demand).
   useEffect(() => {
     if (tab === "inputs/outputs" && !collapsed && traceId && spans == null) onLoadSpans(traceId);
@@ -518,10 +583,18 @@ function NodeDrawer({
       <div className="drawer-head">
         <div className="drawer-kind-ico"><NodeKindIcon kind={def.kind} /></div>
         <div className="drawer-head-body">
-          <h3 className="drawer-name">{def.label}</h3>
+          <h3 className="drawer-name">
+            {def.label}
+            {judgeFilter && <span className="judge-badge"><Icon.LLM /> {judgeFilter}</span>}
+          </h3>
           <div className="drawer-meta">
             <span className={`pill ${state.status}`}><span className="dot" />{state.status}</span>
-            <span>{def.kind === "llm" ? "LLM 노드" : def.kind === "db" ? "DB I/O" : "sandbox"}{def.side ? " · side-step" : ""}</span>
+            <span>
+              {judgeFilter
+                ? `${judgeFilter} 판사 LLM`
+                : def.kind === "llm" ? "LLM 노드" : def.kind === "db" ? "DB I/O" : "sandbox"}
+              {def.side ? " · side-step" : ""}
+            </span>
           </div>
         </div>
         <div className="drawer-head-actions">
@@ -644,7 +717,12 @@ function NodeDrawer({
 
         {tab === "inputs/outputs" && (() => {
           const ready = spans?.status === "ready" ? spans.data : null;
-          const nodeSpans = ready ? collectNodeSpans(ready.spans, nodeKey) : [];
+          const allSpans = ready ? collectNodeSpans(ready.spans, nodeKey) : [];
+          // 판사가 선택되면 그 판사의 LLM span만 (trace run_name: judge_quality/{id}#n)
+          const nodeSpans = judgeFilter
+            ? allSpans.filter((s) => s.name !== nodeKey && s.name.toLowerCase().includes(judgeFilter.toLowerCase()))
+            : allSpans;
+          const ioLabel = judgeFilter ? `${judgeFilter} 판사 LLM I/O` : `LangSmith 노드 I/O`;
           return (
             <>
               {/* LangSmith trace 딥링크 */}
@@ -669,23 +747,27 @@ function NodeDrawer({
                 <div className="drawer-code error">{spans.message}</div>
               )}
 
-              {/* 성공 — 이 노드의 span I/O */}
+              {/* 성공 — 이 노드(또는 선택 판사)의 span I/O */}
               {ready && nodeSpans.length > 0 && (
                 <>
-                  <div className="section-title">LangSmith 노드 I/O ({nodeSpans.length} spans)</div>
+                  <div className="section-title">{ioLabel} ({nodeSpans.length} spans)</div>
                   <div className="span-tree">
                     {nodeSpans.map((s) => (
-                      <SpanCard key={s.id} span={s} depth={s.name === nodeKey ? 0 : 1} />
+                      <SpanCard key={s.id} span={s} depth={!judgeFilter && s.name === nodeKey ? 0 : 1} />
                     ))}
                   </div>
                 </>
               )}
               {ready && nodeSpans.length === 0 && (
-                <div className="ls-note">이 노드의 span이 trace에 없어요 (DB/sandbox 노드는 LLM span이 없을 수 있음).</div>
+                <div className="ls-note">
+                  {judgeFilter
+                    ? `${judgeFilter} 판사의 LLM span을 찾지 못했어요 — trace 미인제스트이거나 이 run이 해당 판사를 호출하지 않았습니다.`
+                    : "이 노드의 span이 trace에 없어요 (DB/sandbox 노드는 LLM span이 없을 수 있음)."}
+                </div>
               )}
 
-              {/* 폴백/보조 — DB 스냅샷 outputs_preview */}
-              {state.outputs_preview && (
+              {/* 폴백/보조 — DB 스냅샷 outputs_preview (노드 단위, 판사 뷰에선 숨김) */}
+              {!judgeFilter && state.outputs_preview && (
                 <details {...(ready && nodeSpans.length > 0 ? {} : { open: true })}>
                   <summary className="section-title" style={{ cursor: "pointer", display: "list-item" }}>
                     Outputs preview (DB 스냅샷)
@@ -748,6 +830,7 @@ export default function RunsView({ settings }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetailT | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedJudge, setSelectedJudge] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [error, setError] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -1035,7 +1118,14 @@ export default function RunsView({ settings }: Props) {
               <NewRunForm onStart={beginRun} onCancel={() => { setShowNew(false); if (selectedId) loadDetail(selectedId); }} />
             </div>
           ) : (
-            <PipelineGraph detail={detail} selectedNode={selectedNode} onSelectNode={setSelectedNode} zoom={zoom} />
+            <PipelineGraph
+              detail={detail}
+              selectedNode={selectedNode}
+              selectedJudge={selectedJudge}
+              onSelectNode={(k) => { setSelectedNode(k); setSelectedJudge(null); }}
+              onSelectJudge={(k, j) => { setSelectedNode(k); setSelectedJudge(j); }}
+              zoom={zoom}
+            />
           )}
         </div>
 
@@ -1046,7 +1136,8 @@ export default function RunsView({ settings }: Props) {
         <NodeDrawer
           detail={detail!}
           nodeKey={selectedNode!}
-          onClose={() => setSelectedNode(null)}
+          judgeFilter={selectedJudge}
+          onClose={() => { setSelectedNode(null); setSelectedJudge(null); }}
           onRetry={retryRun}
           traceId={detail!.trace_id}
           spans={detail!.trace_id ? spansCache[detail!.trace_id] : undefined}
