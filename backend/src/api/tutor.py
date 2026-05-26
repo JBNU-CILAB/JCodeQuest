@@ -14,6 +14,7 @@ from ..storage.tutor import (
     latest_tutor_message,
     list_tutor_messages,
 )
+from ..storage.users import get_user_api_key
 from ..tutor import tutor as run_tutor
 
 router = APIRouter(prefix="/tutor", tags=["tutor"])
@@ -85,6 +86,15 @@ async def request_tutor(
                 detail="이 문제에 대한 튜터 사용 횟수(3회)를 초과했습니다.",
             )
 
+        # 사용자가 등록한 키를 Vault에서 복호화해 그 키로 LLM을 호출한다(서버 전역 키가 아니라).
+        # secret_id는 위에서 존재를 확인했지만, Vault 행이 사라졌으면 None이 올 수 있으니 한 번 더 가드.
+        api_key = get_user_api_key(session, user.id)
+        if not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="등록된 API 키를 불러올 수 없습니다. 키를 다시 등록해 주세요.",
+            )
+
         # 외부 API 호출 전에 세션 안에서 필요한 값을 모두 끌어옴 — 세션 밖에서는 lazy 속성 접근 불가.
         code = sub.code
         verdict = sub.final_verdict
@@ -97,6 +107,7 @@ async def request_tutor(
         verdict=verdict,
         votes=votes,
         test_results=test_results,
+        api_key=api_key,
     )
 
     with get_session() as session:

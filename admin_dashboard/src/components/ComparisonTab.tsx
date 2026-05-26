@@ -122,7 +122,7 @@ export default function ComparisonTab({ settings, initialId }: Props) {
                     <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, boxShadow: "0 4px 6px -1px rgba(0,0,0,.1)" }} />
                     <Legend />
                     <Bar dataKey="hal"    name="hallucination"        fill="#dc2626" radius={[3,3,0,0]} />
-                    <Bar dataKey="intent" name="intent_similarity"    fill="#0DA5E8" radius={[3,3,0,0]} />
+                    <Bar dataKey="intent" name="intent_similarity"    fill="#3182F6" radius={[3,3,0,0]} />
                     <Bar dataKey="diff"   name="difficulty_similarity" fill="#16a34a" radius={[3,3,0,0]} />
                   </BarChart>
                 </ResponsiveContainer>

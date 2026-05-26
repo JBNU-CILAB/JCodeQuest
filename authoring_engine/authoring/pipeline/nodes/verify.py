@@ -126,6 +126,12 @@ def verify_candidates(state: AuthoringState) -> dict:
     updated: list[dict] = []
     for c in state["candidates"]:
         c = dict(c)
+        # 신규성 검사에서 폐기된 후보는 reference_code가 없으므로 sandbox 실행을 건너뛴다.
+        # (novelty 필드가 없는 레거시 후보는 default True라 기존 동작 유지)
+        if not c.get("novelty_passed", True):
+            updated.append(c)
+            continue
+
         test_cases: list[dict] = []
         passed = False
         error = ""

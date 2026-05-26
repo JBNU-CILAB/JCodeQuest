@@ -89,10 +89,15 @@ export default function NoticesView({ settings }: Props) {
   const isEditing = !!form.id;
 
   return (
-    <div>
-      <p className="card-desc mb-12">
-        유저에게 노출되는 공지를 작성·수정·삭제합니다.
-      </p>
+    <div className="main notices">
+      <div className="page-head">
+        <h1>공지사항</h1>
+        <span className="sub">{notices.length}개 · 유저에게 노출되는 공지</span>
+        <div className="page-head-actions">
+          <button className="btn btn-outline btn-sm" onClick={load} disabled={loading}>↻ 새로고침</button>
+          <button className="btn btn-primary btn-sm" onClick={resetForm}>+ 새 공지</button>
+        </div>
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 16, alignItems: "start" }}>
         {/* 공지 목록 */}

@@ -85,10 +85,10 @@ def test_tutor_returns_message_for_ac(
 ):
     captured: dict = {}
 
-    async def fake_tutor(*, problem, code, verdict, votes, test_results):
+    async def fake_tutor(*, problem, code, verdict, votes, test_results, api_key):
         captured.update(
             problem=problem, code=code, verdict=verdict,
-            votes=votes, test_results=test_results,
+            votes=votes, test_results=test_results, api_key=api_key,
         )
         return "잘했어요. 더 깔끔하게 짤 수 있어요.", "gpt-4o-mini"
 
@@ -113,6 +113,8 @@ def test_tutor_returns_message_for_ac(
     assert captured["problem"].title == "2배 출력"
     assert "n * 2" in captured["code"]
     assert len(captured["test_results"]) == 3
+    # 사용자가 등록한 키가 그대로 LLM 호출까지 전달돼야 한다(서버 전역 키 아님).
+    assert captured["api_key"] == "test-api-key-with-20-chars"
 
 
 def test_tutor_when_sandbox_fail_no_votes(

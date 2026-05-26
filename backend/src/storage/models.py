@@ -94,6 +94,12 @@ class ProblemRow(SQLModel, table=True):
     langsmith_trace_id: str | None = Field(default=None, index=True)
     authoring_meta: dict | None = Field(default=None, sa_column=Column(JSON))
 
+    # 신규성(중복) 검사용 임베딩 벡터. pgvector 없이 JSON으로 저장 — SQLite·Postgres 공용.
+    # 백필 전 기존 문제·수동 등록 문제는 NULL. NULL이면 유사도 비교에서 제외(fail-open).
+    # 라이브 Postgres에는 create_all이 컬럼을 추가하지 않으므로 한 번 수동으로
+    # `ALTER TABLE problem ADD COLUMN embedding JSONB;` 실행이 필요하다.
+    embedding: list[float] | None = Field(default=None, sa_column=Column(JSON))
+
     test_cases: list["TestCaseRow"] = Relationship(
         back_populates="problem",
         sa_relationship_kwargs={
@@ -172,6 +178,36 @@ class NoticeRow(SQLModel, table=True):
     pinned: bool = Field(default=False, index=True)
     created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
     updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
+
+
+class RunRow(SQLModel, table=True):
+    """출제 파이프라인 실행 기록. authoring_engine이 run 시작 시 생성하고
+    노드 진행/종료 시 node_states를 갱신한다 — admin RunsView(forensics)의 데이터원.
+
+    인메모리 레지스트리(authoring routers/runs.py)는 살아있는 run만 들고 있어 서버
+    재시작·과거 run 조회에 못 쓴다. 이 테이블이 그 영속 계층. node_states는 노드 키 →
+    상태 스냅샷 JSON(opaque) — 스키마 변화에 유연하고 SQLite·Postgres 공용.
+
+    신규 테이블이라 create_all이 양쪽 DB에서 자동 생성한다(컬럼 추가와 달리 ALTER 불필요)."""
+
+    __tablename__ = "authoring_run"
+
+    # authoring_engine이 만든 hex run_id를 그대로 PK로 — 서버 재시작에도 안정적 식별.
+    id: str = Field(primary_key=True)
+    trace_id: str | None = Field(default=None, index=True)
+    problem_id: int | None = Field(default=None, index=True)
+    problem_title: str | None = None  # 목록 표시용 비정규화 (원본 삭제돼도 보존)
+    target_count: int = 0
+    by_user: str | None = None
+    status: str = Field(default="running", index=True)  # running | done | failed
+    failed_at_node: str | None = None
+    started_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
+    ended_at: datetime | None = Field(default=None, sa_column=_tz_column(nullable=True))
+    total_duration_ms: int | None = None
+    saved_problem_ids: list = Field(default_factory=list, sa_column=Column(JSON))
+    errors: list = Field(default_factory=list, sa_column=Column(JSON))
+    # { node_key: {status, duration_ms, retries, tokens, error, candidate_results, ...} }
+    node_states: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class BugReportRow(SQLModel, table=True):

@@ -161,11 +161,11 @@ export default function ReportsView({ settings }: Props) {
   }
 
   return (
-    <div>
-      <p className="card-desc mb-12">
-        Solver 화면에서 사용자가 보낸 버그 제보를 처리합니다. 상태를 바꾸거나
-        내부 메모를 남길 수 있고, 첨부된 코드 스냅샷으로 재현할 수 있습니다.
-      </p>
+    <div className="main reports">
+      <div className="page-head">
+        <h1>버그 제보</h1>
+        <span className="sub">상태 토글 · 내부 메모 · 코드 스냅샷으로 재현</span>
+      </div>
 
       <div className="card">
         <div className="filter-row">

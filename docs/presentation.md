@@ -218,12 +218,14 @@ LLM에게 *의도*를 알려줘야 의도 채점이 가능.
 
 ```mermaid
 flowchart LR
-    A[fetch_problem<br/>원본 + seed 3개] --> B[generate_variants<br/>LLM: draft + author_solution]
+    A[fetch_problem<br/>원본 + seed 3개] --> R[retrieve_exemplars<br/>임베딩 MMR로 grounding 형제 선별]
+    R --> B[generate_variants<br/>LLM: draft + author_solution]
     B --> C[verify_candidates<br/>샌드박스 실행 검증<br/>실패 시 최대 2회 재시도]
-    C --> D[judge_candidates<br/>3-Judge 품질 평가<br/>≥2/3 통과 ∧ 평균≥0.7]
+    C --> D[judge_candidates<br/>3-Judge 품질 평가<br/>≥2/3 통과 ∧ 중앙값≥0.7]
     D --> E[solve_candidates<br/>3 LLM이 문제를 풂<br/>최소 1명 AC면 통과]
-    E --> F[compare_to_original<br/>hallucination · intent · difficulty<br/>분석용, pass/fail 아님]
-    F --> G[persist_approved<br/>parent_id 세팅<br/>authoring_meta 저장]
+    E --> H[attack_candidates<br/>결함 풀이로 테스트 변별력 검사<br/>1개 이상 탈락시키면 통과]
+    H --> F[compare_to_original<br/>hallucination · intent · difficulty<br/>환각/의도 게이트 적용]
+    F --> G[persist_approved<br/>3게이트 통과분만<br/>parent_id + authoring_meta 저장]
 
     style A fill:#eef
     style G fill:#efe

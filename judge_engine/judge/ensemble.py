@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 
 from jcq_shared.schemas import EnsembleResult, JudgeVote, JudgeVotePartial, Problem, TestResult
@@ -17,10 +18,26 @@ class JudgeSpec:
     persona: str
 
 
+# 모델명은 출제 엔진과 동일한 env(JCQ_ENSEMBLE_MODEL_*)로 제어 — 두 엔진이 같은
+# 판사진을 쓰도록 .env.docker 한 곳에서 단일 소스화. 변수명/기본값은
+# authoring_engine/authoring/config.py의 ENSEMBLE_MODEL_* 와 일치시킨다.
+# judge_id/persona는 채점 의미라 코드에 고정, 모델 태그만 env로 뺀다.
 JUDGES = [
-    JudgeSpec("Melchior", "qwen2.5-coder:14b-instruct-q5_K_M", "엄격한 채점관"),
-    JudgeSpec("Balthasar", "deepseek-coder-v2:lite", "코드 리뷰어"),
-    JudgeSpec("Casper", "llama3.1:8b", "출제자 의도 분석가"),
+    JudgeSpec(
+        "Melchior",
+        os.getenv("JCQ_ENSEMBLE_MODEL_MELCHIOR", "qwen2.5-coder:14b-instruct-q5_K_M"),
+        "엄격한 채점관",
+    ),
+    JudgeSpec(
+        "Balthasar",
+        os.getenv("JCQ_ENSEMBLE_MODEL_BALTHASAR", "deepseek-coder-v2:lite"),
+        "코드 리뷰어",
+    ),
+    JudgeSpec(
+        "Casper",
+        os.getenv("JCQ_ENSEMBLE_MODEL_CASPER", "llama3.1:8b"),
+        "출제자 의도 분석가",
+    ),
 ]
 
 

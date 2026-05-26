@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
 import type { ConnSettings, ConnStatus, Route } from "./types";
 import { loadSettings, saveSettings, adminFetch } from "./api";
+import { RailIcons } from "./components/Icons";
 import SettingsModal from "./components/SettingsModal";
+import RunsView from "./views/RunsView";
 import ProblemsView from "./views/ProblemsView";
 import SubmissionsView from "./views/SubmissionsView";
 import NoticesView from "./views/NoticesView";
@@ -9,20 +11,38 @@ import ReportsView from "./views/ReportsView";
 import StatsView from "./views/StatsView";
 import UsersView from "./views/UsersView";
 
-const NAV: { route: Route; label: string; icon: string }[] = [
-  { route: "problems",    label: "문제 관리",   icon: "⬡" },
-  { route: "submissions", label: "풀이 기록",   icon: "⊞" },
-  { route: "notices",     label: "공지",        icon: "◈" },
-  { route: "reports",     label: "버그 제보",   icon: "⚠" },
-  { route: "stats",       label: "통계",        icon: "⬟" },
-  { route: "users",       label: "사용자",      icon: "○" },
+const NAV: { route: Route; label: string; Icon: (p: React.SVGProps<SVGSVGElement>) => JSX.Element }[] = [
+  { route: "runs",        label: "파이프라인 runs", Icon: RailIcons.runs },
+  { route: "stats",       label: "통계",            Icon: RailIcons.stats },
+  { route: "problems",    label: "문제 관리",       Icon: RailIcons.problems },
+  { route: "submissions", label: "풀이 기록",       Icon: RailIcons.submissions },
+  { route: "notices",     label: "공지사항",        Icon: RailIcons.notices },
+  { route: "reports",     label: "버그 제보",       Icon: RailIcons.reports },
+  { route: "users",       label: "유저 / 권한",     Icon: RailIcons.users },
 ];
+
+const ROUTE_TITLE: Record<Route, string> = {
+  runs:        "파이프라인 runs",
+  stats:       "통계 · 분석",
+  problems:    "문제 관리",
+  submissions: "풀이 기록",
+  notices:     "공지 관리",
+  reports:     "버그 제보",
+  users:       "사용자 관리",
+};
+
+const CONN_LABEL: Record<ConnStatus, string> = {
+  idle: "연결 전",
+  ok: "연결됨",
+  error: "연결 실패",
+  loading: "확인 중",
+};
 
 export default function App() {
   const [settings, setSettings] = useState<ConnSettings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [connStatus, setConnStatus] = useState<ConnStatus>("idle");
-  const [route, setRoute] = useState<Route>("problems");
+  const [route, setRoute] = useState<Route>("runs");
 
   const pingHealth = useCallback(async (s: ConnSettings) => {
     setConnStatus("loading");
@@ -43,85 +63,66 @@ export default function App() {
     pingHealth(s);
   }
 
-  const routeTitle: Record<Route, string> = {
-    problems:    "문제 관리",
-    submissions: "풀이 기록",
-    notices:     "공지 관리",
-    reports:     "버그 제보",
-    stats:       "통계 · 분석",
-    users:       "사용자 관리",
-  };
-
-  const connLabels: Record<ConnStatus, string> = {
-    idle:    "연결 전",
-    ok:      "연결됨",
-    error:   "연결 실패",
-    loading: "연결 확인 중",
-  };
-
   return (
-    <div className="layout">
-      {/* ── Sidebar ── */}
-      <aside className="sidebar">
-        <div className="sidebar-logo">
-          <div className="brand">
-            <div className="logomark">J</div>
-            <div className="brand-text">
-              <span className="brand-name">JCodeQuest</span>
-              <span className="brand-tag">Admin</span>
-            </div>
-          </div>
-        </div>
-
-        <nav className="sidebar-nav">
-          <div className="nav-section-label">메뉴</div>
-          {NAV.map(({ route: r, label, icon }) => (
-            <button
-              key={r}
-              className={`nav-item${route === r ? " active" : ""}`}
-              onClick={() => setRoute(r)}
-            >
-              <span className="nav-icon">{icon}</span>
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebar-conn">
-          <div className="conn-row">
-            <div className={`conn-dot ${connStatus}`} />
-            <span className="conn-label">{connLabels[connStatus]}</span>
-            <button className="btn-settings" onClick={() => setShowSettings(true)}>⚙</button>
-          </div>
-        </div>
+    <div className="app">
+      {/* ── Rail ── */}
+      <aside className="rail">
+        <div className="rail-logo">JC</div>
+        {NAV.map(({ route: r, label, Icon }) => (
+          <button
+            key={r}
+            className={`rail-btn${route === r ? " active" : ""}`}
+            onClick={() => setRoute(r)}
+            aria-label={label}
+          >
+            <Icon />
+            <span className="tip">{label}</span>
+          </button>
+        ))}
+        <div className="rail-spacer" />
+        <button
+          className="rail-btn"
+          onClick={() => setShowSettings(true)}
+          aria-label="연결 설정"
+          title="연결 설정"
+        >
+          <span className="avatar-pip" style={{ width: 28, height: 28, margin: 0, fontSize: 12 }}>A</span>
+          {connStatus === "error" && <span className="rail-dot" />}
+        </button>
       </aside>
 
-      {/* ── Main ── */}
-      <div className="main-area">
-        <header className="page-header">
-          <div className="page-title">
-            <div className="route-dot" />
-            {routeTitle[route]}
-          </div>
-          <div className="page-actions">
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => pingHealth(settings)}
-            >
-              {connStatus === "loading" ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "↻"}&nbsp;상태 확인
-            </button>
-          </div>
-        </header>
+      {/* ── Topbar ── */}
+      <header className="topbar">
+        <div className="crumbs">
+          <strong>JCode-Quest</strong>
+          <span className="sep">/</span>
+          <span>Admin</span>
+          <span className="sep">/</span>
+          <strong>{ROUTE_TITLE[route]}</strong>
+        </div>
+        <div className="topbar-right">
+          <button
+            className={`conn-pill ${connStatus}`}
+            onClick={() => pingHealth(settings)}
+            title="연결 상태 새로고침"
+          >
+            <span className="dot" />
+            {CONN_LABEL[connStatus]}
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={() => setShowSettings(true)}>
+            ⚙ 설정
+          </button>
+        </div>
+      </header>
 
-        <main className="page-content">
-          {route === "problems"    && <ProblemsView    settings={settings} />}
-          {route === "submissions" && <SubmissionsView settings={settings} />}
-          {route === "notices"     && <NoticesView     settings={settings} />}
-          {route === "reports"     && <ReportsView     settings={settings} />}
-          {route === "stats"       && <StatsView       settings={settings} />}
-          {route === "users"       && <UsersView       settings={settings} />}
-        </main>
-      </div>
+      {/* ── Main view ── */}
+      {route === "runs" && <RunsView settings={settings} />}
+      {route === "stats" && <StatsView settings={settings} />}
+      {route === "problems" && <ProblemsView settings={settings} />}
+      {route === "submissions" && <SubmissionsView settings={settings} />}
+      {route === "notices" && <NoticesView settings={settings} />}
+      {route === "reports" && <ReportsView settings={settings} />}
+      {route === "users" && <UsersView settings={settings} />}
 
       {showSettings && (
         <SettingsModal

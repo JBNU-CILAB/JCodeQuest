@@ -14,9 +14,15 @@ from jcq_shared.schemas import (
     AuthoringProblemCreate,
     AuthoringProblemCreateResponse,
     AuthoringProblemSummary,
+    EmbeddingUpdateRequest,
     ExecResult,
     Problem,
     ProblemDeleteResponse,
+    ProblemEmbedding,
+    RunCreate,
+    RunDetail,
+    RunSummary,
+    RunUpdate,
     SandboxRunRequest,
 )
 
@@ -66,6 +72,28 @@ def fetch_seeds(problem_id: int, limit: int = 3) -> list[AuthoringProblemAdmin]:
         return [AuthoringProblemAdmin.model_validate(x) for x in r.json()]
 
 
+def fetch_category_embeddings(problem_id: int) -> list[ProblemEmbedding]:
+    """problem_id와 같은 카테고리 approved 문제의 (id, title, embedding) 전체.
+    신규성 검사가 후보를 카테고리 형제 전체와 비교할 때의 모집단."""
+    with _client() as cli:
+        r = cli.get(
+            f"{_backend_url()}/internal/problems/{problem_id}/category-embeddings",
+        )
+        r.raise_for_status()
+        return [ProblemEmbedding.model_validate(x) for x in r.json()]
+
+
+def set_problem_embedding(problem_id: int, embedding: list[float]) -> None:
+    """기존 문제 임베딩 백필/갱신."""
+    req = EmbeddingUpdateRequest(embedding=embedding)
+    with _client() as cli:
+        r = cli.patch(
+            f"{_backend_url()}/internal/problems/{problem_id}/embedding",
+            json=req.model_dump(),
+        )
+        r.raise_for_status()
+
+
 def list_problems(originals_only: bool = True) -> list[AuthoringProblemSummary]:
     with _client() as cli:
         r = cli.get(
@@ -91,6 +119,7 @@ def create_problem(
     langsmith_trace_id: str | None = None,
     authoring_meta: dict | None = None,
     iso_week: str | None = None,
+    embedding: list[float] | None = None,
 ) -> int:
     req = AuthoringProblemCreate(
         problem=problem,
@@ -99,6 +128,7 @@ def create_problem(
         langsmith_trace_id=langsmith_trace_id,
         authoring_meta=authoring_meta,
         iso_week=iso_week,
+        embedding=embedding,
     )
     with _client() as cli:
         r = cli.post(
@@ -199,6 +229,49 @@ def delete_report(report_id: int) -> dict:
         r = cli.delete(f"{_backend_url()}/internal/reports/{report_id}")
         r.raise_for_status()
         return r.json()
+
+
+# ── backend (/internal/runs) — 파이프라인 run 영속화 ─────────────────────
+def create_run(req: RunCreate) -> RunSummary:
+    with _client(timeout_s=10.0) as cli:
+        r = cli.post(f"{_backend_url()}/internal/runs", json=req.model_dump())
+        r.raise_for_status()
+        return RunSummary.model_validate(r.json())
+
+
+def update_run(run_id: str, req: RunUpdate) -> RunSummary:
+    with _client(timeout_s=10.0) as cli:
+        r = cli.patch(
+            f"{_backend_url()}/internal/runs/{run_id}",
+            json=req.model_dump(exclude_none=True),
+        )
+        r.raise_for_status()
+        return RunSummary.model_validate(r.json())
+
+
+def list_runs(
+    *,
+    status: str | None = None,
+    problem_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[RunSummary]:
+    params: dict[str, object] = {"limit": limit, "offset": offset}
+    if status is not None:
+        params["status"] = status
+    if problem_id is not None:
+        params["problem_id"] = problem_id
+    with _client(timeout_s=10.0) as cli:
+        r = cli.get(f"{_backend_url()}/internal/runs", params=params)
+        r.raise_for_status()
+        return [RunSummary.model_validate(x) for x in r.json()]
+
+
+def get_run(run_id: str) -> RunDetail:
+    with _client(timeout_s=10.0) as cli:
+        r = cli.get(f"{_backend_url()}/internal/runs/{run_id}")
+        r.raise_for_status()
+        return RunDetail.model_validate(r.json())
 
 
 # ── judge_engine (/api/sandbox/run) ──────────────────────────────────────

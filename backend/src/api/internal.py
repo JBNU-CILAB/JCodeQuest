@@ -5,6 +5,8 @@
   POST   /internal/grade-events            judge_engine이 채점 라이프사이클 이벤트를 push
   GET    /internal/problems/{id}           authoring_engine: 원본 문제 상세
   GET    /internal/problems/{id}/seeds     authoring_engine: 같은 카테고리 시드 (approved)
+  GET    /internal/problems/{id}/category-embeddings  authoring_engine: 신규성 검사용 임베딩
+  PATCH  /internal/problems/{id}/embedding authoring_engine: 임베딩 백필/갱신
   POST   /internal/problems                authoring_engine: 변형/시드 문제 저장
   DELETE /internal/problems/{id}           admin: 문제 + 변형/제출/튜터 cascade 삭제
   GET    /internal/problems                authoring viewer: 관리자 목록 (변형 통계 포함)
@@ -39,12 +41,18 @@ from ..schemas import (
     AuthoringTestCase,
     BugReport,
     BugReportUpdateRequest,
+    EmbeddingUpdateRequest,
     GradeEvent,
     Notice,
     NoticeCreateRequest,
     NoticeUpdateRequest,
     ProblemDeleteCascade,
     ProblemDeleteResponse,
+    ProblemEmbedding,
+    RunCreate,
+    RunDetail,
+    RunSummary,
+    RunUpdate,
     StatsJudgeBucket,
     StatsJudgeBucketEntry,
     StatsJudgeResponse,
@@ -64,6 +72,7 @@ from ..storage.models import (
     BugReportRow,
     NoticeRow,
     ProblemRow,
+    RunRow,
     SubmissionRow,
     UserRow,
     iso_week_of,
@@ -74,7 +83,18 @@ from ..storage.notices import (
     list_notices,
     update_notice,
 )
-from ..storage.problems import create_problem, delete_problem
+from ..storage.problems import (
+    create_problem,
+    delete_problem,
+    list_category_embeddings,
+    set_problem_embedding,
+)
+from ..storage.runs import (
+    create_run,
+    get_run,
+    list_runs,
+    update_run,
+)
 from ..storage.users import clear_user_api_key, delete_user, list_users_admin
 
 log = logging.getLogger(__name__)
@@ -236,6 +256,48 @@ def get_problem_seeds(
 
 
 @router.get(
+    "/problems/{problem_id}/category-embeddings",
+    response_model=list[ProblemEmbedding],
+    summary="같은 카테고리 approved 문제의 저장된 임베딩 (신규성 검사 모집단, 해당 ID 제외)",
+)
+def get_category_embeddings(
+    problem_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> list[ProblemEmbedding]:
+    """출제 엔진의 신규성(중복) 검사가 후보를 카테고리 형제 전체와 비교할 때 쓴다.
+    seeds(최대 3개)와 달리 limit 없이 카테고리 전체를 돌려준다 — 모든 형제와 비교해야
+    중복을 놓치지 않기 때문. embedding이 NULL인(미백필) 문제도 포함하며 호출 측이 건너뛴다."""
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        rows = list_category_embeddings(session, problem_id)
+    if rows is None:
+        raise HTTPException(404, f"problem {problem_id} not found")
+    return [
+        ProblemEmbedding(
+            id=rid, title=title, embedding=emb, level=level, judge_score=score
+        )
+        for rid, title, emb, level, score in rows
+    ]
+
+
+@router.patch(
+    "/problems/{problem_id}/embedding",
+    summary="기존 문제 임베딩 백필/갱신",
+)
+def patch_problem_embedding(
+    problem_id: Annotated[int, Path()],
+    req: EmbeddingUpdateRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, int]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        ok = set_problem_embedding(session, problem_id, req.embedding)
+    if not ok:
+        raise HTTPException(404, f"problem {problem_id} not found")
+    return {"id": problem_id}
+
+
+@router.get(
     "/problems/{problem_id}/children",
     response_model=list[AuthoringProblemAdmin],
     summary="원본의 변형 목록 (관리자 시야)",
@@ -275,6 +337,7 @@ def create_problem_admin(
             langsmith_trace_id=req.langsmith_trace_id,
             authoring_meta=req.authoring_meta,
             iso_week=issued_week,
+            embedding=req.embedding,
         )
     return AuthoringProblemCreateResponse(id=pid)
 
@@ -913,3 +976,135 @@ def delete_report_admin(
     if not ok:
         raise HTTPException(404, f"report {report_id} not found")
     return {"id": report_id}
+
+
+# ── 출제 파이프라인 runs (admin RunsView · forensics) ────────────────────────
+def _dt_iso(dt: datetime | None) -> str | None:
+    """aware/naive 무관 ISO8601 문자열. naive면 UTC로 가정."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+def _run_to_summary(row: RunRow) -> RunSummary:
+    return RunSummary(
+        id=row.id,
+        trace_id=row.trace_id,
+        problem_id=row.problem_id,
+        problem_title=row.problem_title,
+        target_count=row.target_count,
+        by_user=row.by_user,
+        status=row.status,
+        failed_at_node=row.failed_at_node,
+        started_at=_dt_iso(row.started_at),
+        ended_at=_dt_iso(row.ended_at),
+        total_duration_ms=row.total_duration_ms,
+        saved_count=len(row.saved_problem_ids or []),
+    )
+
+
+def _run_to_detail(row: RunRow) -> RunDetail:
+    return RunDetail(
+        **_run_to_summary(row).model_dump(),
+        node_states=row.node_states or {},
+        saved_problem_ids=row.saved_problem_ids or [],
+        errors=row.errors or [],
+    )
+
+
+@router.post(
+    "/runs",
+    response_model=RunSummary,
+    summary="파이프라인 run 기록 생성 (authoring_engine)",
+    description="run 시작 시 1회. 같은 id 재호출은 멱등 — 기존 row 반환.",
+)
+def create_run_record(
+    req: RunCreate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> RunSummary:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = create_run(
+            session,
+            id=req.id,
+            trace_id=req.trace_id,
+            problem_id=req.problem_id,
+            problem_title=req.problem_title,
+            target_count=req.target_count,
+            by_user=req.by_user,
+        )
+        return _run_to_summary(row)
+
+
+@router.patch(
+    "/runs/{run_id}",
+    response_model=RunSummary,
+    summary="파이프라인 run 기록 갱신 (authoring_engine)",
+    responses={404: {"description": "run 없음"}},
+)
+def update_run_record(
+    run_id: Annotated[str, Path()],
+    req: RunUpdate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> RunSummary:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = update_run(
+            session,
+            run_id,
+            status=req.status,
+            failed_at_node=req.failed_at_node,
+            total_duration_ms=req.total_duration_ms,
+            ended_at=req.ended_at,
+            saved_problem_ids=req.saved_problem_ids,
+            errors=req.errors,
+            node_states=req.node_states,
+        )
+        if row is None:
+            raise HTTPException(404, f"run {run_id} not found")
+        return _run_to_summary(row)
+
+
+@router.get(
+    "/runs",
+    response_model=list[RunSummary],
+    summary="파이프라인 run 목록 (admin)",
+    description="started_at 내림차순. status(running|done|failed) / problem_id 필터 + 페이지네이션.",
+)
+def list_runs_admin(
+    authorization: Annotated[str | None, Header()] = None,
+    status: Annotated[str | None, Query(description="running | done | failed")] = None,
+    problem_id: Annotated[int | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[RunSummary]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        rows = list_runs(
+            session,
+            status=status,
+            problem_id=problem_id,
+            limit=limit,
+            offset=offset,
+        )
+        return [_run_to_summary(r) for r in rows]
+
+
+@router.get(
+    "/runs/{run_id}",
+    response_model=RunDetail,
+    summary="파이프라인 run 상세 — node_states 포함 (admin)",
+    responses={404: {"description": "run 없음"}},
+)
+def get_run_admin(
+    run_id: Annotated[str, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> RunDetail:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = get_run(session, run_id)
+        if row is None:
+            raise HTTPException(404, f"run {run_id} not found")
+        return _run_to_detail(row)

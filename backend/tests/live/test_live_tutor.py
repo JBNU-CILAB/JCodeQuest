@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import os
 import time
 
 from src.schemas import JudgeVote, Problem, TestResult
@@ -68,6 +69,7 @@ async def _run(
         verdict=verdict,
         votes=votes,
         test_results=test_results,
+        api_key=os.environ["OPENAI_API_KEY"],
     )
     return TutorScenarioRecord(
         name=name,

@@ -1,4 +1,5 @@
 import json
+import statistics
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -9,6 +10,8 @@ from ...config import (
     ENSEMBLE_NUM_CTX,
     ENSEMBLE_TEMPERATURE,
     JUDGE_PASS_THRESHOLD,
+    JUDGE_SAMPLES,
+    JUDGE_SELFCONSIST_TEMP,
     OLLAMA_BASE_URL,
     OLLAMA_KEEP_ALIVE,
 )
@@ -17,6 +20,10 @@ from ..prompts import JUDGE_QUALITY_SYSTEM, JUDGE_QUALITY_USER
 
 # 채점 앙상블과 동일한 3 판사 — 역할은 학생 코드 채점이 아니라 문제 품질 심사 (env로 설정)
 _QUALITY_JUDGES = ENSEMBLE_MODELS
+
+# self-consistency가 켜지면(JUDGE_SAMPLES>1) 약간의 온도를 줘야 샘플이 갈린다.
+_N_SAMPLES = max(1, JUDGE_SAMPLES)
+_SAMPLE_TEMP = ENSEMBLE_TEMPERATURE if _N_SAMPLES == 1 else JUDGE_SELFCONSIST_TEMP
 
 
 def _parse_judge_response(content: str) -> dict:
@@ -28,11 +35,9 @@ def _parse_judge_response(content: str) -> dict:
     return json.loads(text.strip())
 
 
-def _judge_one_candidate(candidate: dict) -> dict:
-    """3-judge 앙상블로 문제 품질을 투표. 2/3 이상 pass + 평균 score ≥ threshold면 통과."""
+def _build_user_msg(candidate: dict) -> str:
     rubric = candidate.get("intent_rubric", {})
     test_cases = candidate.get("test_cases", [])
-
     tc_lines = [
         f"케이스 {tc.get('ordinal', i+1)} "
         f"({'sample' if tc.get('is_sample') else 'hidden'}): "
@@ -40,61 +45,100 @@ def _judge_one_candidate(candidate: dict) -> dict:
         for i, tc in enumerate(test_cases)
     ]
     tc_summary = "\n".join(tc_lines) or "(없음)"
+    return JUDGE_QUALITY_USER.format(
+        title=candidate.get("title", ""),
+        statement=candidate.get("statement", ""),
+        expected_approach=rubric.get("expected_approach", ""),
+        expected_complexity=rubric.get("expected_complexity", ""),
+        key_insight=rubric.get("key_insight", ""),
+        must_handle=", ".join(rubric.get("must_handle", [])),
+        forbidden_patterns=", ".join(rubric.get("forbidden_patterns", [])),
+        test_cases_summary=tc_summary,
+    )
 
-    votes_passed: list[bool] = []
-    votes_score: list[float] = []
-    all_issues: list[str] = []
-    rationale_parts: list[str] = []
 
-    for judge_id, model in _QUALITY_JUDGES:
-        llm = ChatOllama(
-            model=model,
-            temperature=ENSEMBLE_TEMPERATURE,
-            format="json",
-            base_url=OLLAMA_BASE_URL,
-            num_ctx=ENSEMBLE_NUM_CTX,
-            keep_alive=OLLAMA_KEEP_ALIVE,
-        )
+def _poll_one_judge(judge_id: str, model: str, user_msg: str) -> dict:
+    """한 판사를 _N_SAMPLES회 샘플해 판사 내부에서 합산한다.
+
+    passed = 샘플 다수결, score = 샘플 중앙값. 대표 rationale/issues는 중앙값에
+    가장 가까운 샘플에서 취한다. JUDGE_SAMPLES=1이면 기존 단일 호출과 동일.
+    """
+    llm = ChatOllama(
+        model=model,
+        temperature=_SAMPLE_TEMP,
+        format="json",
+        base_url=OLLAMA_BASE_URL,
+        num_ctx=ENSEMBLE_NUM_CTX,
+        keep_alive=OLLAMA_KEEP_ALIVE,
+    )
+
+    samples: list[dict] = []
+    for s in range(_N_SAMPLES):
         try:
             resp = llm.invoke(
                 [
                     SystemMessage(content=JUDGE_QUALITY_SYSTEM),
-                    HumanMessage(
-                        content=JUDGE_QUALITY_USER.format(
-                            title=candidate.get("title", ""),
-                            statement=candidate.get("statement", ""),
-                            expected_approach=rubric.get("expected_approach", ""),
-                            expected_complexity=rubric.get("expected_complexity", ""),
-                            key_insight=rubric.get("key_insight", ""),
-                            must_handle=", ".join(rubric.get("must_handle", [])),
-                            forbidden_patterns=", ".join(
-                                rubric.get("forbidden_patterns", [])
-                            ),
-                            test_cases_summary=tc_summary,
-                        )
-                    ),
+                    HumanMessage(content=user_msg),
                 ],
-                config=RunnableConfig(run_name=f"judge_quality/{judge_id}"),
+                config=RunnableConfig(run_name=f"judge_quality/{judge_id}#{s+1}"),
             )
             result = _parse_judge_response(resp.content)
-            votes_passed.append(bool(result.get("passed", False)))
-            votes_score.append(float(result.get("score", 0.0)))
-            all_issues.extend(result.get("issues", []))
-            rationale_parts.append(f"[{judge_id}] {result.get('rationale', '')}")
+            samples.append(
+                {
+                    "passed": bool(result.get("passed", False)),
+                    "score": float(result.get("score", 0.0)),
+                    "issues": list(result.get("issues", [])),
+                    "rationale": result.get("rationale", ""),
+                }
+            )
         except Exception as exc:
-            votes_passed.append(False)
-            votes_score.append(0.0)
-            all_issues.append(f"[{judge_id}] 오류: {exc}")
+            samples.append(
+                {"passed": False, "score": 0.0, "issues": [f"오류: {exc}"], "rationale": ""}
+            )
 
-    avg_score = sum(votes_score) / len(votes_score) if votes_score else 0.0
-    n_passed = sum(votes_passed)
-    # 2/3 이상 pass + 평균 score ≥ threshold
-    judge_passed = n_passed >= 2 and avg_score >= JUDGE_PASS_THRESHOLD
+    scores = [s["score"] for s in samples]
+    median_score = statistics.median(scores)
+    n_pass = sum(1 for s in samples if s["passed"])
+    judge_passed = n_pass * 2 > _N_SAMPLES  # 엄격 다수결 (동수는 실패)
+
+    # 대표 샘플 = 중앙값에 가장 가까운 score를 낸 샘플.
+    rep = min(samples, key=lambda s: abs(s["score"] - median_score))
+    return {
+        "judge_id": judge_id,
+        "passed": judge_passed,
+        "score": median_score,
+        "issues": rep["issues"],
+        "rationale": rep["rationale"],
+    }
+
+
+def _judge_one_candidate(candidate: dict) -> dict:
+    """3-judge 앙상블로 문제 품질을 심사. 2/3 이상 pass + 점수 중앙값 ≥ threshold면 통과.
+
+    집계를 평균 대신 중앙값으로 둬 판사 한 명의 이상치(0점 오류 등)에 강건하게 만든다.
+    """
+    user_msg = _build_user_msg(candidate)
+    per_judge = [
+        _poll_one_judge(judge_id, model, user_msg)
+        for judge_id, model in _QUALITY_JUDGES
+    ]
+
+    judge_scores = [j["score"] for j in per_judge]
+    median_score = statistics.median(judge_scores) if judge_scores else 0.0
+    n_passed = sum(1 for j in per_judge if j["passed"])
+    judge_passed = n_passed >= 2 and median_score >= JUDGE_PASS_THRESHOLD
+
+    all_issues: list[str] = []
+    for j in per_judge:
+        all_issues.extend(j["issues"])
 
     return {
         "judge_passed": judge_passed,
-        "judge_score": round(avg_score, 3),
-        "judge_rationale": " | ".join(rationale_parts),
+        "judge_score": round(median_score, 3),
+        "judge_scores": [round(s, 3) for s in judge_scores],
+        "judge_rationale": " | ".join(
+            f"[{j['judge_id']}] {j['rationale']}" for j in per_judge
+        ),
         "judge_issues": all_issues,
     }
 

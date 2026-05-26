@@ -192,7 +192,7 @@ export function Solver() {
 
         {problem.sample_test_cases.length > 0 && (
           <div className="bg-white border border-gray-200 rounded-2xl px-6 py-5 shadow-[0_1px_2px_rgba(31,41,55,0.03)]">
-            <h2 className="text-sm font-bold text-gray-800 mb-3">샘플 입출력</h2>
+            <h2 className="text-sm font-bold text-gray-800 mb-3">예제 입출력</h2>
             <div className="flex flex-col gap-3">
               {problem.sample_test_cases.map((tc) => (
                 <div key={tc.ordinal} className="grid grid-cols-2 gap-3">

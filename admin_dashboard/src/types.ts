@@ -7,7 +7,7 @@ export interface ConnSettings {
 
 export type ConnStatus = "idle" | "ok" | "error" | "loading";
 
-export type Route = "problems" | "submissions" | "notices" | "reports" | "stats" | "users";
+export type Route = "runs" | "problems" | "submissions" | "notices" | "reports" | "stats" | "users";
 
 export interface ProblemRow {
   id: number;
@@ -24,6 +24,92 @@ export interface TestCase {
   stdin: string;
   expected_stdout: string;
   is_sample?: boolean;
+}
+
+/* ── 출제 파이프라인 메타 (authoring_meta) ─────────────────────────────
+   backend가 ProblemRow.authoring_meta(opaque JSON)에 그대로 들고 있는 값.
+   향후 생성분에만 rag 섹션이 채워진다(기존 변형은 rag 미존재 → null 처리). */
+export interface RagExemplar {
+  id: number | null;
+  title: string | null;
+}
+
+export interface AuthoringMeta {
+  candidate_index?: number | null;
+  // LLM-as-a-Judge 품질 심사
+  judge_score?: number | null;          // 판사 점수 중앙값
+  judge_scores?: number[];              // per-judge 점수
+  judge_passed?: boolean | null;
+  judge_rationale?: string | null;
+  judge_issues?: string[];
+  // 솔버(LLM이 직접 풀이)
+  solver_results?: { judge_id?: string; verdict?: string; rationale?: string; code?: string }[];
+  solver_passed?: boolean | null;
+  // verify(reference_code 실행)
+  verify_passed?: boolean | null;
+  verify_error?: string | null;
+  verify_attempts?: number | null;
+  // 테스트 변별력(결함 풀이 공격)
+  discrimination?: {
+    score?: number | null;
+    passed?: boolean | null;
+    attacks?: { strategy?: string; verdict?: string; rejected?: boolean; rationale?: string; code?: string }[];
+  };
+  // 원본-변형 비교 3축
+  comparison?: {
+    hallucination_score?: number | null;
+    intent_similarity?: number | null;
+    difficulty_similarity?: number | null;
+    rationale?: string;
+    error?: string;
+    passed?: boolean | null;
+  };
+  // 신규성(임베딩 cosine) — RAG 임베딩의 "밀어내기" 방향
+  novelty?: {
+    max_similarity?: number | null;
+    closest_id?: number | null;
+    attempts?: number | null;
+  };
+  // RAG exemplar 검색 — "끌어오기" 방향. enabled=true & exemplars=[]면 빈 코퍼스/폴백.
+  rag?: {
+    enabled?: boolean;
+    top_k?: number;
+    mmr_lambda?: number;
+    level_window?: number;
+    min_judge_score?: number;
+    exemplars?: RagExemplar[];
+  };
+  issued_iso_week?: string;
+  source?: string;                      // "manual" (수기 등록 원본)
+}
+
+export interface ProblemTestCase {
+  ordinal: number;
+  stdin: string;
+  expected_stdout: string;
+  is_sample: boolean;
+}
+
+/* /api/problems/{id} (ProblemDetailOut) — authoring_meta 포함 관리자 시야 */
+export interface ProblemDetail {
+  id: number;
+  title: string;
+  category: string;
+  level: string;
+  status: string;
+  parent_id: number | null;
+  langsmith_trace_id?: string | null;
+  created_at?: string | null;
+  child_count?: number;
+  avg_judge_score?: number | null;
+  statement: string;
+  reference_code: string;
+  intent_rubric?: Record<string, unknown> | null;
+  authoring_meta?: AuthoringMeta | null;
+  points: number;
+  time_limit_ms: number;
+  memory_limit_mb: number;
+  test_cases: ProblemTestCase[];
 }
 
 export interface SubmissionRow {
@@ -101,6 +187,46 @@ export interface JudgeBucket {
 export interface JudgesResponse {
   series: JudgeBucket[];
   judge_ids: string[];
+}
+
+/* ── 파이프라인 run (RunsView · forensics) ─────────────────────────────── */
+export interface RunCandidateResult {
+  idx: number;
+  status: "pass" | "fail" | "warn" | string;
+  note?: string;
+}
+
+export interface RunNodeStateT {
+  status: "queued" | "running" | "done" | "failed" | "skipped" | string;
+  duration_ms?: number | null;
+  retries?: number;
+  tokens?: { prompt?: number; completion?: number; total?: number };
+  error?: string | null;
+  candidates_in?: number | null;
+  candidates_out?: number | null;
+  candidate_results?: RunCandidateResult[];
+  outputs_preview?: Record<string, unknown> | null;
+}
+
+export interface RunSummaryT {
+  id: string;
+  trace_id?: string | null;
+  problem_id?: number | null;
+  problem_title?: string | null;
+  target_count: number;
+  by_user?: string | null;
+  status: "running" | "done" | "failed" | string;
+  failed_at_node?: string | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  total_duration_ms?: number | null;
+  saved_count: number;
+}
+
+export interface RunDetailT extends RunSummaryT {
+  node_states: Record<string, RunNodeStateT>;
+  saved_problem_ids: number[];
+  errors: string[];
 }
 
 export interface UserRow {

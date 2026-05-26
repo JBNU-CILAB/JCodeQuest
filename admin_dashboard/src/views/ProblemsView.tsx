@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
-import type { ConnSettings, ProblemRow, TestCase } from "../types";
+import type { ConnSettings, ProblemRow, TestCase, ProblemDetail } from "../types";
 import { adminFetch, fmtDate } from "../api";
+import AuthoringMetaPanel from "../components/AuthoringMetaPanel";
 
 interface Props { settings: ConnSettings }
 
@@ -309,6 +310,27 @@ function ListTab({ settings }: Props) {
   const [loading, setLoading] = useState(false);
   const [includeVariants, setIncludeVariants] = useState(false);
   const [output, setOutput] = useState<{ kind: "ok" | "err" | ""; msg: string }>({ kind: "", msg: "" });
+  const [detail, setDetail] = useState<ProblemDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  async function showDetail(pid: number) {
+    setDetailLoading(true);
+    setDetail(null);
+    try {
+      const r = await adminFetch(`/api/problems/${pid}`, settings);
+      if (!r.ok) {
+        const t = await r.text();
+        setOutput({ kind: "err", msg: `[${r.status}] ${t.slice(0, 200)}` });
+        setDetailLoading(false);
+        return;
+      }
+      setDetail(await r.json());
+    } catch (err: unknown) {
+      setOutput({ kind: "err", msg: (err as Error).message });
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -362,6 +384,10 @@ function ListTab({ settings }: Props) {
             {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "↻"}&nbsp;불러오기
           </button>
         </div>
+        <div className="card-desc" style={{ marginTop: 8 }}>
+          행을 클릭하면 RAG 과정과 LLM-as-a-Judge 지표(품질·변별력·비교·신규성)를 확인할 수 있습니다.
+          변형 문제에 메타가 채워집니다 — "변형 문제 포함"을 켜고 조회하세요.
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0 }}>
@@ -377,7 +403,7 @@ function ListTab({ settings }: Props) {
               {problems.length === 0 ? (
                 <tr className="empty-row"><td colSpan={9}>문제 없음 — 불러오기를 눌러주세요</td></tr>
               ) : problems.map((p) => (
-                <tr key={p.id}>
+                <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => showDetail(p.id)}>
                   <td className="num">{p.id}</td>
                   <td>{p.title}</td>
                   <td><span className="badge badge-blue">{p.category}</span></td>
@@ -387,7 +413,10 @@ function ListTab({ settings }: Props) {
                   <td className="num">{p.parent_id ?? "—"}</td>
                   <td className="text-sm text-muted">{fmtDate(p.created_at).slice(0, 10)}</td>
                   <td className="actions">
-                    <button className="btn btn-danger btn-sm" onClick={() => deleteProblem(p.id, p.title)}>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={(e) => { e.stopPropagation(); deleteProblem(p.id, p.title); }}
+                    >
                       삭제
                     </button>
                   </td>
@@ -399,6 +428,12 @@ function ListTab({ settings }: Props) {
       </div>
 
       {output.msg && <div className={`output-panel ${output.kind}`}>{output.msg}</div>}
+
+      <AuthoringMetaPanel
+        detail={detail}
+        loading={detailLoading}
+        onClose={() => setDetail(null)}
+      />
     </div>
   );
 }
@@ -408,10 +443,11 @@ export default function ProblemsView({ settings }: Props) {
   const [tab, setTab] = useState<Tab>("create");
 
   return (
-    <div>
-      <p className="card-desc mb-12">
-        원본 문제를 직접 등록하거나, 기존 원본을 시드로 LangGraph 변형 파이프라인을 실행합니다.
-      </p>
+    <div className="main problems">
+      <div className="page-head">
+        <h1>문제 관리</h1>
+        <span className="sub">원본 등록 · LangGraph 변형 출제 · 출제 메타 조회</span>
+      </div>
 
       <div className="tabs">
         {([
