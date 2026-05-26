@@ -101,6 +101,12 @@ services:
       JCQ_JUDGE_URL: "http://judge:8002"
       JCQ_INTERNAL_SECRET: "${JCQ_INTERNAL_SECRET}"
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      # LLM 프로바이더 스위치 — openai로 바꾸면 generate/verify/judge/solve/attack/compare
+      # 전 노드가 OpenAI를 사용(빠른 검증). 임베딩(novelty·RAG)은 계속 Ollama.
+      JCQ_LLM_PROVIDER: "${JCQ_LLM_PROVIDER:-ollama}"
+      JCQ_OPENAI_API_KEY: "${JCQ_OPENAI_API_KEY:-}"
+      JCQ_OPENAI_MODEL: "${JCQ_OPENAI_MODEL:-gpt-4o-mini}"
+      JCQ_OPENAI_BASE_URL: "${JCQ_OPENAI_BASE_URL:-}"
       JCQ_AUTHOR_MODEL: "${JCQ_AUTHOR_MODEL:-qwen3.6:27b}"
       # 출제 엔진 3-LLM 앙상블 (Melchior/Balthasar/Casper). solve + judge 공통, compare는 Melchior 단독.
       JCQ_ENSEMBLE_MODEL_MELCHIOR: "${JCQ_ENSEMBLE_MODEL_MELCHIOR:-qwen3.6:27b}"

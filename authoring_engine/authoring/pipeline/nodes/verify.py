@@ -14,6 +14,7 @@ from ...config import (
     OLLAMA_KEEP_ALIVE,
     PERF_RATIO,
 )
+from ...llm import make_chat_model
 from ...schemas import AuthoringState
 from ..prompts import SOLUTION_SYSTEM, SOLUTION_USER
 
@@ -114,13 +115,11 @@ def verify_candidates(state: AuthoringState) -> dict:
     실패 시 author_solution을 최대 MAX_AUTHOR_RETRIES회 재시도한다.
     재시도는 temperature를 올려 결정론적 반복 실패를 피한다.
     """
-    retry_llm = ChatOllama(
-        model=AUTHOR_MODEL,
+    retry_llm = make_chat_model(
+        AUTHOR_MODEL,
         temperature=AUTHOR_RETRY_TEMPERATURE,
-        format="json",
-        base_url=OLLAMA_BASE_URL,
+        json_mode=True,
         num_ctx=AUTHOR_NUM_CTX,
-        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     updated: list[dict] = []

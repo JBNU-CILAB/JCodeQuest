@@ -13,6 +13,7 @@ from ...config import (
     SOLVER_PASS_MIN_AC,
     SOLVER_SAMPLE_LIMIT,
 )
+from ...llm import make_chat_model
 from ...schemas import AuthoringState
 from ..prompts import SOLVER_SYSTEM, SOLVER_USER
 
@@ -44,12 +45,10 @@ def _solve_one(
         )
     sample_text = "\n\n".join(sample_text_parts) or "(샘플 없음)"
 
-    llm = ChatOllama(
-        model=model,
+    llm = make_chat_model(
+        model,
         temperature=ENSEMBLE_TEMPERATURE,
-        base_url=OLLAMA_BASE_URL,
         num_ctx=ENSEMBLE_NUM_CTX,
-        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     try:

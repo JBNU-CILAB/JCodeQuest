@@ -3,7 +3,6 @@ import statistics
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_ollama import ChatOllama
 
 from ...config import (
     ENSEMBLE_MODELS,
@@ -15,6 +14,7 @@ from ...config import (
     OLLAMA_BASE_URL,
     OLLAMA_KEEP_ALIVE,
 )
+from ...llm import make_chat_model
 from ...schemas import AuthoringState
 from ..prompts import JUDGE_QUALITY_SYSTEM, JUDGE_QUALITY_USER
 
@@ -24,6 +24,40 @@ _QUALITY_JUDGES = ENSEMBLE_MODELS
 # self-consistency가 켜지면(JUDGE_SAMPLES>1) 약간의 온도를 줘야 샘플이 갈린다.
 _N_SAMPLES = max(1, JUDGE_SAMPLES)
 _SAMPLE_TEMP = ENSEMBLE_TEMPERATURE if _N_SAMPLES == 1 else JUDGE_SELFCONSIST_TEMP
+
+
+# 판사 issues 정제 파라미터 — 작은 모델이 issues 필드에 넣는 노이즈를 거른다.
+_MAX_ISSUES = 8
+_ISSUE_MIN_LEN = 4   # 이보다 짧으면 의미 없는 파편("음", "n/a")
+_ISSUE_MAX_LEN = 120  # 이보다 길면 장황한 환각/문단
+
+
+def _clean_issues(issues: list) -> list[str]:
+    """3-judge가 낸 issues 합을 정제한다.
+
+    - 문자열이 아니거나 공백뿐이면 제거
+    - '오류:' 접두(파싱 실패 except 분기 산출물)는 품질 이슈가 아니므로 제거
+    - 길이 이상치(너무 짧음/너무 김 = 파편·환각) 제거
+    - 대소문자 무시 중복 제거(순서 보존), 최대 _MAX_ISSUES개
+    점수/통과 판정은 별도 필드라 영향받지 않고, 대시보드 표시용 노이즈만 줄인다."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in issues:
+        if not isinstance(raw, str):
+            continue
+        s = raw.strip()
+        if not s or s.startswith("오류:"):
+            continue
+        if len(s) < _ISSUE_MIN_LEN or len(s) > _ISSUE_MAX_LEN:
+            continue
+        key = s.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+        if len(out) >= _MAX_ISSUES:
+            break
+    return out
 
 
 def _parse_judge_response(content: str) -> dict:
@@ -63,13 +97,11 @@ def _poll_one_judge(judge_id: str, model: str, user_msg: str) -> dict:
     passed = 샘플 다수결, score = 샘플 중앙값. 대표 rationale/issues는 중앙값에
     가장 가까운 샘플에서 취한다. JUDGE_SAMPLES=1이면 기존 단일 호출과 동일.
     """
-    llm = ChatOllama(
-        model=model,
+    llm = make_chat_model(
+        model,
         temperature=_SAMPLE_TEMP,
-        format="json",
-        base_url=OLLAMA_BASE_URL,
+        json_mode=True,
         num_ctx=ENSEMBLE_NUM_CTX,
-        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     samples: list[dict] = []
@@ -139,7 +171,7 @@ def _judge_one_candidate(candidate: dict) -> dict:
         "judge_rationale": " | ".join(
             f"[{j['judge_id']}] {j['rationale']}" for j in per_judge
         ),
-        "judge_issues": all_issues,
+        "judge_issues": _clean_issues(all_issues),
     }
 
 

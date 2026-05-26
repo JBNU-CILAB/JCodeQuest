@@ -152,14 +152,33 @@ def summarize_node(node_key: str, delta: dict[str, Any]) -> dict[str, Any]:
 
     if node_key == "compare_to_original":
         results = []
+        detail = []  # 폐기 후보도 "왜 그 점수인지" 보이도록 3축+rationale을 run 레코드에 남긴다
         for i, c in enumerate(cands):
-            if not c.get("solver_passed"):
+            # compare는 solver 통과 여부와 무관하게 solve를 거친(=solver_results 보유) 모든
+            # 후보에 실행된다(compare.py와 동일 조건). solver_passed로 거르면 탈락 후보의
+            # compare 점수가 가려지므로 solver_results 기준으로 맞춘다.
+            if not c.get("solver_results"):
                 continue
             passed = bool(c.get("compare_passed", True))
             hall = c.get("comparison_hallucination")
+            intent = c.get("comparison_intent_similarity")
+            diff = c.get("comparison_difficulty_similarity")
+            idx = _cand_idx(c, i)
             note = f"hall {hall:.2f}" if isinstance(hall, (int, float)) else "—"
-            results.append({"idx": _cand_idx(c, i), "status": "pass" if passed else "fail", "note": note})
+            if isinstance(intent, (int, float)):
+                note += f" · intent {intent:.2f}"
+            results.append({"idx": idx, "status": "pass" if passed else "fail", "note": note})
+            detail.append({
+                "idx": idx,
+                "passed": passed,
+                "hallucination": hall,
+                "intent_similarity": intent,
+                "difficulty_similarity": diff,
+                "rationale": c.get("comparison_rationale") or c.get("comparison_error") or "",
+            })
         out["candidate_results"] = results
+        if detail:
+            out["outputs_preview"] = {"comparison": detail}
         return out
 
     if node_key == "persist_approved":

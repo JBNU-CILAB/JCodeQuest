@@ -16,6 +16,7 @@ from ...config import (
     OLLAMA_KEEP_ALIVE,
     SOLVER_SAMPLE_LIMIT,
 )
+from ...llm import make_chat_model
 from ...schemas import AuthoringState
 from ..prompts import ATTACK_SYSTEM, ATTACK_USER
 
@@ -163,12 +164,10 @@ def attack_candidates(state: AuthoringState) -> dict:
     if not DISCRIMINATION_ENABLED:
         return {"candidates": list(state["candidates"])}
 
-    llm = ChatOllama(
-        model=_ATTACK_MODEL[1],
+    llm = make_chat_model(
+        _ATTACK_MODEL[1],
         temperature=ENSEMBLE_TEMPERATURE,
-        base_url=OLLAMA_BASE_URL,
         num_ctx=ENSEMBLE_NUM_CTX,
-        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     updated: list[dict] = []

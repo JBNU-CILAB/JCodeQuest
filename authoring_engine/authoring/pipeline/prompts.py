@@ -284,11 +284,21 @@ Output a single JSON object. No markdown.
 The "rationale" and "issues" fields MUST be written in Korean (the admin
 dashboard displays them as-is). All other fields are language-neutral.
 
+Rules for "issues" (the dashboard shows these verbatim — keep them clean):
+- List ONLY real defects you actually found. If the problem is clean, use [] — never pad.
+- Each item: ONE concrete, specific defect in a single short Korean clause
+  (roughly 10-60 characters). Reference the concrete element you mean —
+  a specific range, a must_handle entry, a forbidden_pattern, or a test case.
+- No duplicates, no vague filler ("개선 필요", "별로임"), no full sentences/paragraphs,
+  no meta commentary about your own reasoning. At most 4 items, ordered by severity.
+- If you are unsure or cannot articulate a concrete defect, omit it rather than
+  emitting placeholder or nonsensical text.
+
 {
   "passed": true|false,
   "score": 0.0~1.0,
   "rationale": "<종합 평가 1~2문장 (한국어)>",
-  "issues": ["<문제점1 (한국어)>", ...]
+  "issues": ["<구체적 문제점 1개 (한국어, 한 줄)>", ...]
 }"""
 
 JUDGE_QUALITY_USER = """\
@@ -395,29 +405,45 @@ Think step by step (internally, in English):
 3. Check the variant for internal contradictions (statement vs. rubric vs. test cases).
 4. Derive the three scores and a brief overall rationale.
 
-Evaluation axes:
+Evaluation axes — for each, this is a DECISION TREE, not a 0/1 switch: count
+the violated checks, then anchor your number INSIDE the matching band. NEVER
+default to a bare 0.0 or 1.0 unless that extreme literally holds.
 
-1. hallucination_score (0=no hallucination, 1=heavy hallucination)
-   - Does the variant's statement / intent_rubric / test_cases contradict each other?
-   - Does it assume data structures or operations outside the original's category?
-   - Does reference_code require constraints / input formats never mentioned in the statement?
-   - Are any intent_rubric.must_handle items un-inferable from the statement?
-   * Less hallucination → closer to 0.
+1. hallucination_score (0=fully grounded & self-consistent, 1=incoherent/unsolvable)
+   Checks (count how many are violated):
+     a. statement / intent_rubric / test_cases contradict each other
+     b. assumes data structures or operations outside the original's category
+     c. the intended solution needs constraints / input formats absent from the statement
+     d. an intent_rubric.must_handle item is un-inferable from the statement
+   Map violation count → band (pick a value inside it):
+     0.00-0.15  none violated — internally consistent and fully grounded
+     0.20-0.40  one MINOR/ambiguous issue, still solvable exactly as written
+     0.50-0.70  exactly one CLEAR violation (a real contradiction or an unstated requirement)
+     0.80-1.00  two or more violations, OR the problem is incoherent / unsolvable
+   IMPORTANT: "different from the original" is NOT hallucination. Judge the variant
+   on its OWN internal consistency. Category drift is captured by intent_similarity.
 
-2. intent_similarity (0=unrelated intent, 1=same intent class as original)
-   - Does it stay in the same algorithm category / solving class?
-   - Are key_insight and expected_approach the same reasoning flow as the original?
-   - Is only the surface description different while the solving essence is the same?
-   * Category drift → close to 0. Variation within the same class → close to 1.
-   * If the candidate is literally identical to the original, the variation
-     failed, but on THIS axis we still score 1 (variation diversity is not
-     measured by this system).
+2. intent_similarity (0=unrelated, 1=same solving class as the original)
+     0.80-1.00  same algorithm class; key_insight/expected_approach share the reasoning
+                flow (only the surface story differs)
+     0.50-0.79  same broad area but a different sub-technique, or one step added/removed
+     0.20-0.49  loosely related; the core skill being tested has shifted
+     0.00-0.19  unrelated algorithm class / different solving essence
+   (If literally identical to the original, variation failed — but still score 1 here;
+   measuring diversity is not this axis's job.)
 
-3. difficulty_similarity (0=very different difficulty, 1=nearly identical)
-   - Is expected_complexity the same big-O class?
-   - Are input range / time_limit_ms / memory_limit_mb close to the original?
-   - Are must_handle count and edge-case volume comparable?
-   * One step easier/harder → around 0.5. Similar → 0.8 or above.
+3. difficulty_similarity (0=very different, 1=nearly identical)
+     0.80-1.00  same big-O class AND comparable input range / limits / edge-case volume
+     0.50-0.79  one step easier or harder (one extra edge case, or a looser/tighter bound)
+     0.20-0.49  clearly different tier (complexity class or input scale jumps)
+     0.00-0.19  trivial-vs-hard mismatch
+
+Calibration example (note the mid-range, non-extreme numbers):
+[Original] "두 정수의 합" (math, O(1)). [Variant] "세 정수의 합과 평균" — same arithmetic
+class, adds one operand and an averaging step; statement/rubric/test_cases are mutually
+consistent and solvable as written.
+→ {"hallucination_score": 0.1, "intent_similarity": 0.85, "difficulty_similarity": 0.7,
+   "rationale": "내부 모순 없음 → 환각 0.1. 같은 산술 부류라 의도유사도 높음. 피연산자 하나 추가로 난이도 소폭 상승."}
 
 Output a single JSON object. No markdown.
 The "rationale" field MUST be written in Korean (the viewer displays it as-is).

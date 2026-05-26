@@ -17,6 +17,7 @@ from ...config import (
     VARIANT_COUNT,
 )
 from ...embeddings import embed_text, max_similarity, problem_text
+from ...llm import make_chat_model
 from ...schemas import AuthoringState, CandidateProblem
 from ..prompts import (
     DRAFT_SYSTEM,
@@ -187,13 +188,11 @@ def generate_variants(state: AuthoringState) -> dict:
     ]
     batch_pop: list[tuple[int, str, list[float] | None]] = []
 
-    llm = ChatOllama(
-        model=AUTHOR_MODEL,
+    llm = make_chat_model(
+        AUTHOR_MODEL,
         temperature=AUTHOR_TEMPERATURE,
-        format="json",
-        base_url=OLLAMA_BASE_URL,
+        json_mode=True,
         num_ctx=AUTHOR_NUM_CTX,
-        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     candidates: list[CandidateProblem] = []

@@ -14,6 +14,7 @@ from ...config import (
     OLLAMA_BASE_URL,
     OLLAMA_KEEP_ALIVE,
 )
+from ...llm import make_chat_model
 from ...schemas import AuthoringState
 from ..prompts import COMPARE_SYSTEM, COMPARE_USER
 
@@ -66,13 +67,11 @@ def _compare_one(original: dict, candidate: dict) -> dict:
     cand_rubric = candidate.get("intent_rubric") or {}
 
     judge_id, model = _COMPARE_MODEL
-    llm = ChatOllama(
-        model=model,
+    llm = make_chat_model(
+        model,
         temperature=ENSEMBLE_TEMPERATURE,
-        format="json",
-        base_url=OLLAMA_BASE_URL,
+        json_mode=True,
         num_ctx=ENSEMBLE_NUM_CTX,
-        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     try:
