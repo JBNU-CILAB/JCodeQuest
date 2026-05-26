@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type {
   ConnSettings, VerdictsResponse, JudgesResponse, ProblemRow, RunSummaryT, UserRow,
+  SubmissionRow, SubmissionDetail,
 } from "../types";
-import { adminFetch, judgeFetch } from "../api";
+import { adminFetch, judgeFetch, fmtDate } from "../api";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   ResponsiveContainer, CartesianGrid,
@@ -67,6 +68,121 @@ function Donut({ data, total, unit }: { data: { name: string; value: number; col
   );
 }
 
+/* ── votes 파싱 → AC/SUS 배열 (저장 형태가 list 또는 {votes:[]} 모두 대응) ── */
+function parseVotes(v: unknown): ("AC" | "SUS")[] {
+  const arr: unknown[] = Array.isArray(v)
+    ? v
+    : (v && typeof v === "object" && Array.isArray((v as { votes?: unknown[] }).votes))
+      ? (v as { votes: unknown[] }).votes
+      : [];
+  return arr
+    .map((x) => (typeof x === "string" ? x : (x as { verdict?: string })?.verdict))
+    .filter((x): x is "AC" | "SUS" => x === "AC" || x === "SUS");
+}
+
+/* ── 검토 필요 제출 — 앙상블 AC 득표율 낮은 순 (기존 SUS) ──────────── */
+interface ReviewRow { id: number; problem: string; user: string; created_at: string; ac: number; n: number; ratio: number; }
+
+function ReviewPanel({ settings }: { settings: ConnSettings }) {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<ReviewRow[]>([]);
+  const [thresh, setThresh] = useState<33 | 0>(33); // ≤33%(의심 전체) | =0%(만장 SUS)
+  const [err, setErr] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(false);
+    try {
+      // verdict=SUS = AC 득표율 ≤ 33% 인 제출 (테스트 통과 + 앙상블 의심)
+      const r = await judgeFetch("/api/submissions?verdict=SUS&limit=50", settings);
+      if (!r.ok) { setErr(true); setRows([]); return; }
+      const list: SubmissionRow[] = await r.json();
+      const detailed = await Promise.all(list.map(async (s): Promise<ReviewRow | null> => {
+        try {
+          const d = await judgeFetch(`/api/submissions/${s.id}`, settings);
+          if (!d.ok) return null;
+          const det: SubmissionDetail = await d.json();
+          const votes = parseVotes(det.votes);
+          const n = votes.length;
+          const ac = votes.filter((x) => x === "AC").length;
+          return {
+            id: s.id,
+            problem: s.problem_title ?? `문제 #${s.problem_id}`,
+            user: s.user_display_name ?? `user ${s.user_id}`,
+            created_at: s.created_at,
+            ac, n, ratio: n > 0 ? Math.round((ac / n) * 100) : 0,
+          };
+        } catch { return null; }
+      }));
+      const valid = detailed.filter((x): x is ReviewRow => x !== null)
+        .sort((a, b) => a.ratio - b.ratio || (a.created_at < b.created_at ? 1 : -1));
+      setRows(valid);
+    } catch { setErr(true); } finally { setLoading(false); }
+  }, [settings]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const shown = rows.filter((r) => (thresh === 0 ? r.ratio === 0 : r.ratio <= 33));
+
+  return (
+    <div className="chart-card" style={{ marginTop: 16 }}>
+      <div className="chart-card-head">
+        <h3>검토 필요 제출</h3>
+        <span className="text-muted text-sm">AC 표기지만 앙상블 AC 득표율이 낮은 제출 (기존 SUS)</span>
+        <div className="page-head-actions" style={{ marginLeft: "auto", alignItems: "center" }}>
+          <div className="filter-chips">
+            <button className={`filter-chip${thresh === 33 ? " active" : ""}`} onClick={() => setThresh(33)}>≤ 33% (의심 전체)</button>
+            <button className={`filter-chip${thresh === 0 ? " active" : ""}`} onClick={() => setThresh(0)}>= 0% (만장 SUS)</button>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
+            {loading ? <><span className="spinner" />&nbsp;</> : "↻"}
+          </button>
+        </div>
+      </div>
+
+      {err ? (
+        <div className="text-muted text-sm" style={{ padding: "20px 0", textAlign: "center" }}>제출 데이터를 불러오지 못했습니다 (judge URL/토큰 확인).</div>
+      ) : loading ? (
+        <div className="text-muted text-sm" style={{ padding: "20px 0", textAlign: "center" }}><span className="spinner" /> 불러오는 중...</div>
+      ) : shown.length === 0 ? (
+        <div className="text-muted text-sm" style={{ padding: "20px 0", textAlign: "center" }}>
+          {thresh === 0 ? "만장일치 SUS(0%) 제출 없음" : "검토 대상 없음 — 앙상블이 의심한 제출이 없습니다"}
+        </div>
+      ) : (
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>문제</th>
+              <th>유저</th>
+              <th style={{ width: 130 }}>AC 득표율</th>
+              <th style={{ width: 90 }}>표기</th>
+              <th style={{ width: 160 }}>제출 시각</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r) => (
+              <tr key={r.id}>
+                <td>{r.problem} <span className="hint">#{r.id}</span></td>
+                <td>{r.user}</td>
+                <td>
+                  <span className="badge" style={{
+                    background: r.ratio === 0 ? "var(--red-bg)" : "var(--amber-bg)",
+                    color: r.ratio === 0 ? "var(--red)" : "var(--amber)",
+                    fontFamily: "var(--font-mono)",
+                  }}>
+                    {r.ratio}% · {r.ac}/{r.n} AC
+                  </span>
+                </td>
+                <td><span className="verdict-AC badge">AC</span></td>
+                <td className="mono-cell">{fmtDate(r.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════════ */
 export default function HomeView({ settings }: Props) {
   const [days, setDays] = useState(14);
@@ -106,7 +222,9 @@ export default function HomeView({ settings }: Props) {
       (a, b) => ({ total: a.total + b.total, ac: a.ac + b.ac, sus: a.sus + b.sus, failed: a.failed + b.failed, pending: a.pending + b.pending }),
       { total: 0, ac: 0, sus: 0, failed: 0, pending: 0 },
     );
-    const acRate = vt.total > 0 ? vt.ac / vt.total : 0;
+    // SUS(테스트 통과 + 앙상블 의심)는 대시보드에서 AC로 합산 표기한다.
+    const passed = vt.ac + vt.sus;
+    const acRate = vt.total > 0 ? passed / vt.total : 0;
 
     const jt = (judges?.series ?? []).reduce(
       (a, b) => ({ totalWithVotes: a.totalWithVotes + b.total_with_votes, unanimous: a.unanimous + b.unanimous, split: a.split + b.split }),
@@ -142,11 +260,11 @@ export default function HomeView({ settings }: Props) {
 
     const trend = (verdicts?.series ?? []).map((b) => ({
       bucket: b.bucket.length > 10 ? b.bucket.slice(5, 16).replace("T", " ") : b.bucket.slice(5),
-      AC: b.ac, SUS: b.sus, 실패: b.failed, 대기: b.pending,
+      AC: b.ac + b.sus, 실패: b.failed, 대기: b.pending,
     }));
 
     return {
-      vt, acRate, jt, unanimousRate, perJudge, avgAgree,
+      vt, passed, acRate, jt, unanimousRate, perJudge, avgAgree,
       total: problems?.length ?? 0, variants, originals, categories,
       runStatus, runTotal: runs?.length ?? 0,
       userCount: users?.length ?? 0, withKey: (users ?? []).filter((u) => u.has_api_key).length,
@@ -159,8 +277,8 @@ export default function HomeView({ settings }: Props) {
   /* ── KPI 타일 ──────────────────────────────────────────────────── */
   const kpis: { label: string; value: string; sub: string; color?: string }[] = [
     { label: "등록 문제", value: agg.total.toLocaleString(), sub: `원본 ${agg.originals} · 변형 ${agg.variants}`, color: "var(--brand-dark)" },
-    { label: `채점 건수 (${days}일)`, value: agg.vt.total.toLocaleString(), sub: `AC ${agg.vt.ac} · SUS ${agg.vt.sus} · 실패 ${agg.vt.failed}`, color: "var(--ink)" },
-    { label: "전체 AC율", value: `${(agg.acRate * 100).toFixed(1)}%`, sub: `${agg.vt.ac.toLocaleString()} / ${agg.vt.total.toLocaleString()} 제출`, color: "var(--green)" },
+    { label: `채점 건수 (${days}일)`, value: agg.vt.total.toLocaleString(), sub: `AC ${agg.passed} · 실패 ${agg.vt.failed} · 대기 ${agg.vt.pending}`, color: "var(--ink)" },
+    { label: "전체 AC율", value: `${(agg.acRate * 100).toFixed(1)}%`, sub: `${agg.passed.toLocaleString()} / ${agg.vt.total.toLocaleString()} 제출 (의심 포함)`, color: "var(--green)" },
     { label: "평균 모델 일치율", value: `${agg.avgAgree.toFixed(1)}%`, sub: `앙상블 투표 ${agg.jt.totalWithVotes.toLocaleString()}건`, color: "var(--brand-dark)" },
     { label: "만장일치율 (3:0)", value: `${(agg.unanimousRate * 100).toFixed(1)}%`, sub: `분기(2:1) ${agg.jt.split.toLocaleString()}건`, color: "var(--purple)" },
     { label: "파이프라인 run", value: agg.runTotal.toLocaleString(), sub: `완료 ${agg.runStatus.done} · 실패 ${agg.runStatus.failed} · 진행 ${agg.runStatus.running}`, color: "var(--sky)" },
@@ -213,11 +331,10 @@ export default function HomeView({ settings }: Props) {
       <div className="grid-2">
         <div className="chart-card" style={{ marginBottom: 0 }}>
           <div className="chart-card-head"><h3>판정 분포</h3>
-            <span className="text-muted text-sm" style={{ marginLeft: "auto" }}>최근 {days}일</span>
+            <span className="text-muted text-sm" style={{ marginLeft: "auto" }}>최근 {days}일 · AC=의심 포함</span>
           </div>
           <Donut total={agg.vt.total} unit="채점" data={[
-            { name: "AC", value: agg.vt.ac, color: VERDICT_COLORS.ac },
-            { name: "SUS", value: agg.vt.sus, color: VERDICT_COLORS.sus },
+            { name: "AC", value: agg.passed, color: VERDICT_COLORS.ac },
             { name: "실패", value: agg.vt.failed, color: VERDICT_COLORS.failed },
             { name: "대기", value: agg.vt.pending, color: VERDICT_COLORS.pending },
           ]} />
@@ -236,7 +353,6 @@ export default function HomeView({ settings }: Props) {
                 <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="AC" stackId="a" fill={VERDICT_COLORS.ac} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="SUS" stackId="a" fill={VERDICT_COLORS.sus} />
                 <Bar dataKey="실패" stackId="a" fill={VERDICT_COLORS.failed} />
                 <Bar dataKey="대기" stackId="a" fill={VERDICT_COLORS.pending} radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -308,6 +424,9 @@ export default function HomeView({ settings }: Props) {
           ]} />
         </div>
       </div>
+
+      {/* ── 검토 필요 제출 (AC 득표율 필터) ── */}
+      <ReviewPanel settings={settings} />
     </div>
   );
 }
