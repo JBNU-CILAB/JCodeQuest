@@ -108,6 +108,12 @@ export const Icon = {
       <path d="M3 4v8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V4M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   ),
+  External: (p: P) => (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" {...p}>
+      <path d="M6 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M9.5 2.5H13.5V6.5M13 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
 };
 
 export function NodeKindIcon({ kind }: { kind: string }) {

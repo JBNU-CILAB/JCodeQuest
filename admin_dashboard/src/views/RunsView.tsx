@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { ConnSettings, RunSummaryT, RunDetailT, RunNodeStateT } from "../types";
+import type { ConnSettings, RunSummaryT, RunDetailT, RunNodeStateT, SpanT, SpansState } from "../types";
 import { adminFetch } from "../api";
 import { Icon, NodeKindIcon } from "../components/Icons";
 import { NODE_DEFS, fmtDuration, fmtTokens, fmtRelTime } from "../runsConfig";
@@ -227,18 +227,82 @@ function PipelineGraph({
 }
 
 /* ── Node Drawer ───────────────────────────────────────────────────────── */
+/* LangSmith span 트리에서 이 노드 서브트리만 추출 — node span(name===nodeKey) + 그 자손.
+   재시도로 같은 노드가 여러 번이면 모두 포함. langsmith_tokens.aggregate_node_tokens와 동일한 매핑. */
+function collectNodeSpans(spans: SpanT[], nodeKey: string): SpanT[] {
+  const byId = new Map(spans.map((s) => [s.id, s]));
+  const children = new Map<string | null, string[]>();
+  for (const s of spans) {
+    const p = s.parent_run_id ?? null;
+    (children.get(p) ?? children.set(p, []).get(p)!).push(s.id);
+  }
+  const out: SpanT[] = [];
+  const seen = new Set<string>();
+  for (const root of spans.filter((s) => s.name === nodeKey)) {
+    const stack = [root.id];
+    while (stack.length) {
+      const cur = byId.get(stack.pop()!);
+      if (!cur || seen.has(cur.id)) continue;
+      seen.add(cur.id);
+      out.push(cur);
+      for (const c of children.get(cur.id) ?? []) stack.push(c);
+    }
+  }
+  out.sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
+  return out;
+}
+
+function jsonPreview(v: unknown, max = 16000): string {
+  if (v == null) return "—";
+  let s: string;
+  try { s = JSON.stringify(v, null, 2); } catch { s = String(v); }
+  return s.length > max ? s.slice(0, max) + `\n… (${s.length - max} chars 생략)` : s;
+}
+
+/* 한 span의 I/O 카드 — run_type 배지 + latency/tokens + inputs/outputs 접이식. */
+function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
+  const tok = span.tokens?.total ?? 0;
+  const isLlm = span.run_type === "llm";
+  return (
+    <div className="span-card" style={{ marginLeft: depth * 12 }}>
+      <div className="span-card-head">
+        <span className={`span-type ${isLlm ? "llm" : ""}`}>{span.run_type}</span>
+        <span className="span-name">{span.name}</span>
+        <span className="span-card-meta">
+          {span.latency_seconds != null && <span>{span.latency_seconds.toFixed(2)}s</span>}
+          {tok > 0 && <span>{fmtTokens(tok)} tok</span>}
+        </span>
+      </div>
+      {span.error && <div className="drawer-code error" style={{ marginTop: 6 }}>{span.error}</div>}
+      <details className="span-io"><summary>inputs</summary>
+        <div className="drawer-code">{jsonPreview(span.inputs)}</div>
+      </details>
+      <details className="span-io" {...(isLlm ? { open: true } : {})}><summary>outputs</summary>
+        <div className="drawer-code">{jsonPreview(span.outputs)}</div>
+      </details>
+    </div>
+  );
+}
+
 function NodeDrawer({
-  detail, nodeKey, onClose, onRetry,
+  detail, nodeKey, onClose, onRetry, traceId, spans, onLoadSpans,
 }: {
   detail: RunDetailT;
   nodeKey: string;
   onClose: () => void;
   onRetry: () => void;
+  traceId?: string | null;
+  spans?: SpansState;
+  onLoadSpans: (traceId: string) => void;
 }) {
   const def = NODE_DEFS.find((n) => n.key === nodeKey);
   const state = detail.node_states?.[nodeKey] ?? { status: "queued" };
   const [tab, setTab] = useState("overview");
   useEffect(() => { setTab("overview"); }, [nodeKey]);
+  // inputs/outputs 탭을 열면 그때 trace span을 lazy 로드 (LangSmith가 느릴 수 있어 on-demand).
+  useEffect(() => {
+    if (tab === "inputs/outputs" && traceId && spans == null) onLoadSpans(traceId);
+  }, [tab, traceId, spans, onLoadSpans]);
   if (!def) return null;
 
   const tokens = state.tokens ?? {};
@@ -352,16 +416,63 @@ function NodeDrawer({
           </>
         )}
 
-        {tab === "inputs/outputs" && (
-          state.outputs_preview ? (
+        {tab === "inputs/outputs" && (() => {
+          const ready = spans?.status === "ready" ? spans.data : null;
+          const nodeSpans = ready ? collectNodeSpans(ready.spans, nodeKey) : [];
+          return (
             <>
-              <div className="section-title">Outputs preview</div>
-              <div className="drawer-code">{JSON.stringify(state.outputs_preview, null, 2)}</div>
+              {/* LangSmith trace 딥링크 */}
+              {(traceId || ready?.trace_url) && (
+                <div className="ls-bar">
+                  <span className="ls-trace">trace {traceId?.slice(0, 8) ?? "—"}…</span>
+                  {ready?.trace_url
+                    ? <a className="ls-link" href={ready.trace_url} target="_blank" rel="noreferrer">LangSmith에서 열기 <Icon.External /></a>
+                    : <span className="ls-proj">{ready?.project ?? "jcq-authoring"}</span>}
+                </div>
+              )}
+
+              {/* 트레이스 로드 상태별 분기 */}
+              {spans?.status === "loading" && <div className="empty">LangSmith trace 불러오는 중…</div>}
+              {spans?.status === "unavailable" && (
+                <div className="ls-note">LANGSMITH_API_KEY 미설정 — 실시간 trace 없이 outputs preview만 표시합니다.</div>
+              )}
+              {spans?.status === "notfound" && (
+                <div className="ls-note">이 trace가 아직 LangSmith에 인제스트되지 않았어요. 잠시 후 다시 시도하세요.</div>
+              )}
+              {spans?.status === "error" && (
+                <div className="drawer-code error">{spans.message}</div>
+              )}
+
+              {/* 성공 — 이 노드의 span I/O */}
+              {ready && nodeSpans.length > 0 && (
+                <>
+                  <div className="section-title">LangSmith 노드 I/O ({nodeSpans.length} spans)</div>
+                  <div className="span-tree">
+                    {nodeSpans.map((s) => (
+                      <SpanCard key={s.id} span={s} depth={s.name === nodeKey ? 0 : 1} />
+                    ))}
+                  </div>
+                </>
+              )}
+              {ready && nodeSpans.length === 0 && (
+                <div className="ls-note">이 노드의 span이 trace에 없어요 (DB/sandbox 노드는 LLM span이 없을 수 있음).</div>
+              )}
+
+              {/* 폴백/보조 — DB 스냅샷 outputs_preview */}
+              {state.outputs_preview && (
+                <details {...(ready && nodeSpans.length > 0 ? {} : { open: true })}>
+                  <summary className="section-title" style={{ cursor: "pointer", display: "list-item" }}>
+                    Outputs preview (DB 스냅샷)
+                  </summary>
+                  <div className="drawer-code">{jsonPreview(state.outputs_preview)}</div>
+                </details>
+              )}
+              {!traceId && !state.outputs_preview && (
+                <div className="empty">이 run엔 trace_id가 없어요 — LangSmith 비활성 상태로 생성된 run.</div>
+              )}
             </>
-          ) : (
-            <div className="empty">상세 I/O는 LangSmith trace에서 확인 →</div>
-          )
-        )}
+          );
+        })()}
 
         {tab === "logs" && (
           <div className="drawer-code dark">
@@ -415,7 +526,29 @@ export default function RunsView({ settings }: Props) {
   const [error, setError] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [spansCache, setSpansCache] = useState<Record<string, SpansState>>({});
   const streamRef = useRef<AbortController | null>(null);
+  const spansInflight = useRef<Set<string>>(new Set());
+
+  // LangSmith span lazy 로드 — trace_id별 1회 (캐시). 503/404를 상태로 구분해 UI에서 안내.
+  const loadSpans = useCallback(async (traceId: string) => {
+    if (spansInflight.current.has(traceId)) return;
+    spansInflight.current.add(traceId);
+    setSpansCache((prev) => ({ ...prev, [traceId]: { status: "loading" } }));
+    try {
+      const r = await adminFetch(`/api/spans/${traceId}`, settings);
+      let next: SpansState;
+      if (r.ok) next = { status: "ready", data: await r.json() };
+      else if (r.status === 503) next = { status: "unavailable" };
+      else if (r.status === 404) next = { status: "notfound" };
+      else next = { status: "error", message: `[${r.status}] ${(await r.text()).slice(0, 200)}` };
+      setSpansCache((prev) => ({ ...prev, [traceId]: next }));
+    } catch (e) {
+      setSpansCache((prev) => ({ ...prev, [traceId]: { status: "error", message: (e as Error).message } }));
+    } finally {
+      spansInflight.current.delete(traceId);
+    }
+  }, [settings]);
 
   const loadRuns = useCallback(async () => {
     try {
@@ -619,7 +752,15 @@ export default function RunsView({ settings }: Props) {
       </div>
 
       {drawerOpen && (
-        <NodeDrawer detail={detail!} nodeKey={selectedNode!} onClose={() => setSelectedNode(null)} onRetry={retryRun} />
+        <NodeDrawer
+          detail={detail!}
+          nodeKey={selectedNode!}
+          onClose={() => setSelectedNode(null)}
+          onRetry={retryRun}
+          traceId={detail!.trace_id}
+          spans={detail!.trace_id ? spansCache[detail!.trace_id] : undefined}
+          onLoadSpans={loadSpans}
+        />
       )}
     </div>
   );

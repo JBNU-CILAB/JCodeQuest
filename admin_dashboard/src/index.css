@@ -1266,6 +1266,55 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .avatar-pip { display: inline-flex; width: 24px; height: 24px; border-radius: 999px; background: linear-gradient(135deg, #60a5fa, var(--brand-dark)); color: #fff; font-size: 11px; font-weight: 700; align-items: center; justify-content: center; margin-right: 8px; font-family: var(--font-mono); }
 .empty { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 13px; }
 
+/* ── LangSmith trace I/O (NodeDrawer inputs/outputs 탭) ───────────────── */
+.ls-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 11px; margin-bottom: 14px;
+  background: var(--brand-soft); border: 1px solid #cfe0fd; border-radius: 8px;
+  font-family: var(--font-mono); font-size: 11.5px;
+}
+.ls-trace { color: var(--brand-dark); font-weight: 600; }
+.ls-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--brand-dark); font-weight: 600; text-decoration: none;
+  padding: 3px 9px; border-radius: 999px; background: var(--bg-panel); border: 1px solid #cfe0fd;
+}
+.ls-link:hover { background: #fff; border-color: var(--brand); }
+.ls-proj { color: var(--muted); }
+.ls-note {
+  padding: 10px 12px; margin-bottom: 12px;
+  background: var(--bg-soft); border: 1px dashed var(--border-strong); border-radius: 8px;
+  color: var(--muted); font-size: 12.5px; line-height: 1.55;
+}
+
+.span-tree { display: flex; flex-direction: column; gap: 8px; }
+.span-card {
+  border: 1px solid var(--border-soft); border-radius: 8px;
+  padding: 9px 11px; background: var(--bg-panel);
+}
+.span-card-head { display: flex; align-items: center; gap: 8px; }
+.span-type {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 2px 6px; border-radius: 4px;
+  background: #f1f5f9; color: var(--muted); flex-shrink: 0;
+}
+.span-type.llm { background: #f3e8ff; color: #6b21a8; }
+.span-name {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.span-card-meta {
+  margin-left: auto; display: flex; gap: 8px; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--muted);
+}
+.span-io { margin-top: 7px; }
+.span-io > summary {
+  font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.span-io > summary:hover { color: var(--ink-2); }
+.span-io .drawer-code { margin-top: 5px; max-height: 320px; overflow-y: auto; }
+
 /* search input (non-runs views) */
 .search-wide { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; background: var(--bg-panel); color: var(--ink); }
 .search-wide:focus { outline: none; border-color: var(--brand); }

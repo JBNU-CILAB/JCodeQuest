@@ -206,5 +206,6 @@ class SpansSummary(BaseModel):
 class SpansResponse(BaseModel):
     trace_id: str
     project: str
+    trace_url: str | None = None   # LangSmith 웹 UI 딥링크(루트 run) — 생성 실패 시 None
     summary: SpansSummary
     spans: list[SpanOut]

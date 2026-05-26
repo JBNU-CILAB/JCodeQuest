@@ -230,6 +230,47 @@ export interface RunDetailT extends RunSummaryT {
   errors: string[];
 }
 
+/* ── LangSmith 스팬 (GET /api/spans/{trace_id}) ────────────────────────── */
+export interface SpanT {
+  id: string;
+  parent_run_id?: string | null;
+  name: string;
+  run_type: string;                     // "chain" | "llm" | "tool" | ...
+  status: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  latency_seconds?: number | null;
+  tokens: { prompt?: number | null; completion?: number | null; total?: number | null };
+  cost?: number | null;
+  inputs?: Record<string, unknown> | null;
+  outputs?: Record<string, unknown> | null;
+  error?: string | null;
+  extra?: Record<string, unknown> | null;
+  tags?: string[];
+}
+
+export interface SpansResponseT {
+  trace_id: string;
+  project: string;
+  trace_url?: string | null;            // LangSmith 웹 딥링크(루트 run)
+  summary: {
+    span_count: number;
+    total_tokens: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    root_latency_seconds: number;
+  };
+  spans: SpanT[];
+}
+
+/* 트레이스 조회 상태 — 드로어 inputs/outputs 탭에서 lazy 로드. */
+export type SpansState =
+  | { status: "loading" }
+  | { status: "ready"; data: SpansResponseT }
+  | { status: "unavailable" }           // LANGSMITH_API_KEY 미설정 (503)
+  | { status: "notfound" }              // trace가 LangSmith에 아직 없음 (404)
+  | { status: "error"; message: string };
+
 export interface UserRow {
   id: number;
   display_name: string;

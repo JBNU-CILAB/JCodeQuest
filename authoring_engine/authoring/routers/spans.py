@@ -72,6 +72,15 @@ async def get_spans(
     serialized = [_serialize(r) for r in runs]
     serialized.sort(key=lambda r: r["start_time"] or "")
 
+    # 루트 run(parent 없음)의 LangSmith 웹 딥링크 — 실패해도 본문은 그대로 반환(fail-open).
+    trace_url: str | None = None
+    root = next((r for r in runs if r.parent_run_id is None), runs[0] if runs else None)
+    if root is not None:
+        try:
+            trace_url = client.get_run_url(run=root, project_name=project)
+        except Exception:  # noqa: BLE001 — 딥링크는 부가 정보
+            trace_url = None
+
     total_tokens = sum((s["tokens"]["total"] or 0) for s in serialized)
     total_prompt = sum((s["tokens"]["prompt"] or 0) for s in serialized)
     total_completion = sum((s["tokens"]["completion"] or 0) for s in serialized)
@@ -84,6 +93,7 @@ async def get_spans(
     return {
         "trace_id": trace_id,
         "project": project,
+        "trace_url": trace_url,
         "summary": {
             "span_count": len(serialized),
             "total_tokens": total_tokens,
