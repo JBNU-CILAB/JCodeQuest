@@ -115,3 +115,39 @@ def test_run_auth_and_404(client):
         client.patch("/internal/runs/nope", headers=_auth(), json={"status": "done"}).status_code
         == 404
     )
+
+
+def test_delete_run_single(client):
+    client.post("/internal/runs", headers=_auth(), json={"id": "r_del", "problem_id": 7})
+    # 삭제
+    r = client.delete("/internal/runs/r_del", headers=_auth())
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"] is True
+    # 삭제 후 조회 404
+    assert client.get("/internal/runs/r_del", headers=_auth()).status_code == 404
+    # 없는 run 삭제 → 404
+    assert client.delete("/internal/runs/nope", headers=_auth()).status_code == 404
+    # 인증 누락
+    assert client.delete("/internal/runs/r_del").status_code == 401
+
+
+def test_bulk_delete_by_ids(client):
+    for rid in ("b1", "b2", "b3"):
+        client.post("/internal/runs", headers=_auth(), json={"id": rid})
+
+    # 선택한 2건 + 없는 id 1건 → 존재하는 것만 삭제(2건)
+    r = client.post(
+        "/internal/runs/delete", headers=_auth(), json={"ids": ["b1", "b3", "nope"]}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted_count"] == 2
+    remaining = {x["id"] for x in client.get("/internal/runs", headers=_auth()).json()}
+    assert "b1" not in remaining and "b3" not in remaining
+    assert "b2" in remaining  # 선택 안 한 건 남음
+
+    # 빈 목록은 0건 — no-op
+    r2 = client.post("/internal/runs/delete", headers=_auth(), json={"ids": []})
+    assert r2.status_code == 200 and r2.json()["deleted_count"] == 0
+
+    # 인증 누락
+    assert client.post("/internal/runs/delete", json={"ids": ["b2"]}).status_code == 401

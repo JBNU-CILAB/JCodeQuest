@@ -14,14 +14,28 @@ function statusOf(detail: RunDetailT | null, key: string): RunNodeStateT {
   return detail?.node_states?.[key] ?? { status: "queued" };
 }
 
+/* 삭제 확인 대상 — 개별(one) 또는 status별 일괄(bulk). */
+type PendingDelete =
+  | { kind: "one"; id: string; title: string }
+  | { kind: "many"; ids: string[] };
+
 /* ── Runs Sidebar ──────────────────────────────────────────────────────── */
 function RunsSidebar({
-  runs, selectedId, onSelect, onNew,
+  runs, selectedId, onSelect, onNew, onRequestDelete,
+  selectMode, selectedIds, onEnterSelect, onExitSelect, onToggleSelect, onSetSelection, onDeleteSelected,
 }: {
   runs: RunSummaryT[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onRequestDelete: (run: RunSummaryT) => void;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onEnterSelect: () => void;
+  onExitSelect: () => void;
+  onToggleSelect: (id: string) => void;
+  onSetSelection: (ids: string[]) => void;
+  onDeleteSelected: () => void;
 }) {
   const [filter, setFilter] = useState<"all" | "failed" | "running" | "done">("all");
   const [search, setSearch] = useState("");
@@ -39,13 +53,33 @@ function RunsSidebar({
     return true;
   });
 
+  const allChecked = filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+  const toggleAll = () => onSetSelection(allChecked ? [] : filtered.map((r) => r.id));
+
   return (
     <aside className="runs-sidebar">
       <div className="runs-sidebar-head">
         <h3>
-          Recent runs <span className="count">{filtered.length}</span>
-          <span className="spacer" />
-          <button className="btn btn-primary btn-sm" onClick={onNew}>+ 새 run</button>
+          {selectMode ? (
+            <>
+              <button className={`check-box${allChecked ? " on" : ""}`} onClick={toggleAll} title="전체 선택/해제">
+                {allChecked && <Icon.Check />}
+              </button>
+              <span className="count">{selectedIds.size}개 선택</span>
+              <span className="spacer" />
+              <button className="btn btn-ghost btn-sm" onClick={onExitSelect}>취소</button>
+              <button className="btn btn-danger btn-sm" disabled={selectedIds.size === 0} onClick={onDeleteSelected}>
+                삭제 {selectedIds.size}
+              </button>
+            </>
+          ) : (
+            <>
+              Recent runs <span className="count">{filtered.length}</span>
+              <span className="spacer" />
+              <button className="btn btn-ghost btn-sm" disabled={runs.length === 0} onClick={onEnterSelect}>선택</button>
+              <button className="btn btn-primary btn-sm" onClick={onNew}>+ 새 run</button>
+            </>
+          )}
         </h3>
         <div className="search-box">
           <span className="ico"><Icon.Search /></span>
@@ -69,33 +103,46 @@ function RunsSidebar({
       </div>
 
       <div className="run-list">
-        {filtered.map((r) => (
-          <button
-            key={r.id}
-            className={`run-card${r.id === selectedId ? " active" : ""}`}
-            onClick={() => onSelect(r.id)}
-          >
-            <div className="run-card-head">
-              <span className={`pill ${r.status}`} style={{ padding: "2px 7px", fontSize: 10 }}>
-                <span className="dot" />{r.status}
-              </span>
-              <span className="run-card-id">{r.id.slice(0, 12)}…</span>
+        {filtered.map((r) => {
+          const checked = selectedIds.has(r.id);
+          return (
+            <div key={r.id} className={`run-card-wrap${selectMode && checked ? " checked" : ""}`}>
+              <button
+                className={`run-card${!selectMode && r.id === selectedId ? " active" : ""}${selectMode && checked ? " sel" : ""}`}
+                onClick={() => (selectMode ? onToggleSelect(r.id) : onSelect(r.id))}
+              >
+                <div className="run-card-head">
+                  <span className={`pill ${r.status}`} style={{ padding: "2px 7px", fontSize: 10 }}>
+                    <span className="dot" />{r.status}
+                  </span>
+                  <span className="run-card-id">{r.id.slice(0, 12)}…</span>
+                </div>
+                <div className="run-card-title">
+                  #{r.problem_id ?? "?"} {r.problem_title ?? "(제목 없음)"}
+                </div>
+                {r.status === "failed" && r.failed_at_node && (
+                  <div className="run-card-fail-where">↳ {r.failed_at_node}</div>
+                )}
+                <div className="run-card-meta">
+                  <span>{fmtRelTime(r.started_at)}</span>
+                  <span className="sep">·</span>
+                  <span>{fmtDuration(r.total_duration_ms)}</span>
+                  <span className="sep">·</span>
+                  <span>{r.target_count}개</span>
+                </div>
+              </button>
+              {selectMode ? (
+                <span className={`run-check${checked ? " on" : ""}`} aria-hidden>
+                  {checked && <Icon.Check />}
+                </span>
+              ) : (
+                <button className="run-del" title="이 run 삭제" onClick={() => onRequestDelete(r)}>
+                  <Icon.Trash />
+                </button>
+              )}
             </div>
-            <div className="run-card-title">
-              #{r.problem_id ?? "?"} {r.problem_title ?? "(제목 없음)"}
-            </div>
-            {r.status === "failed" && r.failed_at_node && (
-              <div className="run-card-fail-where">↳ {r.failed_at_node}</div>
-            )}
-            <div className="run-card-meta">
-              <span>{fmtRelTime(r.started_at)}</span>
-              <span className="sep">·</span>
-              <span>{fmtDuration(r.total_duration_ms)}</span>
-              <span className="sep">·</span>
-              <span>{r.target_count}개</span>
-            </div>
-          </button>
-        ))}
+          );
+        })}
         {filtered.length === 0 && (
           <div className="empty" style={{ padding: "40px 12px" }}>조건에 맞는 run이 없어요.</div>
         )}
@@ -259,33 +306,181 @@ function jsonPreview(v: unknown, max = 16000): string {
   return s.length > max ? s.slice(0, max) + `\n… (${s.length - max} chars 생략)` : s;
 }
 
-/* 한 span의 I/O 카드 — run_type 배지 + latency/tokens + inputs/outputs 접이식. */
+/* ── LangChain I/O → 사람이 읽기 좋은 형태 추출 (실패 시 raw JSON 폴백) ── */
+type ChatMsg = { role: string; content: string };
+
+const _ROLE: Record<string, string> = {
+  human: "user", ai: "assistant", system: "system", tool: "tool",
+  function: "tool", chat: "assistant", user: "user", assistant: "assistant",
+};
+function normRole(r: string): string { return _ROLE[r?.toLowerCase?.()] ?? (r || "msg"); }
+
+/* content가 문자열/파트배열/객체 무엇이든 평문 텍스트로. */
+function asText(content: unknown): string {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((p) => {
+      if (typeof p === "string") return p;
+      if (p && typeof p === "object") return String((p as Record<string, unknown>).text ?? (p as Record<string, unknown>).content ?? "");
+      return "";
+    }).join("");
+  }
+  if (typeof content === "object") {
+    const o = content as Record<string, unknown>;
+    if (typeof o.content === "string") return o.content;
+  }
+  try { return JSON.stringify(content); } catch { return String(content); }
+}
+
+/* 메시지 dict 1개 → {role, content}. lc serialized({id:[..,'HumanMessage'],kwargs}) 및 {type/role,content} 모두 처리. */
+function msgFromDict(m: unknown): ChatMsg | null {
+  if (!m || typeof m !== "object") return typeof m === "string" ? { role: "user", content: m } : null;
+  const o = m as Record<string, unknown>;
+  if (Array.isArray(o.id) && o.kwargs && typeof o.kwargs === "object") {
+    const cls = String((o.id as unknown[])[(o.id as unknown[]).length - 1] ?? "");
+    const role = cls.replace(/Message$/, "").toLowerCase();
+    return { role: normRole(role), content: asText((o.kwargs as Record<string, unknown>).content) };
+  }
+  if ("content" in o || "type" in o || "role" in o) {
+    return { role: normRole(String(o.type ?? o.role ?? "msg")), content: asText(o.content) };
+  }
+  return null;
+}
+
+/* inputs에서 프롬프트 메시지 목록 추출. messages가 [[...]](batch)로 중첩될 수 있음. */
+function findMessages(io: unknown): ChatMsg[] | null {
+  if (!io || typeof io !== "object") return null;
+  const raw = (io as Record<string, unknown>).messages ?? (io as Record<string, unknown>).input;
+  if (!Array.isArray(raw)) return null;
+  const flat = (raw.length && Array.isArray(raw[0]) ? (raw as unknown[][]).flat() : raw) as unknown[];
+  const msgs = flat.map(msgFromDict).filter(Boolean) as ChatMsg[];
+  return msgs.length ? msgs : null;
+}
+
+/* outputs에서 모델 완성 텍스트 추출. generations / output / text / content 형태 대응. */
+function findCompletion(io: unknown): string | null {
+  if (!io || typeof io !== "object") return null;
+  const o = io as Record<string, unknown>;
+  const gens = o.generations;
+  if (Array.isArray(gens)) {
+    const flat = (gens.length && Array.isArray(gens[0]) ? (gens as unknown[][]).flat() : gens) as unknown[];
+    const parts = flat.map((g) => {
+      if (typeof g === "string") return g;
+      const go = g as Record<string, unknown>;
+      if (go?.text) return String(go.text);
+      if (go?.message) return msgFromDict(go.message)?.content ?? "";
+      return "";
+    }).filter(Boolean);
+    if (parts.length) return parts.join("\n");
+  }
+  if (typeof o.text === "string") return o.text;
+  if (typeof o.output === "string") return o.output;
+  if (o.output && typeof o.output === "object") {
+    const c = asText((o.output as Record<string, unknown>).content ?? o.output);
+    if (c) return c;
+  }
+  if (o.content != null) return asText(o.content);
+  return null;
+}
+
+/* 복사 버튼 달린 코드 블록 — 길면 스크롤. */
+function CodeBlock({ text, kind }: { text: string; kind?: "error" | "plain" }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(text);
+    setCopied(true); setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <div className="code-wrap">
+      <button className="code-copy" onClick={copy} title="복사">
+        {copied ? "복사됨" : <Icon.Copy />}
+      </button>
+      <div className={`drawer-code${kind === "error" ? " error" : ""}`}>{text}</div>
+    </div>
+  );
+}
+
+/* 메시지 말풍선 묶음. */
+function ChatView({ messages }: { messages: ChatMsg[] }) {
+  return (
+    <div className="chat-view">
+      {messages.map((m, i) => (
+        <div key={i} className={`chat-msg role-${m.role}`}>
+          <div className="chat-role">{m.role}</div>
+          <div className="chat-content">{m.content || "—"}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* 한 span의 I/O 카드 — 헤더 클릭으로 카드 전체를 접고 폄(길이 조절).
+   LLM이면 프롬프트(말풍선)/완성(텍스트)을 우선, 아니면 JSON. raw 토글 제공. */
 function SpanCard({ span, depth }: { span: SpanT; depth: number }) {
   const tok = span.tokens?.total ?? 0;
   const isLlm = span.run_type === "llm";
+  const msgs = isLlm ? findMessages(span.inputs) : null;
+  const completion = isLlm ? findCompletion(span.outputs) : null;
+  const pretty = msgs != null || completion != null;
+  // LLM/에러 span은 기본 펼침(흥미로운 내용), 래퍼 chain은 기본 접힘 → 목록이 간결.
+  const [open, setOpen] = useState(isLlm || !!span.error);
+
   return (
-    <div className="span-card" style={{ marginLeft: depth * 12 }}>
-      <div className="span-card-head">
+    <div className={`span-card${open ? " open" : ""}`} style={{ marginLeft: depth * 12 }}>
+      <button className="span-card-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span className="span-chevron"><Icon.Chevron /></span>
         <span className={`span-type ${isLlm ? "llm" : ""}`}>{span.run_type}</span>
         <span className="span-name">{span.name}</span>
         <span className="span-card-meta">
           {span.latency_seconds != null && <span>{span.latency_seconds.toFixed(2)}s</span>}
           {tok > 0 && <span>{fmtTokens(tok)} tok</span>}
         </span>
-      </div>
-      {span.error && <div className="drawer-code error" style={{ marginTop: 6 }}>{span.error}</div>}
-      <details className="span-io"><summary>inputs</summary>
-        <div className="drawer-code">{jsonPreview(span.inputs)}</div>
-      </details>
-      <details className="span-io" {...(isLlm ? { open: true } : {})}><summary>outputs</summary>
-        <div className="drawer-code">{jsonPreview(span.outputs)}</div>
-      </details>
+      </button>
+
+      {open && (
+        <div className="span-card-body">
+          {span.error && <CodeBlock text={span.error} kind="error" />}
+
+          {pretty ? (
+            <>
+              {msgs && (
+                <div className="span-io">
+                  <div className="span-io-label">prompt · {msgs.length} messages</div>
+                  <ChatView messages={msgs} />
+                </div>
+              )}
+              {completion != null && (
+                <div className="span-io">
+                  <div className="span-io-label">completion</div>
+                  <CodeBlock text={completion || "—"} />
+                </div>
+              )}
+              <details className="span-io span-raw"><summary>raw JSON</summary>
+                <div className="span-io-label" style={{ marginTop: 6 }}>inputs</div>
+                <CodeBlock text={jsonPreview(span.inputs)} />
+                <div className="span-io-label">outputs</div>
+                <CodeBlock text={jsonPreview(span.outputs)} />
+              </details>
+            </>
+          ) : (
+            <>
+              <details className="span-io" open><summary>inputs</summary>
+                <CodeBlock text={jsonPreview(span.inputs)} />
+              </details>
+              <details className="span-io" open><summary>outputs</summary>
+                <CodeBlock text={jsonPreview(span.outputs)} />
+              </details>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function NodeDrawer({
-  detail, nodeKey, onClose, onRetry, traceId, spans, onLoadSpans,
+  detail, nodeKey, onClose, onRetry, traceId, spans, onLoadSpans, wide, onToggleWide,
 }: {
   detail: RunDetailT;
   nodeKey: string;
@@ -294,6 +489,8 @@ function NodeDrawer({
   traceId?: string | null;
   spans?: SpansState;
   onLoadSpans: (traceId: string) => void;
+  wide: boolean;
+  onToggleWide: () => void;
 }) {
   const def = NODE_DEFS.find((n) => n.key === nodeKey);
   const state = detail.node_states?.[nodeKey] ?? { status: "queued" };
@@ -320,7 +517,12 @@ function NodeDrawer({
             <span>{def.kind === "llm" ? "LLM 노드" : def.kind === "db" ? "DB I/O" : "sandbox"}{def.side ? " · side-step" : ""}</span>
           </div>
         </div>
-        <button className="drawer-close" onClick={onClose}><Icon.Close /></button>
+        <div className="drawer-head-actions">
+          <button className="drawer-close" onClick={onToggleWide} title={wide ? "드로어 좁히기" : "드로어 넓히기"}>
+            {wide ? <Icon.Collapse /> : <Icon.Expand />}
+          </button>
+          <button className="drawer-close" onClick={onClose} title="닫기"><Icon.Close /></button>
+        </div>
       </div>
 
       <div className="drawer-tabs">
@@ -526,6 +728,11 @@ export default function RunsView({ settings }: Props) {
   const [error, setError] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [drawerWide, setDrawerWide] = useState(false);
+  const [pendingDel, setPendingDel] = useState<PendingDelete | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [spansCache, setSpansCache] = useState<Record<string, SpansState>>({});
   const streamRef = useRef<AbortController | null>(null);
   const spansInflight = useRef<Set<string>>(new Set());
@@ -691,15 +898,75 @@ export default function RunsView({ settings }: Props) {
     setTimeout(() => setCopied(false), 1200);
   }
 
+  function clearSelectionIfGone(stillPresent: (id: string) => boolean) {
+    if (selectedId && !stillPresent(selectedId)) {
+      streamRef.current?.abort();
+      setSelectedId(null);
+      setDetail(null);
+      setSelectedNode(null);
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function exitSelect() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function confirmDelete() {
+    if (!pendingDel) return;
+    setDeleting(true);
+    setError("");
+    try {
+      if (pendingDel.kind === "one") {
+        const id = pendingDel.id;
+        const r = await adminFetch(`/api/runs/${id}`, settings, { method: "DELETE" });
+        if (!r.ok && r.status !== 404) { setError(`[${r.status}] ${(await r.text()).slice(0, 200)}`); return; }
+        setRuns((prev) => prev.filter((x) => x.id !== id));
+        clearSelectionIfGone((sid) => sid !== id);
+      } else {
+        const ids = pendingDel.ids;
+        const r = await adminFetch(`/api/runs/delete`, settings, {
+          method: "POST",
+          body: JSON.stringify({ ids }),
+        });
+        if (!r.ok) { setError(`[${r.status}] ${(await r.text()).slice(0, 200)}`); return; }
+        const del = new Set(ids);
+        setRuns((prev) => prev.filter((x) => !del.has(x.id)));
+        clearSelectionIfGone((sid) => !del.has(sid));
+        exitSelect();
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeleting(false);
+      setPendingDel(null);
+    }
+  }
+
   const drawerOpen = selectedNode != null && detail != null;
 
   return (
-    <div className={`main runs${drawerOpen ? " drawer-open" : ""}`}>
+    <div className={`main runs${drawerOpen ? " drawer-open" : ""}${drawerOpen && drawerWide ? " drawer-wide" : ""}`}>
       <RunsSidebar
         runs={runs}
         selectedId={selectedId}
         onSelect={selectRun}
         onNew={() => { setShowNew(true); setSelectedNode(null); }}
+        onRequestDelete={(r) => setPendingDel({ kind: "one", id: r.id, title: `#${r.problem_id ?? "?"} ${r.problem_title ?? r.id.slice(0, 12)}` })}
+        selectMode={selectMode}
+        selectedIds={selectedIds}
+        onEnterSelect={() => { setSelectMode(true); setSelectedIds(new Set()); }}
+        onExitSelect={exitSelect}
+        onToggleSelect={toggleSelect}
+        onSetSelection={(ids) => setSelectedIds(new Set(ids))}
+        onDeleteSelected={() => { if (selectedIds.size > 0) setPendingDel({ kind: "many", ids: [...selectedIds] }); }}
       />
 
       <div className="graph-wrap">
@@ -760,7 +1027,34 @@ export default function RunsView({ settings }: Props) {
           traceId={detail!.trace_id}
           spans={detail!.trace_id ? spansCache[detail!.trace_id] : undefined}
           onLoadSpans={loadSpans}
+          wide={drawerWide}
+          onToggleWide={() => setDrawerWide((w) => !w)}
         />
+      )}
+
+      {pendingDel && (
+        <div className="confirm-overlay" onClick={() => !deleting && setPendingDel(null)}>
+          <div className="confirm-card" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-ico"><Icon.Trash /></div>
+            <h4>
+              {pendingDel.kind === "one"
+                ? "이 run을 삭제할까요?"
+                : `선택한 run ${pendingDel.ids.length}개를 삭제할까요?`}
+            </h4>
+            <p className="confirm-sub">
+              {pendingDel.kind === "one"
+                ? pendingDel.title
+                : "선택한 run 기록이 모두 삭제됩니다."}
+              <br />삭제하면 되돌릴 수 없습니다.
+            </p>
+            <div className="confirm-actions">
+              <button className="btn btn-outline btn-sm" disabled={deleting} onClick={() => setPendingDel(null)}>취소</button>
+              <button className="btn btn-danger btn-sm" disabled={deleting} onClick={confirmDelete}>
+                {deleting ? "삭제 중…" : "삭제"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

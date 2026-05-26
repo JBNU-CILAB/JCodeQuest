@@ -97,3 +97,24 @@ def list_runs(
 
 def get_run(session: Session, run_id: str) -> RunRow | None:
     return session.get(RunRow, run_id)
+
+
+def delete_run(session: Session, run_id: str) -> bool:
+    """run 1건 삭제. 삭제했으면 True, 없으면 False."""
+    row = session.get(RunRow, run_id)
+    if row is None:
+        return False
+    session.delete(row)
+    session.commit()
+    return True
+
+
+def delete_runs_by_ids(session: Session, ids: list[str]) -> int:
+    """선택한 run id들을 일괄 삭제하고 삭제 건수를 반환."""
+    if not ids:
+        return 0
+    rows = list(session.exec(select(RunRow).where(RunRow.id.in_(ids))).all())  # type: ignore[attr-defined]
+    for row in rows:
+        session.delete(row)
+    session.commit()
+    return len(rows)

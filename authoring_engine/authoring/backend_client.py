@@ -274,6 +274,20 @@ def get_run(run_id: str) -> RunDetail:
         return RunDetail.model_validate(r.json())
 
 
+def delete_run(run_id: str) -> None:
+    with _client(timeout_s=10.0) as cli:
+        r = cli.delete(f"{_backend_url()}/internal/runs/{run_id}")
+        r.raise_for_status()
+
+
+def delete_runs(ids: list[str]) -> int:
+    """선택한 run id들 일괄 삭제 — 삭제 건수 반환."""
+    with _client(timeout_s=10.0) as cli:
+        r = cli.post(f"{_backend_url()}/internal/runs/delete", json={"ids": ids})
+        r.raise_for_status()
+        return int(r.json().get("deleted_count", 0))
+
+
 # ── judge_engine (/api/sandbox/run) ──────────────────────────────────────
 def sandbox_run(
     code: str,

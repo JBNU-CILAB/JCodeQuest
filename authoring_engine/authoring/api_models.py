@@ -40,6 +40,10 @@ class RunResponse(BaseModel):
     )
 
 
+class RunBulkDeleteRequest(BaseModel):
+    ids: list[str] = Field(default_factory=list, description="삭제할 run_id 목록")
+
+
 # ── /api/problems ────────────────────────────────────────────────────────
 class ProblemSummaryOut(BaseModel):
     id: int

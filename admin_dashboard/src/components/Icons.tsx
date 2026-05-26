@@ -114,6 +114,32 @@ export const Icon = {
       <path d="M9.5 2.5H13.5V6.5M13 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  Expand: (p: P) => (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" {...p}>
+      <path d="M9 3L5 8l4 5M14 3l-4 5 4 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Collapse: (p: P) => (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" {...p}>
+      <path d="M7 3l4 5-4 5M2 3l4 5-4 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Chevron: (p: P) => (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" {...p}>
+      <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Trash: (p: P) => (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" {...p}>
+      <path d="M3 4.5h10M6.5 4V2.8a.8.8 0 0 1 .8-.8h1.4a.8.8 0 0 1 .8.8V4M4.3 4.5l.5 8a1 1 0 0 0 1 .95h4.4a1 1 0 0 0 1-.95l.5-8M6.7 7v3.5M9.3 7v3.5"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Check: (p: P) => (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" {...p}>
+      <path d="M3 8.5l3 3 7-7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
 };
 
 export function NodeKindIcon({ kind }: { kind: string }) {

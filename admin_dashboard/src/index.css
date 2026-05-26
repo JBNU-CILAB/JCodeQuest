@@ -1111,7 +1111,8 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 /* ── Main grid ─────────────────────────────────────────────────────────── */
 .main { grid-area: main; overflow: hidden; position: relative; display: grid; height: 100%; }
 .main.runs { grid-template-columns: 300px 1fr 0px; transition: grid-template-columns 0.32s var(--ease); }
-.main.runs.drawer-open { grid-template-columns: 300px 1fr 380px; }
+.main.runs.drawer-open { grid-template-columns: 300px 1fr 440px; }
+.main.runs.drawer-open.drawer-wide { grid-template-columns: 300px minmax(0, 1fr) min(62vw, 880px); }
 .main.stats, .main.problems, .main.notices, .main.users,
 .main.submissions, .main.reports { display: block; padding: 28px 36px; overflow: auto; }
 
@@ -1140,6 +1141,64 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .run-card-meta { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run-card-meta .sep { color: var(--muted-x); }
 .run-card-fail-where { font-size: 11.5px; color: var(--st-failed); font-family: var(--font-mono); }
+
+/* 행 hover 시 나타나는 개별 삭제 버튼 (run-card가 button이라 형제로 오버레이) */
+.run-card-wrap { position: relative; }
+.run-card-wrap .run-card { width: 100%; padding-right: 36px; }
+.run-del {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--muted-soft); cursor: pointer;
+  opacity: 0; transition: opacity .12s, color .12s, background .12s, border-color .12s;
+}
+.run-card-wrap:hover .run-del { opacity: 1; }
+.run-del:hover { color: var(--red); background: var(--red-bg); border-color: #fecaca; }
+
+/* 선택 모드 — 행 체크박스 + 선택 강조 */
+.run-check {
+  position: absolute; top: 10px; right: 10px; z-index: 2; pointer-events: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 5px;
+  border: 1.5px solid var(--border-strong); background: var(--bg-panel);
+  color: #fff; transition: background .12s, border-color .12s;
+}
+.run-check.on { background: var(--brand); border-color: var(--brand); }
+.run-card.sel { border-color: var(--brand); background: var(--brand-soft); }
+.run-card-wrap.checked .run-card { box-shadow: 0 0 0 1px var(--brand) inset; }
+
+/* 헤더 전체선택 체크박스 */
+.check-box {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0; border-radius: 5px;
+  border: 1.5px solid var(--border-strong); background: var(--bg-panel);
+  color: #fff; cursor: pointer; flex-shrink: 0;
+}
+.check-box.on { background: var(--brand); border-color: var(--brand); }
+
+/* 삭제 확인 모달 */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn .12s ease;
+}
+.confirm-card {
+  width: 340px; max-width: calc(100vw - 32px);
+  background: var(--bg-panel); border-radius: 14px; padding: 22px 22px 18px;
+  box-shadow: var(--shadow-hover); text-align: center;
+  animation: slideIn .18s var(--ease);
+}
+.confirm-ico {
+  width: 42px; height: 42px; margin: 0 auto 12px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--red-bg); color: var(--red);
+}
+.confirm-card h4 { margin: 0 0 6px; font-size: 15px; font-weight: 700; color: var(--ink); }
+.confirm-sub { margin: 0 0 18px; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+.confirm-actions { display: flex; gap: 8px; justify-content: center; }
+.confirm-actions .btn { min-width: 84px; justify-content: center; }
 
 /* ── Graph canvas ──────────────────────────────────────────────────────── */
 .graph-wrap {
@@ -1203,7 +1262,8 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .drawer-head-body { flex: 1; min-width: 0; }
 .drawer-name { font-weight: 700; font-size: 15px; font-family: var(--font-mono); letter-spacing: -0.01em; color: var(--ink); margin: 0 0 4px 0; }
 .drawer-meta { font-size: 11.5px; color: var(--muted); font-family: var(--font-mono); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.drawer-close { background: transparent; border: none; color: var(--muted); padding: 4px; border-radius: 6px; cursor: pointer; }
+.drawer-head-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.drawer-close { background: transparent; border: none; color: var(--muted); padding: 6px; border-radius: 6px; cursor: pointer; display: inline-flex; }
 .drawer-close:hover { background: var(--bg-soft); color: var(--ink); }
 .drawer-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-soft); padding: 0 12px; }
 .drawer-tab { background: transparent; border: none; padding: 10px 14px; font-size: 12.5px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
@@ -1292,7 +1352,16 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
   border: 1px solid var(--border-soft); border-radius: 8px;
   padding: 9px 11px; background: var(--bg-panel);
 }
-.span-card-head { display: flex; align-items: center; gap: 8px; }
+.span-card-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  text-align: left; font: inherit; color: inherit;
+}
+.span-card-head:hover .span-name { color: var(--brand-dark); }
+.span-chevron { display: inline-flex; color: var(--muted-soft); transition: transform .15s var(--ease); flex-shrink: 0; }
+.span-card.open .span-chevron { transform: rotate(90deg); }
+.span-card.open { background: var(--bg-soft); }
+.span-card-body { margin-top: 8px; }
 .span-type {
   font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.04em; padding: 2px 6px; border-radius: 4px;
@@ -1313,7 +1382,49 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 .span-io > summary:hover { color: var(--ink-2); }
-.span-io .drawer-code { margin-top: 5px; max-height: 320px; overflow-y: auto; }
+.span-io .drawer-code { margin-top: 5px; }
+.span-io-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted-soft); margin: 9px 0 4px;
+}
+.span-io-label:first-child { margin-top: 0; }
+.span-raw > summary { margin-top: 2px; }
+
+/* 코드 블록 + 복사 버튼 — 길면 스크롤, 가독성 위해 폰트/행간 키움 */
+.code-wrap { position: relative; }
+.code-wrap .drawer-code {
+  font-size: 12px; line-height: 1.7; max-height: 460px; overflow: auto;
+  padding-right: 36px;
+}
+.code-copy {
+  position: absolute; top: 6px; right: 6px; z-index: 1;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-panel); color: var(--muted);
+  font-size: 10.5px; font-weight: 600; cursor: pointer;
+}
+.code-copy:hover { color: var(--brand-dark); border-color: var(--brand); }
+
+/* 프롬프트 말풍선 (LLM inputs) */
+.chat-view { display: flex; flex-direction: column; gap: 7px; }
+.chat-msg {
+  border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden;
+  background: var(--bg-panel);
+}
+.chat-role {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 4px 10px; color: var(--muted); background: var(--bg-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.chat-content {
+  padding: 9px 11px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7;
+  color: var(--ink-2); white-space: pre-wrap; word-break: break-word;
+  max-height: 360px; overflow-y: auto;
+}
+.chat-msg.role-system .chat-role    { color: #6b21a8; background: #f3e8ff; }
+.chat-msg.role-user .chat-role      { color: var(--brand-dark); background: var(--brand-soft); }
+.chat-msg.role-assistant .chat-role { color: var(--st-done); background: var(--st-done-bg); }
+.chat-msg.role-tool .chat-role      { color: #b45309; background: var(--st-running-bg); }
 
 /* search input (non-runs views) */
 .search-wide { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; background: var(--bg-panel); color: var(--ink); }

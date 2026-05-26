@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request
+from pydantic import BaseModel
 from sqlmodel import select
 
 from ..events import SubmissionEventBroker
@@ -91,6 +92,8 @@ from ..storage.problems import (
 )
 from ..storage.runs import (
     create_run,
+    delete_run,
+    delete_runs_by_ids,
     get_run,
     list_runs,
     update_run,
@@ -1108,3 +1111,38 @@ def get_run_admin(
         if row is None:
             raise HTTPException(404, f"run {run_id} not found")
         return _run_to_detail(row)
+
+
+class _RunBulkDeleteReq(BaseModel):
+    ids: list[str]
+
+
+@router.post(
+    "/runs/delete",
+    summary="선택한 run 일괄 삭제 (admin)",
+    description="body의 ids에 해당하는 run을 삭제하고 삭제 건수를 반환.",
+)
+def bulk_delete_runs(
+    req: _RunBulkDeleteReq,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        n = delete_runs_by_ids(session, req.ids)
+        return {"deleted_count": n}
+
+
+@router.delete(
+    "/runs/{run_id}",
+    summary="파이프라인 run 삭제 (admin)",
+    responses={404: {"description": "run 없음"}},
+)
+def delete_run_record(
+    run_id: Annotated[str, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        if not delete_run(session, run_id):
+            raise HTTPException(404, f"run {run_id} not found")
+        return {"id": run_id, "deleted": True}

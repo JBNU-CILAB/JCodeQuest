@@ -27,7 +27,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from .. import backend_client
 from ..admin_auth import require_admin
-from ..api_models import RetryRequest, RunRequest, RunResponse
+from ..api_models import RetryRequest, RunBulkDeleteRequest, RunRequest, RunResponse
 from ..langsmith_tokens import node_token_usage
 from ..pipeline.node_stats import NODE_KIND, NODE_ORDER, summarize_node
 
@@ -307,6 +307,40 @@ async def get_run(run_id: Annotated[str, PathParam(description="run_id")]) -> Ru
         raise _backend_error(e)
     # LangSmith 조회는 블로킹이라 스레드풀에서 — 이벤트 루프 점유 방지.
     return await asyncio.to_thread(_enrich_node_tokens, detail)
+
+
+@router.post(
+    "/api/runs/delete",
+    summary="선택한 run 일괄 삭제",
+    description="body의 ids에 해당하는 run을 삭제. 진행 중 run이면 인메모리 SSE 큐도 정리.",
+)
+async def bulk_delete_runs(req: RunBulkDeleteRequest) -> dict[str, Any]:
+    if not req.ids:
+        return {"deleted_count": 0}
+    try:
+        n = backend_client.delete_runs(req.ids)
+    except httpx.HTTPStatusError as e:
+        raise _backend_error(e)
+    for rid in req.ids:
+        _runs.pop(rid, None)
+        _run_traces.pop(rid, None)
+    return {"deleted_count": n}
+
+
+@router.delete(
+    "/api/runs/{run_id}",
+    summary="run 삭제",
+    responses={404: {"description": "run 없음"}},
+)
+async def delete_run(run_id: Annotated[str, PathParam(description="삭제할 run_id")]) -> dict[str, Any]:
+    try:
+        backend_client.delete_run(run_id)
+    except httpx.HTTPStatusError as e:
+        raise _backend_error(e)
+    # 라이브 SSE 큐/trace 매핑도 함께 정리 (진행 중 run을 지운 경우)
+    _runs.pop(run_id, None)
+    _run_traces.pop(run_id, None)
+    return {"id": run_id, "deleted": True}
 
 
 @router.post(
