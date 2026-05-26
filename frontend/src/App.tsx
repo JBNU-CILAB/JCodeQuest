@@ -9,6 +9,7 @@ import { Result } from './pages/Result'
 import { Notices } from './pages/Notices'
 import { NoticeDetail } from './pages/NoticeDetail'
 import { MyPage } from './pages/MyPage'
+import { Ranking } from './pages/Ranking'
 
 const INTRO_SEEN_KEY = 'intro_seen'
 
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/notices" element={<Notices />} />
             <Route path="/notices/:id" element={<NoticeDetail />} />
             <Route path="/mypage" element={<MyPage />} />
+            <Route path="/ranking" element={<Ranking />} />
           </Routes>
         </Layout>
       </BrowserRouter>
