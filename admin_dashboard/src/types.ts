@@ -69,6 +69,7 @@ export interface AuthoringMeta {
     max_similarity?: number | null;
     closest_id?: number | null;
     attempts?: number | null;
+    threshold?: number | null;          // 게이트 기준선 (>= 이면 재draft) — 옛 변형엔 없음
   };
   // RAG exemplar 검색 — "끌어오기" 방향. enabled=true & exemplars=[]면 빈 코퍼스/폴백.
   rag?: {

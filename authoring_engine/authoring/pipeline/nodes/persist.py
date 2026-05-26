@@ -4,6 +4,7 @@ from jcq_shared.schemas import IntentRubric, Problem, TestCase
 
 from ...backend_client import create_problem
 from ...config import (
+    NOVELTY_THRESHOLD,
     RAG_ENABLED,
     RAG_LEVEL_WINDOW,
     RAG_MIN_JUDGE_SCORE,
@@ -112,10 +113,12 @@ def persist_approved(state: AuthoringState) -> dict:
                     "passed": c.get("compare_passed"),
                 },
                 # 신규성 검사 결과 — 어떤 형제와 얼마나 유사했는지(게이트 통과분).
+                # threshold는 viewer가 게이지에 기준선을 그릴 수 있도록 함께 기록.
                 "novelty": {
                     "max_similarity": c.get("novelty_max_similarity"),
                     "closest_id": c.get("novelty_closest_id"),
                     "attempts": c.get("novelty_attempts"),
+                    "threshold": NOVELTY_THRESHOLD,
                 },
                 # RAG exemplar 검색 결과 — 이 변종이 어떤 모범문제를 grounding으로 참고했는지.
                 "rag": rag_meta,

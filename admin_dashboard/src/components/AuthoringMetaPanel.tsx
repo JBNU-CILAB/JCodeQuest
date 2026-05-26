@@ -36,8 +36,31 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="card-title" style={{ marginBottom: 8 }}><span className="card-icon">◈</span> {children}</div>;
 }
 
-/* RAG 과정 — retrieve_exemplars가 고른 모범문제 + novelty(밀어내기) */
-function RagSection({ meta }: { meta: AuthoringMeta }) {
+/* 신규성 임계값 fallback — 옛 변형 meta엔 threshold가 없으므로 config 기본값(JCQ_NOVELTY_THRESHOLD)으로 보정. */
+const NOVELTY_THRESHOLD_FALLBACK = 0.88;
+
+/* 신규성 게이지 — novel(낮음·녹색) ↔ duplicate(높음·빨강), 임계선 표시. */
+function NoveltyGauge({ sim, threshold }: { sim: number; threshold: number }) {
+  const pct = Math.max(0, Math.min(1, sim)) * 100;
+  const tpct = Math.max(0, Math.min(1, threshold)) * 100;
+  const novel = sim < threshold;
+  return (
+    <div className={`rag-gauge ${novel ? "is-novel" : "is-dup"}`}>
+      <div className="rag-gauge-track">
+        <div className="rag-gauge-fill" style={{ width: `${pct}%` }} />
+        <div className="rag-gauge-thresh" style={{ left: `${tpct}%` }} title={`임계 ${threshold.toFixed(2)}`} />
+        <div className="rag-gauge-marker" style={{ left: `${pct}%` }} />
+      </div>
+      <div className="rag-gauge-scale">
+        <span>novel</span>
+        <span>duplicate</span>
+      </div>
+    </div>
+  );
+}
+
+/* RAG 과정 — exemplar를 "끌어당기고"(retrieve) 신규성 게이트가 "밀어내는"(novelty) 양방향 힘을 좌→우 플로우로. */
+function RagSection({ meta, pid }: { meta: AuthoringMeta; pid?: number }) {
   const rag = meta.rag;
   const nov = meta.novelty;
   const hasRag = rag != null;
@@ -52,63 +75,113 @@ function RagSection({ meta }: { meta: AuthoringMeta }) {
       </div>
     );
   }
+
+  const exemplars = rag?.exemplars ?? [];
+  const sim = nov?.max_similarity;
+  const threshold = nov?.threshold ?? NOVELTY_THRESHOLD_FALLBACK;
+  const attempts = nov?.attempts ?? 0;
+  const passed = sim != null ? sim < threshold : null;
+
   return (
     <div className="card">
       <SectionTitle>RAG 과정 (exemplar 검색 + 신규성)</SectionTitle>
 
-      {hasRag && (
-        <>
-          <div className="kv-grid">
-            <span className="kv-key">enabled</span>
-            <span className="kv-val">
-              {rag!.enabled
-                ? <span className="badge badge-green">ON</span>
-                : <span className="badge badge-gray">OFF</span>}
-            </span>
-            <span className="kv-key">top_k / λ</span>
-            <span className="kv-val text-mono">{rag!.top_k ?? "—"} / {rag!.mmr_lambda ?? "—"}</span>
-            <span className="kv-key">level_window</span>
-            <span className="kv-val text-mono">±{rag!.level_window ?? "—"}</span>
-            <span className="kv-key">min_judge_score</span>
-            <span className="kv-val text-mono">{rag!.min_judge_score ?? "—"}</span>
+      <div className="rag-flow">
+        {/* ── 끌어당김: retrieve_exemplars ── */}
+        <div className="rag-stage rag-pull">
+          <div className="rag-stage-head">
+            <span className="rag-force pull">⟵⟶</span> 끌어당김
+            <span className="rag-stage-sub">관련 + 다양</span>
           </div>
-
-          <div className="text-sm text-muted" style={{ margin: "8px 0 4px" }}>
-            참고한 모범문제 (grounding exemplars)
-          </div>
-          {rag!.exemplars && rag!.exemplars.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {rag!.exemplars.map((e, i) => (
-                <div key={i} className="badge badge-blue" style={{ justifyContent: "flex-start" }}>
-                  #{e.id ?? "?"} · {e.title ?? "(제목 없음)"}
-                </div>
-              ))}
-            </div>
+          {hasRag ? (
+            exemplars.length > 0 ? (
+              <div className="rag-exemplars">
+                {exemplars.map((e, i) => (
+                  <div key={i} className="rag-ex-chip">
+                    <span className="rag-ex-id">#{e.id ?? "?"}</span>
+                    <span className="rag-ex-title" title={e.title ?? undefined}>{e.title ?? "(제목 없음)"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rag-empty">
+                {rag!.enabled ? "exemplar 없음 — 빈 코퍼스/폴백" : "RAG 비활성 — 시드 블록"}
+              </div>
+            )
           ) : (
-            <div className="text-sm text-dim">
-              {rag!.enabled
-                ? "선정된 exemplar 없음 — 빈 코퍼스/폴백(예시 없이 생성)"
-                : "RAG 비활성 — 시드 블록으로 생성"}
-            </div>
+            <div className="rag-empty">RAG 메타 없음</div>
           )}
-        </>
-      )}
+          <div className="rag-stage-foot">
+            MMR λ={rag?.mmr_lambda ?? "—"} · ±{rag?.level_window ?? "—"} level · top_k {rag?.top_k ?? "—"}
+          </div>
+        </div>
 
-      {hasNov && (
-        <>
-          <div className="text-sm text-muted" style={{ margin: "12px 0 4px" }}>
-            신규성 검사 (임베딩 cosine — 낮을수록 형제와 다름)
+        {/* ── 중앙: draft 노드 ── */}
+        <div className="rag-center">
+          <span className="rag-arrow">▶</span>
+          <div className="rag-draft">
+            <span className="rag-draft-icon">◆</span>
+            <span className="rag-draft-label">{pid != null ? `변형 #${pid}` : "draft"}</span>
+            {attempts > 0 && <span className="rag-draft-redraft">재draft {attempts}회</span>}
           </div>
-          <div className="kv-grid">
-            <span className="kv-key">max_similarity</span>
-            <span className="kv-val"><ScoreBar axis="hal" v={nov!.max_similarity} /></span>
-            <span className="kv-key">closest sibling</span>
-            <span className="kv-val text-mono">{nov!.closest_id != null ? `#${nov!.closest_id}` : "—"}</span>
-            <span className="kv-key">draft 재시도</span>
-            <span className="kv-val text-mono">{nov!.attempts ?? "—"}회</span>
+          <span className="rag-arrow">▶</span>
+        </div>
+
+        {/* ── 밀어냄: 신규성 게이트 ── */}
+        <div className="rag-stage rag-push">
+          <div className="rag-stage-head">
+            <span className="rag-force push">⟶⟵</span> 밀어냄
+            <span className="rag-stage-sub">신규성 게이트</span>
+            {passed != null && (
+              passed
+                ? <span className="badge badge-green" style={{ marginLeft: "auto" }}>통과</span>
+                : <span className="badge badge-red" style={{ marginLeft: "auto" }}>중복</span>
+            )}
           </div>
-        </>
-      )}
+          {sim != null ? (
+            <>
+              <NoveltyGauge sim={sim} threshold={threshold} />
+              <div className="rag-gauge-readout">
+                <span>max_sim <b>{sim.toFixed(3)}</b></span>
+                <span className="text-dim">임계 {threshold.toFixed(2)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="rag-empty">신규성 검사 미실행</div>
+          )}
+          <div className="rag-stage-foot">
+            형제 {nov?.closest_id != null ? `#${nov.closest_id}` : "—"} · 재시도 {attempts}회
+            {hasRag && rag?.min_judge_score != null && <> · min_judge {rag.min_judge_score}</>}
+          </div>
+        </div>
+      </div>
+
+      {/* 보조: 원시 수치 (게이지로 가려진 정확값 확인용) */}
+      <details className="rag-raw">
+        <summary>▸ RAG·신규성 파라미터</summary>
+        <div className="kv-grid" style={{ marginTop: 6 }}>
+          <span className="kv-key">enabled</span>
+          <span className="kv-val">
+            {rag?.enabled
+              ? <span className="badge badge-green">ON</span>
+              : <span className="badge badge-gray">OFF</span>}
+          </span>
+          <span className="kv-key">top_k / λ</span>
+          <span className="kv-val text-mono">{rag?.top_k ?? "—"} / {rag?.mmr_lambda ?? "—"}</span>
+          <span className="kv-key">level_window</span>
+          <span className="kv-val text-mono">±{rag?.level_window ?? "—"}</span>
+          <span className="kv-key">min_judge_score</span>
+          <span className="kv-val text-mono">{rag?.min_judge_score ?? "—"}</span>
+          <span className="kv-key">max_similarity</span>
+          <span className="kv-val"><ScoreBar axis="hal" v={nov?.max_similarity} /></span>
+          <span className="kv-key">closest sibling</span>
+          <span className="kv-val text-mono">{nov?.closest_id != null ? `#${nov.closest_id}` : "—"}</span>
+          <span className="kv-key">novelty 임계</span>
+          <span className="kv-val text-mono">{threshold.toFixed(2)}</span>
+          <span className="kv-key">draft 재시도</span>
+          <span className="kv-val text-mono">{attempts}회</span>
+        </div>
+      </details>
     </div>
   );
 }
@@ -287,7 +360,7 @@ export default function AuthoringMetaPanel({ detail, loading, onClose }: Props) 
               </div>
             ) : (
               <>
-                <RagSection meta={meta} />
+                <RagSection meta={meta} pid={detail.id} />
                 <JudgeSection meta={meta} />
                 <details>
                   <summary>▸ raw authoring_meta</summary>
