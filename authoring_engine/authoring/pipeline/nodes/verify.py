@@ -5,17 +5,19 @@ from langchain_ollama import ChatOllama
 
 from ...backend_client import sandbox_run
 from ...config import (
+    AUTHOR_MIN_TEST_CASES,
     AUTHOR_MODEL,
     AUTHOR_NUM_CTX,
     AUTHOR_RETRY_TEMPERATURE,
     MAX_AUTHOR_RETRIES,
     OLLAMA_BASE_URL,
+    OLLAMA_KEEP_ALIVE,
     PERF_RATIO,
 )
 from ...schemas import AuthoringState
 from ..prompts import SOLUTION_SYSTEM, SOLUTION_USER
 
-_MIN_TEST_CASES = 4
+_MIN_TEST_CASES = AUTHOR_MIN_TEST_CASES
 
 
 def _run_verification(candidate: dict) -> tuple[list[dict], bool, str]:
@@ -118,7 +120,7 @@ def verify_candidates(state: AuthoringState) -> dict:
         format="json",
         base_url=OLLAMA_BASE_URL,
         num_ctx=AUTHOR_NUM_CTX,
-        keep_alive="30m",
+        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     updated: list[dict] = []

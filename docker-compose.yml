@@ -98,6 +98,19 @@ services:
       JCQ_INTERNAL_SECRET: "${JCQ_INTERNAL_SECRET}"
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       JCQ_AUTHOR_MODEL: "${JCQ_AUTHOR_MODEL:-qwen2.5-coder:14b-instruct-q5_K_M}"
+      # 출제 엔진 3-LLM 앙상블 (Melchior/Balthasar/Casper). solve + judge 공통, compare는 Melchior 단독.
+      JCQ_ENSEMBLE_MODEL_MELCHIOR: "${JCQ_ENSEMBLE_MODEL_MELCHIOR:-qwen2.5-coder:14b-instruct-q5_K_M}"
+      JCQ_ENSEMBLE_MODEL_BALTHASAR: "${JCQ_ENSEMBLE_MODEL_BALTHASAR:-deepseek-coder-v2:lite}"
+      JCQ_ENSEMBLE_MODEL_CASPER: "${JCQ_ENSEMBLE_MODEL_CASPER:-llama3.1:8b}"
+      # 앙상블 context window (solve/judge/compare 공통). generate/verify의 JCQ_AUTHOR_NUM_CTX와 별개.
+      JCQ_ENSEMBLE_NUM_CTX: "${JCQ_ENSEMBLE_NUM_CTX:-8192}"
+      # 앙상블 temperature(채점·심사 결정론적이라 0 권장) / generate draft temperature
+      JCQ_ENSEMBLE_TEMPERATURE: "${JCQ_ENSEMBLE_TEMPERATURE:-0}"
+      JCQ_AUTHOR_TEMPERATURE: "${JCQ_AUTHOR_TEMPERATURE:-0}"
+      # Ollama keep_alive(모든 LLM 호출 공통) / verify 최소 test_input 수 / solver 샘플 노출 수
+      JCQ_OLLAMA_KEEP_ALIVE: "${JCQ_OLLAMA_KEEP_ALIVE:-30m}"
+      JCQ_AUTHOR_MIN_TEST_CASES: "${JCQ_AUTHOR_MIN_TEST_CASES:-4}"
+      JCQ_SOLVER_SAMPLE_LIMIT: "${JCQ_SOLVER_SAMPLE_LIMIT:-2}"
       JCQ_VARIANT_COUNT: "${JCQ_VARIANT_COUNT:-5}"
       JCQ_AUTHOR_RETRIES: "${JCQ_AUTHOR_RETRIES:-2}"
       # 복잡한 문제 JSON truncate 방지용 context window (기본 16384, qwen2.5-coder:14b는 32K까지)

@@ -4,16 +4,19 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_ollama import ChatOllama
 
-from ...config import JUDGE_PASS_THRESHOLD, OLLAMA_BASE_URL
+from ...config import (
+    ENSEMBLE_MODELS,
+    ENSEMBLE_NUM_CTX,
+    ENSEMBLE_TEMPERATURE,
+    JUDGE_PASS_THRESHOLD,
+    OLLAMA_BASE_URL,
+    OLLAMA_KEEP_ALIVE,
+)
 from ...schemas import AuthoringState
 from ..prompts import JUDGE_QUALITY_SYSTEM, JUDGE_QUALITY_USER
 
-# 채점 앙상블과 동일한 3 판사 — 역할은 학생 코드 채점이 아니라 문제 품질 심사
-_QUALITY_JUDGES = [
-    ("Melchior", "qwen2.5-coder:14b-instruct-q5_K_M"),
-    ("Balthasar", "deepseek-coder-v2:lite"),
-    ("Casper", "llama3.1:8b"),
-]
+# 채점 앙상블과 동일한 3 판사 — 역할은 학생 코드 채점이 아니라 문제 품질 심사 (env로 설정)
+_QUALITY_JUDGES = ENSEMBLE_MODELS
 
 
 def _parse_judge_response(content: str) -> dict:
@@ -46,11 +49,11 @@ def _judge_one_candidate(candidate: dict) -> dict:
     for judge_id, model in _QUALITY_JUDGES:
         llm = ChatOllama(
             model=model,
-            temperature=0,
+            temperature=ENSEMBLE_TEMPERATURE,
             format="json",
             base_url=OLLAMA_BASE_URL,
-            num_ctx=4096,
-            keep_alive="30m",
+            num_ctx=ENSEMBLE_NUM_CTX,
+            keep_alive=OLLAMA_KEEP_ALIVE,
         )
         try:
             resp = llm.invoke(

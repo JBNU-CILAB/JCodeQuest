@@ -4,12 +4,18 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_ollama import ChatOllama
 
-from ...config import OLLAMA_BASE_URL
+from ...config import (
+    COMPARE_MODEL,
+    ENSEMBLE_NUM_CTX,
+    ENSEMBLE_TEMPERATURE,
+    OLLAMA_BASE_URL,
+    OLLAMA_KEEP_ALIVE,
+)
 from ...schemas import AuthoringState
 from ..prompts import COMPARE_SYSTEM, COMPARE_USER
 
-# 단일 judge — 비교 평가는 순수 기록 목적이라 3-judge 앙상블까지 돌릴 필요 없음.
-_COMPARE_MODEL = ("Melchior", "qwen2.5-coder:14b-instruct-q5_K_M")
+# 단일 judge — 비교 평가는 순수 기록 목적이라 3-judge 앙상블까지 돌릴 필요 없음. (env로 설정)
+_COMPARE_MODEL = COMPARE_MODEL
 
 
 def _parse_compare_response(content: str) -> dict:
@@ -48,11 +54,11 @@ def _compare_one(original: dict, candidate: dict) -> dict:
     judge_id, model = _COMPARE_MODEL
     llm = ChatOllama(
         model=model,
-        temperature=0,
+        temperature=ENSEMBLE_TEMPERATURE,
         format="json",
         base_url=OLLAMA_BASE_URL,
-        num_ctx=8192,
-        keep_alive="30m",
+        num_ctx=ENSEMBLE_NUM_CTX,
+        keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
     try:
