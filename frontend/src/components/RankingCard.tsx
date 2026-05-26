@@ -47,7 +47,7 @@ export function RankingCard() {
 
   return (
     <Card>
-      <CardHead icon="🏆" title="이번주 랭킹" right={right} />
+      <CardHead title="이번주 랭킹" right={right} />
       <div>
         {loading && (
           <div className="py-8 text-center text-xs text-gray-400">불러오는 중...</div>
@@ -81,7 +81,7 @@ export function RankingCard() {
               </div>
             </div>
             <div className="inline-flex items-center gap-1 bg-violet-50 text-violet-600 font-bold text-[13px] px-3 py-1 rounded-full tabular-nums">
-              💎 {u.points.toLocaleString()}
+              {u.points.toLocaleString()}
             </div>
           </div>
         ))}

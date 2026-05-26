@@ -60,7 +60,7 @@ export function Ranking() {
       <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
         <div>
           <h1 className="text-[26px] font-extrabold text-gray-800 tracking-tight">
-            🏆 랭킹
+            랭킹
           </h1>
           {period === 'week' && data?.week && (
             <p className="text-xs text-gray-500 mt-1 tabular-nums">
@@ -144,7 +144,7 @@ export function Ranking() {
                   </span>
                 </div>
                 <div className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 font-bold text-sm px-3 py-1 rounded-full tabular-nums shrink-0">
-                  💎 {u.points.toLocaleString()}
+                  {u.points.toLocaleString()}
                   <span className="font-normal text-[10px] text-violet-500 ml-0.5">
                     {POINTS_LABEL[period]}
                   </span>

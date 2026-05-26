@@ -125,7 +125,7 @@ start_frontend() {
 
 start_dashboard() {
     # React/Vite 기반 admin dashboard — npm run dev로 기동.
-    cd "$REPO_ROOT/admin_dashboard_react"
+    cd "$REPO_ROOT/admin_dashboard"
     nohup npm run dev -- --host 127.0.0.1 \
         > "$(logfile dashboard)" 2>&1 &
     echo $! > "$(pidfile dashboard)"

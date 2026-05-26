@@ -1,6 +1,7 @@
 history.md
 sqlite.db
 .env.docker
+.env.docker.save
 
 # 환경변수 파일 — 어느 위치든 전부 제외, *.env.example 파일은 추적
 .env
