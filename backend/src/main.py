@@ -25,6 +25,7 @@ from .api.problems import router as problems_router
 from .api.reports import router as reports_router
 from .api.submissions import router as submissions_router
 from .api.tutor import router as tutor_router
+from .api.users import router as users_router
 from .events import SubmissionEventBroker
 from .storage import init_db
 
@@ -107,6 +108,7 @@ app.include_router(leaderboard_router)
 app.include_router(notices_router)
 app.include_router(reports_router)
 app.include_router(internal_router)
+app.include_router(users_router)
 
 
 @app.get(

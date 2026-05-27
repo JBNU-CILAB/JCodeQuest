@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiGet, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
 import type { LeaderboardEntry, LeaderboardPeriod, LeaderboardResponse } from '../types'
@@ -112,43 +113,48 @@ export function Ranking() {
         <ul className="bg-white border border-gray-200 rounded-2xl overflow-hidden divide-y divide-gray-100">
           {entries.map((u) => {
             const isMe = profile?.id === u.user_id
+            // 나를 누르면 내 마이페이지, 남을 누르면 공개 프로필.
+            const to = isMe ? '/mypage' : `/users/${u.user_id}`
             return (
               <li
                 key={u.user_id}
-                className={`flex items-center gap-4 px-5 py-3.5 transition ${
-                  isMe ? 'bg-violet-50/70' : 'hover:bg-gray-50'
-                }`}
+                className={isMe ? 'bg-violet-50/70' : 'hover:bg-gray-50'}
               >
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center text-base shrink-0 ${
-                    MEDAL_BG[u.rank] ?? 'bg-gray-100 text-gray-600 text-sm font-bold tabular-nums'
-                  }`}
+                <Link
+                  to={to}
+                  className="flex items-center gap-4 px-5 py-3.5 transition"
                 >
-                  {MEDAL_EMOJI[u.rank] ?? u.rank}
-                </div>
-                <div className="flex-1 min-w-0 flex items-center gap-2">
-                  <span className="text-[15px] font-semibold text-gray-800 truncate">
-                    {u.display_name}
-                  </span>
-                  {isMe && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-600 text-white">
-                      나
-                    </span>
-                  )}
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                      TIER_STYLES[u.tier] ?? TIER_STYLES.bronze
+                  <div
+                    className={`w-9 h-9 rounded-full flex items-center justify-center text-base shrink-0 ${
+                      MEDAL_BG[u.rank] ?? 'bg-gray-100 text-gray-600 text-sm font-bold tabular-nums'
                     }`}
                   >
-                    {u.tier}
-                  </span>
-                </div>
-                <div className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 font-bold text-sm px-3 py-1 rounded-full tabular-nums shrink-0">
-                  {u.points.toLocaleString()}
-                  <span className="font-normal text-[10px] text-violet-500 ml-0.5">
-                    {POINTS_LABEL[period]}
-                  </span>
-                </div>
+                    {MEDAL_EMOJI[u.rank] ?? u.rank}
+                  </div>
+                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                    <span className="text-[15px] font-semibold text-gray-800 truncate">
+                      {u.display_name}
+                    </span>
+                    {isMe && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-600 text-white">
+                        나
+                      </span>
+                    )}
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                        TIER_STYLES[u.tier] ?? TIER_STYLES.bronze
+                      }`}
+                    >
+                      {u.tier}
+                    </span>
+                  </div>
+                  <div className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 font-bold text-sm px-3 py-1 rounded-full tabular-nums shrink-0">
+                    {u.points.toLocaleString()}
+                    <span className="font-normal text-[10px] text-violet-500 ml-0.5">
+                      {POINTS_LABEL[period]}
+                    </span>
+                  </div>
+                </Link>
               </li>
             )
           })}

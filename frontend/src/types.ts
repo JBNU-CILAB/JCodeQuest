@@ -185,6 +185,29 @@ export interface LeaderboardResponse {
   entries: LeaderboardEntry[]
 }
 
+export interface PublicProfileStats {
+  solved: number
+  total_submissions: number
+  current_streak: number
+  longest_streak: number
+  daily_solves: DailySolve[]
+}
+
+// GET /users/:id — 타인 공개 프로필. is_anonymous=true면 서버가 닉네임/티어/EXP만
+// 채우고 나머지는 null로 내려준다.
+export interface PublicProfile {
+  user_id: number
+  display_name: string
+  tier: string
+  exp: number
+  is_anonymous: boolean
+  avatar_url?: string | null
+  grade?: number | null
+  department?: string | null
+  rank?: number | null
+  stats?: PublicProfileStats | null
+}
+
 // ───────────────── Mock 카드 타입 (Phase 6에서 일부 교체) ─────────────────
 
 export interface WeeklyProblem {

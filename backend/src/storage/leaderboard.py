@@ -46,6 +46,20 @@ def _public_name(
     return display_name
 
 
+def compute_user_rank(session: Session, *, exp: int) -> int | None:
+    """누적 EXP 기준 전체 순위(1-base). exp<=0이면 None(랭킹 미진입).
+
+    동점 처리는 리더보드의 user_id tie-break과 정확히 일치시키지 않고
+    'EXP가 더 높은 사용자 수 + 1'로 근사한다 — 프로필의 '전체 #N' 표시용.
+    """
+    if exp <= 0:
+        return None
+    higher = session.exec(
+        select(func.count(UserRow.id)).where(UserRow.exp > exp)
+    ).one()
+    return int(higher) + 1
+
+
 def list_leaderboard_all(
     session: Session, *, limit: int
 ) -> list[tuple[int, str, str, int, str | None]]:
