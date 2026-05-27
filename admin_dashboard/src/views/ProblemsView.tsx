@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import type { ConnSettings, ProblemRow, TestCase, ProblemDetail } from "../types";
 import { adminFetch, fmtDate } from "../api";
 import AuthoringMetaPanel from "../components/AuthoringMetaPanel";
@@ -6,6 +6,7 @@ import AuthoringMetaPanel from "../components/AuthoringMetaPanel";
 interface Props { settings: ConnSettings }
 
 type Tab = "create" | "variant" | "list";
+type ProblemFilter = "all" | "variant" | "original";
 
 /* ────────────────────────────────────────────────────────── */
 function CreateTab({ settings }: Props) {
@@ -308,7 +309,7 @@ function VariantTab({ settings }: Props) {
 function ListTab({ settings }: Props) {
   const [problems, setProblems] = useState<ProblemRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [includeVariants, setIncludeVariants] = useState(false);
+  const [filter, setFilter] = useState<ProblemFilter>("all");
   const [output, setOutput] = useState<{ kind: "ok" | "err" | ""; msg: string }>({ kind: "", msg: "" });
   const [detail, setDetail] = useState<ProblemDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -336,7 +337,8 @@ function ListTab({ settings }: Props) {
     setLoading(true);
     setOutput({ kind: "", msg: "" });
     try {
-      const r = await adminFetch(`/api/problems?originals_only=${includeVariants ? "false" : "true"}`, settings);
+      // 원본+변형을 한 번에 받아 클라이언트에서 필터 전환(전체/변형만/원본만)한다.
+      const r = await adminFetch(`/api/problems?originals_only=false`, settings);
       if (!r.ok) {
         const t = await r.text();
         setOutput({ kind: "err", msg: `[${r.status}] ${t.slice(0, 200)}` });
@@ -348,7 +350,18 @@ function ListTab({ settings }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [settings, includeVariants]);
+  }, [settings]);
+
+  const counts = useMemo(() => {
+    const variant = problems.filter((p) => p.parent_id != null).length;
+    return { all: problems.length, variant, original: problems.length - variant };
+  }, [problems]);
+
+  const visible = useMemo(() => {
+    if (filter === "variant") return problems.filter((p) => p.parent_id != null);
+    if (filter === "original") return problems.filter((p) => p.parent_id == null);
+    return problems;
+  }, [problems, filter]);
 
   async function deleteProblem(pid: number, title: string) {
     if (!confirm(`문제 #${pid} "${title}"을(를) 삭제할까요?\n변형 문제도 함께 삭제됩니다.`)) return;
@@ -376,17 +389,31 @@ function ListTab({ settings }: Props) {
     <div>
       <div className="card">
         <div className="filter-row">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={includeVariants} onChange={(e) => setIncludeVariants(e.target.checked)} />
-            <span>변형 문제 포함</span>
-          </label>
+          <div className="seg" role="tablist" aria-label="문제 유형 필터">
+            {([
+              ["all",      "전체 문제", counts.all],
+              ["variant",  "변형 문제만", counts.variant],
+              ["original", "원본 문제만", counts.original],
+            ] as [ProblemFilter, string, number][]).map(([key, label, n]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={filter === key}
+                className={`seg-btn${filter === key ? " active" : ""}`}
+                onClick={() => setFilter(key)}
+              >
+                {label}
+                {problems.length > 0 && <span className="seg-count">{n}</span>}
+              </button>
+            ))}
+          </div>
           <button className="btn btn-primary btn-sm" onClick={load} disabled={loading}>
             {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "↻"}&nbsp;불러오기
           </button>
         </div>
         <div className="card-desc" style={{ marginTop: 8 }}>
           행을 클릭하면 RAG 과정과 LLM-as-a-Judge 지표(품질·변별력·비교·신규성)를 확인할 수 있습니다.
-          변형 문제에 메타가 채워집니다 — "변형 문제 포함"을 켜고 조회하세요.
+          출제 메타는 변형 문제에만 채워집니다 — "변형 문제만"으로 좁혀 조회하세요.
         </div>
       </div>
 
@@ -400,9 +427,13 @@ function ListTab({ settings }: Props) {
               </tr>
             </thead>
             <tbody>
-              {problems.length === 0 ? (
-                <tr className="empty-row"><td colSpan={9}>문제 없음 — 불러오기를 눌러주세요</td></tr>
-              ) : problems.map((p) => (
+              {visible.length === 0 ? (
+                <tr className="empty-row"><td colSpan={9}>
+                  {problems.length === 0
+                    ? "문제 없음 — 불러오기를 눌러주세요"
+                    : filter === "variant" ? "변형 문제 없음" : "원본 문제 없음"}
+                </td></tr>
+              ) : visible.map((p) => (
                 <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => showDetail(p.id)}>
                   <td className="num">{p.id}</td>
                   <td>{p.title}</td>
