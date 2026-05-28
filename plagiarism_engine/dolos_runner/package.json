@@ -1,0 +1,14 @@
+{
+  "name": "jcq-dolos-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "stdin JSON {files,language} -> stdout JSON {pairs} via @dodona/dolos-lib",
+  "bin": { "jcq-dolos-runner": "run_pairs.mjs" },
+  "scripts": { "start": "node run_pairs.mjs" },
+  "dependencies": {
+    "@dodona/dolos-lib": "^2.3.0",
+    "tree-sitter": "0.20.6",
+    "tree-sitter-python": "0.20.4"
+  }
+}
