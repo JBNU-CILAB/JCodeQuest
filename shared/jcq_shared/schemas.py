@@ -222,6 +222,24 @@ class AuthoringProblemAdmin(BaseModel):
     created_at: str | None = None
 
 
+class AuthoringProblemUpdate(BaseModel):
+    """authoring_engine → backend. 등록된 문제의 수동 수정 요청.
+
+    부분 갱신 — None인 필드는 변경하지 않는다. test_cases가 주어지면 전체 교체.
+    intent_rubric도 주어지면 전체 교체(부분 패치 불가)."""
+
+    title: str | None = None
+    statement: str | None = None
+    category: str | None = None
+    level: ProblemLevel | None = None
+    points: int | None = Field(default=None, ge=1)
+    time_limit_ms: int | None = Field(default=None, ge=100, le=60000)
+    memory_limit_mb: int | None = Field(default=None, ge=16, le=2048)
+    reference_code: str | None = None
+    intent_rubric: IntentRubric | None = None
+    test_cases: list[TestCase] | None = None
+
+
 class AuthoringProblemSummary(BaseModel):
     """원본 목록용 — 변형 통계 포함."""
 

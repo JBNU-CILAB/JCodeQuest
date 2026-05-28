@@ -184,6 +184,41 @@ def create_problem(
     return row.id
 
 
+def update_problem(
+    session: Session,
+    problem_id: int,
+    *,
+    fields: dict,
+    intent_rubric: IntentRubric | None = None,
+    test_cases: list[TestCase] | None = None,
+) -> bool:
+    """등록된 문제의 부분 수정. test_cases가 주어지면 전체 교체(cascade delete-orphan).
+
+    fields는 ProblemRow의 스칼라 컬럼만(setattr) — 안전 필터는 호출자(스키마)가 책임진다.
+    문제가 없으면 False."""
+    row = session.get(ProblemRow, problem_id)
+    if row is None:
+        return False
+    for key, val in fields.items():
+        setattr(row, key, val)
+    if intent_rubric is not None:
+        row.intent_rubric = intent_rubric.model_dump()
+    if test_cases is not None:
+        # delete-orphan cascade가 기존 row 정리. 새 리스트로 통째 교체.
+        row.test_cases = [
+            TestCaseRow(
+                ordinal=t.ordinal,
+                stdin=t.stdin,
+                expected_stdout=t.expected_stdout,
+                is_sample=t.is_sample,
+            )
+            for t in test_cases
+        ]
+    session.add(row)
+    session.commit()
+    return True
+
+
 def delete_problem(
     session: Session,
     problem_id: int,

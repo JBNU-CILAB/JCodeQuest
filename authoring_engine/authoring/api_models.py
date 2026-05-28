@@ -121,6 +121,30 @@ class CreateOriginalResponse(BaseModel):
     )
 
 
+class UpdateTestCase(BaseModel):
+    ordinal: int = Field(ge=1, description="1부터 — 새 ordinal로 통째 교체")
+    stdin: str = ""
+    expected_stdout: str = ""
+    is_sample: bool = False
+
+
+class UpdateProblemRequest(BaseModel):
+    """문제 부분 수정 — None인 필드는 변경하지 않음.
+    test_cases가 주어지면 기존 케이스를 전체 교체한다 (delete-orphan)."""
+
+    title: str | None = None
+    statement: str | None = None
+    category: str | None = None
+    level: str | None = Field(
+        default=None, pattern=r"^(bronze|silver|gold)$"
+    )
+    points: int | None = Field(default=None, ge=0, le=1000)
+    time_limit_ms: int | None = Field(default=None, ge=100, le=60000)
+    memory_limit_mb: int | None = Field(default=None, ge=16, le=2048)
+    reference_code: str | None = None
+    test_cases: list[UpdateTestCase] | None = None
+
+
 # ── /api/admin/comparison ────────────────────────────────────────────────
 # compare_to_original 노드가 authoring_meta.comparison에 넣어 둔 3축 정량 기록을
 # admin dashboard에서 그래프/표로 쓰기 좋은 형태로 추출·집계해 노출한다. 게이트 아님.

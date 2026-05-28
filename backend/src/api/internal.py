@@ -8,6 +8,7 @@
   GET    /internal/problems/{id}/category-embeddings  authoring_engine: 신규성 검사용 임베딩
   PATCH  /internal/problems/{id}/embedding authoring_engine: 임베딩 백필/갱신
   POST   /internal/problems                authoring_engine: 변형/시드 문제 저장
+  PATCH  /internal/problems/{id}           admin: 문제 부분 수정 (test_cases 포함)
   DELETE /internal/problems/{id}           admin: 문제 + 변형/제출/튜터 cascade 삭제
   GET    /internal/problems                authoring viewer: 관리자 목록 (변형 통계 포함)
   GET    /internal/problems/{id}/children  authoring viewer: 변형 목록 상세
@@ -39,6 +40,7 @@ from ..schemas import (
     AuthoringProblemCreate,
     AuthoringProblemCreateResponse,
     AuthoringProblemSummary,
+    AuthoringProblemUpdate,
     AuthoringTestCase,
     BugReport,
     BugReportUpdateRequest,
@@ -89,6 +91,7 @@ from ..storage.problems import (
     delete_problem,
     list_category_embeddings,
     set_problem_embedding,
+    update_problem,
 )
 from ..storage.runs import (
     create_run,
@@ -343,6 +346,42 @@ def create_problem_admin(
             embedding=req.embedding,
         )
     return AuthoringProblemCreateResponse(id=pid)
+
+
+@router.patch(
+    "/problems/{problem_id}",
+    response_model=AuthoringProblemAdmin,
+    summary="문제 부분 수정 (admin)",
+    description=(
+        "주어진 필드만 갱신. test_cases가 포함되면 기존 테스트 케이스를 전체 교체한다 "
+        "(cascade delete-orphan). intent_rubric도 통째 교체."
+    ),
+    responses={404: {"description": "문제 없음"}},
+)
+def patch_problem_admin(
+    problem_id: Annotated[int, Path()],
+    req: AuthoringProblemUpdate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> AuthoringProblemAdmin:
+    _require_internal_auth(authorization)
+    # 스칼라 필드만 setattr — intent_rubric/test_cases는 별도 처리.
+    scalar = req.model_dump(
+        exclude_unset=True,
+        exclude={"intent_rubric", "test_cases"},
+    )
+    with get_session() as session:
+        ok = update_problem(
+            session,
+            problem_id,
+            fields=scalar,
+            intent_rubric=req.intent_rubric,
+            test_cases=req.test_cases,
+        )
+        if not ok:
+            raise HTTPException(404, f"problem {problem_id} not found")
+        row = session.get(ProblemRow, problem_id)
+        assert row is not None
+        return _row_to_admin(row)
 
 
 @router.delete(

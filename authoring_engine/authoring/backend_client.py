@@ -14,6 +14,7 @@ from jcq_shared.schemas import (
     AuthoringProblemCreate,
     AuthoringProblemCreateResponse,
     AuthoringProblemSummary,
+    AuthoringProblemUpdate,
     EmbeddingUpdateRequest,
     ExecResult,
     Problem,
@@ -137,6 +138,20 @@ def create_problem(
         )
         r.raise_for_status()
         return AuthoringProblemCreateResponse.model_validate(r.json()).id
+
+
+def update_problem(
+    problem_id: int,
+    payload: AuthoringProblemUpdate,
+) -> AuthoringProblemAdmin:
+    """문제 부분 수정 — payload는 exclude_unset으로 직렬화해 PATCH."""
+    with _client() as cli:
+        r = cli.patch(
+            f"{_backend_url()}/internal/problems/{problem_id}",
+            json=payload.model_dump(exclude_unset=True),
+        )
+        r.raise_for_status()
+        return AuthoringProblemAdmin.model_validate(r.json())
 
 
 def delete_problem(

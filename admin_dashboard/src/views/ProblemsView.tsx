@@ -433,6 +433,25 @@ function ListTab({ settings }: Props) {
         detail={detail}
         loading={detailLoading}
         onClose={() => setDetail(null)}
+        settings={settings}
+        onUpdated={(updated) => {
+          setDetail(updated);
+          // 목록의 표시값(제목/카테고리/난이도/점수/시간)도 즉시 반영
+          setProblems((prev) =>
+            prev.map((p) =>
+              p.id === updated.id
+                ? {
+                    ...p,
+                    title: updated.title,
+                    category: updated.category,
+                    level: updated.level,
+                    points: updated.points,
+                    time_limit_ms: updated.time_limit_ms,
+                  }
+                : p,
+            ),
+          );
+        }}
       />
     </div>
   );

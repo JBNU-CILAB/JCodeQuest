@@ -5,7 +5,13 @@ from typing import Annotated, Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query
-from jcq_shared.schemas import IntentRubric, Problem, ProblemDeleteResponse, TestCase
+from jcq_shared.schemas import (
+    AuthoringProblemUpdate,
+    IntentRubric,
+    Problem,
+    ProblemDeleteResponse,
+    TestCase,
+)
 
 from .. import backend_client
 from ..admin_auth import require_admin
@@ -14,6 +20,7 @@ from ..api_models import (
     CreateOriginalResponse,
     ProblemDetailOut,
     ProblemSummaryOut,
+    UpdateProblemRequest,
 )
 
 router = APIRouter(tags=["problems"], dependencies=[Depends(require_admin)])
@@ -190,6 +197,42 @@ async def list_problem_children(
     except httpx.HTTPStatusError as e:
         raise _backend_error(e)
     return [_admin_to_detail(r.model_dump()) for r in rows]
+
+
+@router.patch(
+    "/api/problems/{problem_id}",
+    response_model=ProblemDetailOut,
+    summary="문제 부분 수정 (admin)",
+    description=(
+        "주어진 필드만 수정한다. test_cases가 포함되면 기존 케이스를 전체 교체. "
+        "intent_rubric 수정은 현재 비공개 (수동 등록 원본은 backend 정책상 메타 그대로 유지)."
+    ),
+    responses={404: {"description": "문제 없음"}},
+)
+async def update_problem_route(
+    problem_id: Annotated[int, PathParam(description="수정 대상 문제 ID")],
+    req: UpdateProblemRequest,
+) -> dict[str, Any]:
+    # 클라이언트가 보낸 필드만 추려서 그대로 전송. test_cases는 도메인 객체로 변환.
+    sent = req.model_dump(exclude_unset=True, exclude={"test_cases"})
+    payload_kwargs: dict[str, Any] = dict(sent)
+    if req.test_cases is not None:
+        # stdin 끝에 개행 자동 부착 — sandbox/judge가 stdin 끝 개행을 기대.
+        payload_kwargs["test_cases"] = [
+            TestCase(
+                ordinal=tc.ordinal,
+                stdin=tc.stdin if (not tc.stdin or tc.stdin.endswith("\n")) else tc.stdin + "\n",
+                expected_stdout=tc.expected_stdout,
+                is_sample=tc.is_sample,
+            )
+            for tc in req.test_cases
+        ]
+    payload = AuthoringProblemUpdate(**payload_kwargs)
+    try:
+        updated = backend_client.update_problem(problem_id, payload)
+    except httpx.HTTPStatusError as e:
+        raise _backend_error(e)
+    return _admin_to_detail(updated.model_dump())
 
 
 @router.delete(

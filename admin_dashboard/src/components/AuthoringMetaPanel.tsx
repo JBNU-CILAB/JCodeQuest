@@ -1,11 +1,14 @@
-import type { ProblemDetail, AuthoringMeta, ProblemTestCase } from "../types";
-import { fmtDate } from "../api";
+import { useState, useEffect } from "react";
+import type { ProblemDetail, AuthoringMeta, ProblemTestCase, ConnSettings } from "../types";
+import { adminFetch, fmtDate } from "../api";
 import VerdictBadge from "./VerdictBadge";
 
 interface Props {
   detail: ProblemDetail | null;
   loading: boolean;
   onClose: () => void;
+  settings: ConnSettings;
+  onUpdated?: (updated: ProblemDetail) => void;
 }
 
 /* 점수 막대 — axis="hal"은 낮을수록 좋음(환각/유사도), "pos"는 높을수록 좋음(품질/의도). */
@@ -343,7 +346,222 @@ function JudgeSection({ meta }: { meta: AuthoringMeta }) {
   );
 }
 
-export default function AuthoringMetaPanel({ detail, loading, onClose }: Props) {
+/* 편집 폼 — 부분 수정. test_cases는 전체 교체. intent_rubric은 현재 폼에서 제외. */
+interface EditFormState {
+  title: string;
+  category: string;
+  level: string;
+  points: string;
+  time_limit_ms: string;
+  memory_limit_mb: string;
+  statement: string;
+  reference_code: string;
+  test_cases: ProblemTestCase[];
+}
+
+function _toFormState(d: ProblemDetail): EditFormState {
+  return {
+    title: d.title,
+    category: d.category,
+    level: d.level,
+    points: String(d.points),
+    time_limit_ms: String(d.time_limit_ms),
+    memory_limit_mb: String(d.memory_limit_mb),
+    statement: d.statement,
+    reference_code: d.reference_code,
+    test_cases: (d.test_cases ?? []).map((tc) => ({ ...tc })),
+  };
+}
+
+function EditForm({
+  detail,
+  settings,
+  onSaved,
+  onCancel,
+}: {
+  detail: ProblemDetail;
+  settings: ConnSettings;
+  onSaved: (updated: ProblemDetail) => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState<EditFormState>(() => _toFormState(detail));
+  const [saving, setSaving] = useState(false);
+  const [output, setOutput] = useState<{ kind: "ok" | "err" | ""; msg: string }>({ kind: "", msg: "" });
+
+  const upd =
+    (k: keyof Omit<EditFormState, "test_cases">) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+      setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  const updateTC = (i: number, k: keyof ProblemTestCase, v: string | boolean) =>
+    setForm((p) => ({
+      ...p,
+      test_cases: p.test_cases.map((tc, idx) => (idx === i ? { ...tc, [k]: v } : tc)),
+    }));
+
+  const addTC = () =>
+    setForm((p) => ({
+      ...p,
+      test_cases: [
+        ...p.test_cases,
+        { ordinal: p.test_cases.length + 1, stdin: "", expected_stdout: "", is_sample: false },
+      ],
+    }));
+
+  const removeTC = (i: number) =>
+    setForm((p) => ({
+      ...p,
+      test_cases: p.test_cases.filter((_, idx) => idx !== i).map((tc, idx) => ({ ...tc, ordinal: idx + 1 })),
+    }));
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setOutput({ kind: "", msg: "저장 중..." });
+    try {
+      const payload = {
+        title: form.title,
+        category: form.category,
+        level: form.level,
+        points: Number(form.points),
+        time_limit_ms: Number(form.time_limit_ms),
+        memory_limit_mb: Number(form.memory_limit_mb),
+        statement: form.statement,
+        reference_code: form.reference_code,
+        test_cases: form.test_cases.map((tc, idx) => ({
+          ordinal: idx + 1,
+          stdin: tc.stdin,
+          expected_stdout: tc.expected_stdout,
+          is_sample: !!tc.is_sample,
+        })),
+      };
+      const r = await adminFetch(`/api/problems/${detail.id}`, settings, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      const body = await r.text();
+      let parsed: ProblemDetail | null = null;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        // ignore
+      }
+      if (r.ok && parsed) {
+        setOutput({ kind: "ok", msg: `[${r.status}] 저장 완료` });
+        onSaved(parsed);
+      } else {
+        setOutput({ kind: "err", msg: `[${r.status}] ${body.slice(0, 400)}` });
+      }
+    } catch (err: unknown) {
+      setOutput({ kind: "err", msg: `네트워크 오류: ${(err as Error).message}` });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="detail-body">
+      <div className="card">
+        <SectionTitle>기본 정보</SectionTitle>
+        <div className="form-grid">
+          <div className="field span-2">
+            <label>제목</label>
+            <input type="text" value={form.title} onChange={upd("title")} required />
+          </div>
+          <div className="field">
+            <label>카테고리</label>
+            <input type="text" value={form.category} onChange={upd("category")} />
+          </div>
+          <div className="field">
+            <label>난이도</label>
+            <select value={form.level} onChange={upd("level")}>
+              {["bronze", "silver", "gold"].map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>점수</label>
+            <input type="number" value={form.points} onChange={upd("points")} min={1} />
+          </div>
+          <div className="field">
+            <label>시간 제한 (ms)</label>
+            <input type="number" value={form.time_limit_ms} onChange={upd("time_limit_ms")} min={100} />
+          </div>
+          <div className="field">
+            <label>메모리 제한 (MB)</label>
+            <input type="number" value={form.memory_limit_mb} onChange={upd("memory_limit_mb")} min={16} />
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <SectionTitle>문제 본문 (Markdown)</SectionTitle>
+        <div className="field">
+          <textarea className="code" value={form.statement} onChange={upd("statement")} rows={10} required />
+        </div>
+      </div>
+
+      <div className="card">
+        <SectionTitle>정답(reference) 코드</SectionTitle>
+        <div className="field">
+          <textarea className="code" value={form.reference_code} onChange={upd("reference_code")} rows={12} required />
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          <span className="card-icon">◈</span> 테스트 케이스 ({form.test_cases.length})
+          <span className="spacer" />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={addTC}>+ 추가</button>
+        </div>
+        <div className="card-desc">저장 시 기존 케이스는 전체 교체됩니다.</div>
+        <div className="tc-list">
+          {form.test_cases.map((tc, i) => (
+            <div key={i} className="tc-row">
+              <div className="field">
+                <div className="tc-num">INPUT #{i + 1}</div>
+                <textarea value={tc.stdin} onChange={(e) => updateTC(i, "stdin", e.target.value)} placeholder="stdin" />
+              </div>
+              <div className="field">
+                <div className="tc-num">EXPECTED #{i + 1}</div>
+                <textarea value={tc.expected_stdout} onChange={(e) => updateTC(i, "expected_stdout", e.target.value)} placeholder="stdout" />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 20 }}>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={!!tc.is_sample}
+                    onChange={(e) => updateTC(i, "is_sample", e.target.checked)}
+                  />
+                  <span>샘플</span>
+                </label>
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => removeTC(i)}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          {saving ? <><span className="spinner" />저장 중...</> : "저장"}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>
+          취소
+        </button>
+      </div>
+
+      {output.msg && <div className={`output-panel ${output.kind}`}>{output.msg}</div>}
+    </form>
+  );
+}
+
+export default function AuthoringMetaPanel({ detail, loading, onClose, settings, onUpdated }: Props) {
+  const [editing, setEditing] = useState(false);
+  // 다른 문제로 바뀌면 편집 모드 해제
+  useEffect(() => { setEditing(false); }, [detail?.id]);
+
   if (!detail && !loading) return null;
   const meta = detail?.authoring_meta ?? null;
   const isManual = meta?.source === "manual";
@@ -356,12 +574,29 @@ export default function AuthoringMetaPanel({ detail, loading, onClose }: Props) 
           <div className="detail-title">
             {loading
               ? <><span className="spinner" style={{ width: 16, height: 16 }} /> 로딩 중...</>
-              : <>문제 #{detail?.id} · {detail?.title}</>}
+              : <>문제 #{detail?.id} · {detail?.title}{editing && <span className="badge badge-amber" style={{ marginLeft: 8 }}>편집 중</span>}</>}
           </div>
+          {detail && !loading && !editing && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)} style={{ marginRight: 6 }}>
+              ✎ 수정
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
 
-        {detail && !loading && (
+        {detail && !loading && editing && (
+          <EditForm
+            detail={detail}
+            settings={settings}
+            onSaved={(updated) => {
+              setEditing(false);
+              onUpdated?.(updated);
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        )}
+
+        {detail && !loading && !editing && (
           <div className="detail-body">
             <div className="kv-grid">
               <span className="kv-key">상태</span>
