@@ -1,4 +1,4 @@
-import type { ProblemDetail, AuthoringMeta } from "../types";
+import type { ProblemDetail, AuthoringMeta, ProblemTestCase } from "../types";
 import { fmtDate } from "../api";
 import VerdictBadge from "./VerdictBadge";
 
@@ -186,6 +186,53 @@ function RagSection({ meta, pid }: { meta: AuthoringMeta; pid?: number }) {
   );
 }
 
+/* 문제 본문/정답 코드 — 관리자가 등록된 내용을 그대로 확인 */
+function ContentSection({ detail }: { detail: ProblemDetail }) {
+  return (
+    <div className="card">
+      <SectionTitle>문제 본문</SectionTitle>
+      <pre className="code-block" style={{ whiteSpace: "pre-wrap" }}>{detail.statement || "(본문 없음)"}</pre>
+
+      <div className="card-title" style={{ margin: "14px 0 8px" }}>
+        <span className="card-icon">◈</span> 정답(reference) 코드
+      </div>
+      <pre className="code-block">{detail.reference_code || "(정답 코드 없음)"}</pre>
+    </div>
+  );
+}
+
+/* 등록된 테스트 케이스 — sample/hidden 표시 */
+function TestCasesSection({ cases }: { cases: ProblemTestCase[] }) {
+  return (
+    <div className="card">
+      <SectionTitle>테스트 케이스 ({cases.length})</SectionTitle>
+      {cases.length === 0 ? (
+        <div className="text-sm text-dim">등록된 테스트 케이스가 없습니다.</div>
+      ) : (
+        <div className="tc-list">
+          {cases.map((tc) => (
+            <div key={tc.ordinal} className="tc-row">
+              <div className="field">
+                <div className="tc-num">
+                  INPUT #{tc.ordinal}
+                  {tc.is_sample
+                    ? <span className="badge badge-green" style={{ marginLeft: 6 }}>SAMPLE</span>
+                    : <span className="badge badge-gray" style={{ marginLeft: 6 }}>HIDDEN</span>}
+                </div>
+                <pre className="code-block" style={{ maxHeight: 200 }}>{tc.stdin || "(빈 입력)"}</pre>
+              </div>
+              <div className="field">
+                <div className="tc-num">EXPECTED #{tc.ordinal}</div>
+                <pre className="code-block" style={{ maxHeight: 200 }}>{tc.expected_stdout || "(빈 출력)"}</pre>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* LLM-as-a-Judge — 품질 심사 + 변별력 + 비교 + 솔버 */
 function JudgeSection({ meta }: { meta: AuthoringMeta }) {
   const disc = meta.discrimination;
@@ -349,6 +396,9 @@ export default function AuthoringMetaPanel({ detail, loading, onClose }: Props) 
                 </>
               )}
             </div>
+
+            <ContentSection detail={detail} />
+            <TestCasesSection cases={detail.test_cases ?? []} />
 
             {isManual ? (
               <div className="output-panel">
