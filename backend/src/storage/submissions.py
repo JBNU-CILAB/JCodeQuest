@@ -210,6 +210,22 @@ def compute_user_streak(
     return StreakStats(current, longest, last_solved, daily)
 
 
+def count_user_stats(session: Session, user_id: int) -> tuple[int, int]:
+    """(해결한 distinct 문제 수, 총 제출 수). 공개 프로필 활동 요약용."""
+    solved = session.exec(
+        select(func.count(func.distinct(SubmissionRow.problem_id))).where(
+            SubmissionRow.user_id == user_id,
+            SubmissionRow.final_verdict == "AC",
+        )
+    ).one()
+    total = session.exec(
+        select(func.count(SubmissionRow.id)).where(
+            SubmissionRow.user_id == user_id
+        )
+    ).one()
+    return int(solved), int(total)
+
+
 def list_user_submissions(
     session: Session,
     user_id: int,

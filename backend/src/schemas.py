@@ -371,6 +371,52 @@ class MeResponse(BaseModel):
     )
 
 
+class PublicProfileStats(BaseModel):
+    """공개 프로필의 활동 요약 — is_anonymous=False일 때만 채워진다."""
+
+    solved: int = Field(description="해결한 distinct 문제 수")
+    total_submissions: int = Field(description="총 제출 수")
+    current_streak: int = Field(description="현재 연속 풀이 일수")
+    longest_streak: int = Field(description="역대 최장 연속 일수")
+    daily_solves: list[DailySolve] = Field(
+        default_factory=list,
+        description="잔디 시각화용 일별 새 문제 풀이 수 (오래된 → 최신 순).",
+    )
+
+
+class PublicProfileResponse(BaseModel):
+    """GET /users/{id} — 타인에게 노출되는 공개 프로필.
+
+    is_anonymous=True면 display_name(닉네임/'익명')·tier·exp만 채우고 나머지 필드는
+    서버가 None으로 비워서 내려준다(프론트 마스킹이 아니라 서버 측 마스킹).
+    이메일/API 키 등 민감 필드는 익명 여부와 무관하게 절대 포함하지 않는다.
+    """
+
+    user_id: int = Field(examples=[1])
+    display_name: str = Field(
+        description="익명이면 닉네임(없으면 '익명'), 아니면 실명"
+    )
+    tier: str = Field(description="현재 티어")
+    exp: int = Field(description="누적 경험치")
+    is_anonymous: bool = Field(
+        description="True면 프론트가 축약 레이아웃(닉네임+티어+EXP)을 렌더한다."
+    )
+    avatar_url: str | None = Field(
+        default=None, description="프로필 이미지 URL. 익명이면 항상 null."
+    )
+    grade: int | None = Field(default=None, description="학년. 익명이면 항상 null.")
+    department: str | None = Field(
+        default=None, description="학과. 익명이면 항상 null."
+    )
+    rank: int | None = Field(
+        default=None,
+        description="누적 EXP 기준 전체 순위(1-base). exp=0이거나 익명이면 null.",
+    )
+    stats: PublicProfileStats | None = Field(
+        default=None, description="활동 요약. 익명이면 null."
+    )
+
+
 class ProfileUpdateRequest(BaseModel):
     """PATCH /me — 학년/학과/닉네임/익명여부/아바타 URL 부분 갱신.
     필드를 생략하면 미변경, null을 명시하면 해당 필드를 비운다(is_anonymous는 null 불가)."""
