@@ -8,13 +8,9 @@ import { useAuth } from '../lib/AuthContext'
 import { apiGet, apiPatch, ApiError } from '../lib/api'
 import { resolveAvatarUrl } from '../lib/avatar'
 import { supabase } from '../lib/supabase'
+import { tierLabel } from '../lib/tiers'
+import { TierBadge } from '../components/TierBadge'
 import type { StreakResponse, SubmissionListResponse } from '../types'
-
-const TIER_STYLES: Record<string, string> = {
-  bronze: 'bg-amber-700/80 text-amber-50',
-  silver: 'bg-slate-400/80 text-slate-50',
-  gold: 'bg-yellow-500/90 text-yellow-50',
-}
 
 const GRADE_LABEL: Record<number, string> = {
   1: '1학년',
@@ -145,9 +141,10 @@ export function MyPage() {
   }
 
   const displayName = profile?.display_name ?? metadata.full_name ?? session.user.email ?? ''
-  const tier = profile?.tier ?? 'bronze'
+  const tier = profile?.tier ?? 'beginner'
   const exp = profile?.exp ?? 0
   const email = profile?.email ?? session.user.email ?? null
+  const tierProgress = profile?.tier_progress ?? null
 
   return (
     <main className="px-10 py-10 max-w-[1100px] mx-auto w-full">
@@ -182,13 +179,8 @@ export function MyPage() {
               {email && <div className="text-xs text-gray-500 mt-0.5">{email}</div>}
             </div>
             <div className="flex items-center gap-2">
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                  TIER_STYLES[tier] ?? TIER_STYLES.bronze
-                }`}
-              >
-                {tier}
-              </span>
+              {/* 본인 프로필 — lg + emphasize 로 가장 화려하게. */}
+              <TierBadge tier={tier} size="lg" emphasize />
               <span className="text-xs text-gray-700 tabular-nums">
                 {exp.toLocaleString()} XP
               </span>
@@ -216,6 +208,40 @@ export function MyPage() {
               <p className="text-[11px] text-red-600">{anonymousError}</p>
             )}
           </div>
+
+          {tierProgress && (
+            <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+              <div className="flex items-center justify-between text-[11px] text-gray-600 mb-1.5">
+                <span>
+                  {tierProgress.next === null ? (
+                    <span className="font-semibold text-rose-700">최고 티어 도달</span>
+                  ) : (
+                    <>
+                      다음 티어 <span className="font-semibold">{tierLabel(tierProgress.next)}</span>
+                      까지 <span className="tabular-nums">{tierProgress.exp_to_next.toLocaleString()}</span> XP
+                    </>
+                  )}
+                </span>
+                <span className="tabular-nums text-gray-500">
+                  {Math.round(tierProgress.progress_pct)}%
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    tierProgress.next === null ? 'bg-rose-500' : 'bg-indigo-500'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(0, tierProgress.progress_pct))}%` }}
+                />
+              </div>
+              {tierProgress.max_exp > 0 && (
+                <p className="mt-1.5 text-[10px] text-gray-400 tabular-nums">
+                  시스템 총 가용 XP {tierProgress.max_exp.toLocaleString()} — 문제가 늘면 임계가
+                  올라갑니다.
+                </p>
+              )}
+            </div>
+          )}
 
           <dl className="grid grid-cols-[80px_1fr] gap-x-4 gap-y-2.5 text-[13px] border-t border-gray-100 pt-4">
             <dt className="text-gray-500">학년</dt>

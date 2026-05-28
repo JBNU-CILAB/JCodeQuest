@@ -14,16 +14,23 @@ from ..schemas import (
     StreakResponse,
     SubmissionListItem,
     SubmissionListResponse,
+    TierProgressSchema,
 )
 from ..storage import get_session
 from ..storage.models import UserRow
 from ..storage.submissions import compute_user_streak, list_user_submissions
 from ..storage.users import set_user_api_key, update_user_profile
+from ..tier import get_max_exp, tier_progress
 
 router = APIRouter(prefix="/me", tags=["me"])
 
 
 def _to_me_response(user: UserRow) -> MeResponse:
+    # max_exp는 요청당 한 번만 — 공개 프로필 / me 모두 같은 헬퍼를 거치므로
+    # 호출 빈도 자체가 낮아 캐시 없이도 부담 없다.
+    with get_session() as session:
+        max_exp = get_max_exp(session)
+    progress = tier_progress(user.exp, max_exp)
     return MeResponse(
         id=user.id,  # type: ignore[arg-type]
         display_name=user.display_name,
@@ -31,6 +38,13 @@ def _to_me_response(user: UserRow) -> MeResponse:
         provider=user.provider,  # type: ignore[arg-type]
         exp=user.exp,
         tier=user.tier,
+        tier_progress=TierProgressSchema(
+            current=progress.current,
+            next=progress.next,
+            exp_to_next=progress.exp_to_next,
+            progress_pct=progress.progress_pct,
+            max_exp=progress.max_exp,
+        ),
         has_api_key=bool(user.api_key_secret_id),
         nickname=user.nickname,
         grade=user.grade,

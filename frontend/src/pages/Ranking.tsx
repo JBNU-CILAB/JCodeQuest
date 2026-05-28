@@ -2,15 +2,10 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, ApiError } from '../lib/api'
 import { useAuth } from '../lib/AuthContext'
+import { TierBadge } from '../components/TierBadge'
 import type { LeaderboardEntry, LeaderboardPeriod, LeaderboardResponse } from '../types'
 
 const TOP_N = 50
-
-const TIER_STYLES: Record<string, string> = {
-  bronze: 'bg-amber-700/80 text-amber-50',
-  silver: 'bg-slate-400/80 text-slate-50',
-  gold: 'bg-yellow-500/90 text-yellow-50',
-}
 
 const MEDAL_BG: Record<number, string> = {
   1: 'bg-yellow-100',
@@ -140,13 +135,12 @@ export function Ranking() {
                         나
                       </span>
                     )}
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                        TIER_STYLES[u.tier] ?? TIER_STYLES.bronze
-                      }`}
-                    >
-                      {u.tier}
-                    </span>
+                    {/* Top 3 는 한 단계 큰 배지. 모든 행은 emphasize=true 라 master면 후광이 깜빡인다. */}
+                    <TierBadge
+                      tier={u.tier}
+                      size={u.rank <= 3 ? 'md' : 'sm'}
+                      emphasize
+                    />
                   </div>
                   <div className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 font-bold text-sm px-3 py-1 rounded-full tabular-nums shrink-0">
                     {u.points.toLocaleString()}

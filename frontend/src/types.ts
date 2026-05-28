@@ -1,6 +1,18 @@
 // ───────────────── 백엔드 API 응답 타입 ─────────────────
 // backend/src/schemas.py 의 Pydantic 모델과 1:1 대응
 
+// 4단계 티어 — 백엔드 src/tier.py:TIER_ORDER 와 동일 순서. 임계값은 절대 EXP가 아니라
+// 현재 approved 문제 points 합(max_exp)의 %로 잡혀서 새 문제가 생기면 자동으로 위로 밀린다.
+export type Tier = 'beginner' | 'amateur' | 'professional' | 'master'
+
+export interface TierProgress {
+  current: Tier
+  next: Tier | null
+  exp_to_next: number
+  progress_pct: number
+  max_exp: number
+}
+
 export interface UserMe {
   id: number
   display_name: string
@@ -8,6 +20,7 @@ export interface UserMe {
   provider: string
   exp: number
   tier: string
+  tier_progress?: TierProgress | null
   has_api_key?: boolean
   nickname?: string | null
   grade?: number | null
@@ -200,6 +213,7 @@ export interface PublicProfile {
   display_name: string
   tier: string
   exp: number
+  tier_progress?: TierProgress | null
   is_anonymous: boolean
   avatar_url?: string | null
   grade?: number | null

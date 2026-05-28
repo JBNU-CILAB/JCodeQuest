@@ -6,11 +6,28 @@
 """
 from fastapi import APIRouter, HTTPException
 
-from ..schemas import DailySolve, PublicProfileResponse, PublicProfileStats
+from ..schemas import (
+    DailySolve,
+    PublicProfileResponse,
+    PublicProfileStats,
+    TierProgressSchema,
+)
 from ..storage import get_session
 from ..storage.leaderboard import _public_name, compute_user_rank
 from ..storage.submissions import compute_user_streak, count_user_stats
 from ..storage.users import get_user
+from ..tier import get_max_exp, tier_progress
+
+
+def _tier_progress_schema(exp: int, max_exp: int) -> TierProgressSchema:
+    p = tier_progress(exp, max_exp)
+    return TierProgressSchema(
+        current=p.current,
+        next=p.next,
+        exp_to_next=p.exp_to_next,
+        progress_pct=p.progress_pct,
+        max_exp=p.max_exp,
+    )
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -37,6 +54,8 @@ def get_user_public_profile(user_id: int) -> PublicProfileResponse:
         name = _public_name(
             user.display_name, user.nickname, bool(user.is_anonymous)
         )
+        max_exp = get_max_exp(session)
+        progress = _tier_progress_schema(user.exp, max_exp)
         if user.is_anonymous:
             # 익명: 리더보드에 이미 보이는 닉네임/티어/점수 수준만. 나머지는 서버에서 차단.
             return PublicProfileResponse(
@@ -44,6 +63,7 @@ def get_user_public_profile(user_id: int) -> PublicProfileResponse:
                 display_name=name,
                 tier=user.tier,
                 exp=user.exp,
+                tier_progress=progress,
                 is_anonymous=True,
             )
 
@@ -54,6 +74,7 @@ def get_user_public_profile(user_id: int) -> PublicProfileResponse:
             display_name=name,
             tier=user.tier,
             exp=user.exp,
+            tier_progress=progress,
             is_anonymous=False,
             avatar_url=user.avatar_url,
             grade=user.grade,

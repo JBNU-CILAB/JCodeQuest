@@ -181,6 +181,11 @@ def create_problem(
     session.commit()
     session.refresh(row)
     assert row.id is not None
+    # max_exp가 늘면 모든 사용자의 EXP 비율이 떨어져서 티어가 강등될 수 있다.
+    # status='draft'로 만들었으면 max_exp는 그대로니 굳이 돌릴 필요 없음.
+    if status == "approved":
+        from ..tier import recompute_all_tiers  # noqa: PLC0415
+        recompute_all_tiers(session)
     return row.id
 
 
@@ -199,6 +204,9 @@ def update_problem(
     row = session.get(ProblemRow, problem_id)
     if row is None:
         return False
+    # 변경 전 max_exp 영향 여부 판단용 스냅샷.
+    prev_status = row.status
+    prev_points = row.points
     for key, val in fields.items():
         setattr(row, key, val)
     if intent_rubric is not None:
@@ -216,6 +224,14 @@ def update_problem(
         ]
     session.add(row)
     session.commit()
+    # status가 approved에 들어오거나 나갔거나, 혹은 approved인 채로 points가 바뀌면
+    # max_exp가 흔들리므로 전체 재계산. 그 외엔 노터치.
+    approved_before = prev_status == "approved"
+    approved_after = row.status == "approved"
+    points_changed = approved_after and approved_before and prev_points != row.points
+    if approved_before != approved_after or points_changed:
+        from ..tier import recompute_all_tiers  # noqa: PLC0415
+        recompute_all_tiers(session)
     return True
 
 
@@ -290,8 +306,36 @@ def delete_problem(
         session.flush()  # DELETE problem(+test_cases) 즉시 발행 → 다음 형제/부모로 진행
         return True
 
+    # 삭제 전에 approved 문제가 끼어 있는지만 확인 — 끼어 있으면 max_exp가 줄어드니
+    # 모든 사용자 비율이 올라가서 티어가 승급될 수 있다.
+    root = session.get(ProblemRow, problem_id)
+    approved_in_cohort = False
+    if root is not None:
+        if root.status == "approved":
+            approved_in_cohort = True
+        elif cascade_children:
+            # 재귀 자식 탐색 — 부모는 draft여도 자식 변형이 approved일 수 있다.
+            stack = [problem_id]
+            while stack and not approved_in_cohort:
+                pid = stack.pop()
+                kids = list(
+                    session.exec(
+                        select(ProblemRow.id, ProblemRow.status).where(
+                            ProblemRow.parent_id == pid
+                        )
+                    ).all()
+                )
+                for kid_id, kid_status in kids:
+                    if kid_status == "approved":
+                        approved_in_cohort = True
+                        break
+                    stack.append(kid_id)
+
     if not _delete_one(problem_id):
         return None
 
     session.commit()
+    if approved_in_cohort:
+        from ..tier import recompute_all_tiers  # noqa: PLC0415
+        recompute_all_tiers(session)
     return counts

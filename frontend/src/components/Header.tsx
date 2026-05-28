@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { resolveAvatarUrl } from '../lib/avatar'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { tierLabel, tierStyle } from '../lib/tiers'
 import { ProfileSetupModal } from './ProfileSetupModal'
 
 const LOGO_FRAMES = Array.from({ length: 8 }, (_, i) => `/logo/image${i + 1}.png`)
@@ -13,12 +14,6 @@ const NAV_LINKS: Array<{ label: string; to: string }> = [
   { label: '문제페이지', to: '/problems' },
   { label: '랭킹', to: '/ranking' },
 ]
-
-const TIER_STYLES: Record<string, string> = {
-  bronze: 'bg-amber-700/80 text-amber-50',
-  silver: 'bg-slate-400/80 text-slate-50',
-  gold: 'bg-yellow-500/90 text-yellow-50',
-}
 
 export function Header() {
   const { session, profile } = useAuth()
@@ -50,7 +45,7 @@ export function Header() {
   const avatarSeed = session?.user.id ?? session?.user.email ?? 'anon'
   const avatarUrl = session ? resolveAvatarUrl(metadata, avatarSeed) : null
   const displayName = profile?.display_name ?? metadata.full_name ?? session?.user.email ?? ''
-  const tier = profile?.tier ?? 'bronze'
+  const tier = profile?.tier ?? 'beginner'
   const exp = profile?.exp ?? 0
   const needsApiKey = loggedIn && profile !== null && !profile?.has_api_key
   const needsProfile =
@@ -156,9 +151,9 @@ export function Header() {
                     </span>
                     <div className="flex items-center gap-1.5">
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${TIER_STYLES[tier] ?? TIER_STYLES.bronze}`}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${tierStyle(tier)}`}
                       >
-                        {tier}
+                        {tierLabel(tier)}
                       </span>
                       <span className="text-black/70 text-[10px] tabular-nums">
                         {exp.toLocaleString()} XP

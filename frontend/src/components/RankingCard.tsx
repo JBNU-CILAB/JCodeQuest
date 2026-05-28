@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardHead } from './Card'
 import { apiGet, ApiError } from '../lib/api'
+import { TierBadge } from './TierBadge'
 import type { LeaderboardEntry, LeaderboardResponse } from '../types'
 
 const PREVIEW_LIMIT = 5
@@ -76,8 +77,9 @@ export function RankingCard() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-gray-800 truncate">{u.display_name}</div>
-              <div className="text-xs text-gray-500 mt-0.5 uppercase tracking-wider">
-                {u.tier}
+              <div className="mt-1">
+                {/* 사이드 카드는 좁아서 sm 고정. 모든 행 emphasize=true — master면 후광 깜빡임. */}
+                <TierBadge tier={u.tier} size="sm" emphasize />
               </div>
             </div>
             <div className="inline-flex items-center gap-1 bg-violet-50 text-violet-600 font-bold text-[13px] px-3 py-1 rounded-full tabular-nums">

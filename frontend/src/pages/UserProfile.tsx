@@ -4,13 +4,9 @@ import { Card, CardHead } from '../components/Card'
 import { Stat, StreakGrass } from '../components/StreakGrass'
 import { apiGet, ApiError } from '../lib/api'
 import { identiconUrl } from '../lib/avatar'
+import { tierLabel } from '../lib/tiers'
+import { TierBadge } from '../components/TierBadge'
 import type { PublicProfile } from '../types'
-
-const TIER_STYLES: Record<string, string> = {
-  bronze: 'bg-amber-700/80 text-amber-50',
-  silver: 'bg-slate-400/80 text-slate-50',
-  gold: 'bg-yellow-500/90 text-yellow-50',
-}
 
 const GRADE_LABEL: Record<number, string> = {
   1: '1학년',
@@ -106,13 +102,8 @@ export function UserProfile() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <span
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                    TIER_STYLES[data.tier] ?? TIER_STYLES.bronze
-                  }`}
-                >
-                  {data.tier}
-                </span>
+                {/* MyPage와 동일 위계 — 공개 프로필도 lg + emphasize. */}
+                <TierBadge tier={data.tier} size="lg" emphasize />
                 <span className="text-xs text-gray-700 tabular-nums">
                   {data.exp.toLocaleString()} XP
                 </span>
@@ -122,6 +113,30 @@ export function UserProfile() {
                   </span>
                 )}
               </div>
+              {data.tier_progress && (
+                <div className="w-full px-1">
+                  <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1">
+                    <span>
+                      {data.tier_progress.next === null
+                        ? '최고 티어'
+                        : `다음 ${tierLabel(data.tier_progress.next)}까지 ${data.tier_progress.exp_to_next.toLocaleString()} XP`}
+                    </span>
+                    <span className="tabular-nums">
+                      {Math.round(data.tier_progress.progress_pct)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        data.tier_progress.next === null ? 'bg-rose-500' : 'bg-indigo-500'
+                      }`}
+                      style={{
+                        width: `${Math.min(100, Math.max(0, data.tier_progress.progress_pct))}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {!data.is_anonymous && (

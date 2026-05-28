@@ -325,6 +325,34 @@ class StreakResponse(BaseModel):
     )
 
 
+class TierProgressSchema(BaseModel):
+    """티어 진행도 묶음 — 마이페이지/공개 프로필이 진행 게이지에 쓴다.
+
+    임계값은 절대 EXP가 아니라 현재 approved 문제들의 points 합(max_exp)의 %로
+    잡히므로 (`backend/src/tier.py`), 새 문제가 승인되면 동일 사용자의 progress_pct
+    가 자동으로 떨어진다(인플레이션 방지). max_exp=0인 초기 상태에선 progress_pct
+    는 0, current는 'beginner'로 고정된다.
+    """
+
+    current: str = Field(description="현재 티어 문자열")
+    next: str | None = Field(
+        default=None,
+        description="다음 티어. 이미 최상위(master)면 null.",
+    )
+    exp_to_next: int = Field(
+        default=0,
+        description="다음 티어 진입까지 남은 EXP. master면 0.",
+    )
+    progress_pct: float = Field(
+        default=0.0,
+        description="현재 티어 구간 내 진행도 0~100. master면 100.",
+    )
+    max_exp: int = Field(
+        default=0,
+        description="approved 문제 points 합. UI 디버깅용.",
+    )
+
+
 class MeResponse(BaseModel):
     """GET /me 의 응답 — UserRow의 공개 가능한 필드만."""
 
@@ -336,6 +364,13 @@ class MeResponse(BaseModel):
     )
     exp: int = Field(description="누적 경험치", examples=[1500])
     tier: str = Field(description="현재 티어 (exp 기반 산출)")
+    tier_progress: TierProgressSchema | None = Field(
+        default=None,
+        description=(
+            "다음 티어까지 남은 EXP / 진행도 0~100 / 시스템 max_exp. "
+            "UserRow.tier와 일치하는 current를 포함한다."
+        ),
+    )
     has_api_key: bool = Field(
         default=False,
         description="본인 학내 GPT API 키 등록 여부. 키 값 자체는 응답에 포함하지 않는다.",
@@ -400,6 +435,13 @@ class PublicProfileResponse(BaseModel):
     )
     tier: str = Field(description="현재 티어")
     exp: int = Field(description="누적 경험치")
+    tier_progress: TierProgressSchema | None = Field(
+        default=None,
+        description=(
+            "다음 티어까지 남은 EXP / 진행도. 익명·비익명 무관하게 채워서 "
+            "공개 프로필에서 진행 게이지를 그릴 수 있게 한다."
+        ),
+    )
     is_anonymous: bool = Field(
         description="True면 프론트가 축약 레이아웃(닉네임+티어+EXP)을 렌더한다."
     )

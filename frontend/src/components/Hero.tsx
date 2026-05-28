@@ -5,6 +5,7 @@ import { apiGet } from '../lib/api'
 import { identiconUrl } from '../lib/avatar'
 import { formatIsoWeekKo } from '../lib/isoWeek'
 import { MatrixBackdrop } from './MatrixBackdrop'
+import { TierBadge } from './TierBadge'
 
 type LeaderboardEntry = {
   rank: number
@@ -152,8 +153,9 @@ function PodiumColumn({ entry }: { entry: LeaderboardEntry | null | undefined })
           <span className="text-zinc-900 font-medium">{entry.display_name}</span>
         </div>
         {entry.tier && (
-          <div className="text-[11px] text-zinc-400 mt-0.5 lowercase">
-            {entry.tier}
+          // 1위는 더 큰 배지 + 마스터일 경우 후광 펄스. 시상대 시각적 위계.
+          <div className="mt-1.5">
+            <TierBadge tier={entry.tier} size={isFirst ? 'md' : 'sm'} emphasize />
           </div>
         )}
         <div className="mt-1.5 flex items-baseline gap-1.5">

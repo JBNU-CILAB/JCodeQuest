@@ -234,7 +234,10 @@ def delete_user(session: Session, user_id: int) -> dict[str, int] | None:
 
 def bump_user_exp(session: Session, user_id: int, *, delta: int) -> None:
     """save_grading에서 첫 AC 시점에 호출. 같은 트랜잭션 안에서 commit하기 위해
-    세션은 호출자가 관리 — 여기선 add만 하고 flush로 끝낸다."""
+    세션은 호출자가 관리 — 여기선 add만 하고 flush로 끝낸다.
+
+    exp가 변하면 티어가 바뀔 수 있으므로 같은 트랜잭션 안에서 즉시 재계산한다.
+    캐싱된 UserRow.tier가 리더보드/프로필 응답에서 그대로 쓰이므로 stale 회피 필수."""
     if delta <= 0:
         return
     row = session.get(UserRow, user_id)
@@ -244,3 +247,10 @@ def bump_user_exp(session: Session, user_id: int, *, delta: int) -> None:
     row.updated_at = _utcnow()
     session.add(row)
     session.flush()
+    # 임포트는 함수 안에서 — tier.py가 storage.models를 임포트하기 때문에 모듈 로드 순환을 피한다.
+    from ..tier import compute_tier, get_max_exp  # noqa: PLC0415
+    new_tier = compute_tier(row.exp, get_max_exp(session))
+    if row.tier != new_tier:
+        row.tier = new_tier
+        session.add(row)
+        session.flush()
