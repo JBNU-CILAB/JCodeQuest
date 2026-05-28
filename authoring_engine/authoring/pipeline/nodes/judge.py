@@ -176,10 +176,17 @@ def _judge_one_candidate(candidate: dict) -> dict:
 
 
 def judge_candidates(state: AuthoringState) -> dict:
-    """verify_passed된 candidate만 LLM 품질 심사를 수행한다."""
+    """verify_passed된 candidate만 LLM 품질 심사를 수행한다.
+
+    judge→revise→verify→judge 루프 재진입 시 이미 통과한 후보는 다시 심사하지 않는다
+    (토큰 절약). 첫 진입 때는 모든 후보가 judge_passed=False라 기존 동작 그대로.
+    """
     updated: list[dict] = []
     for c in state["candidates"]:
         c = dict(c)
+        if c.get("judge_passed"):
+            updated.append(c)
+            continue
         if c.get("verify_passed"):
             c.update(_judge_one_candidate(c))
         updated.append(c)

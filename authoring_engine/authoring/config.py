@@ -43,7 +43,8 @@ AUTHOR_TEMPERATURE: float = float(os.getenv("JCQ_AUTHOR_TEMPERATURE", "0"))
 ENSEMBLE_TEMPERATURE: float = float(os.getenv("JCQ_ENSEMBLE_TEMPERATURE", "0"))
 
 # verify 단계에서 요구하는 최소 test_input 개수. 미만이면 후보를 폐기한다.
-AUTHOR_MIN_TEST_CASES: int = int(os.getenv("JCQ_AUTHOR_MIN_TEST_CASES", "4"))
+# 프롬프트가 '정확히 5개'를 요구하므로 floor도 5로 맞춘다(LLM이 4개 이하만 내면 폐기).
+AUTHOR_MIN_TEST_CASES: int = int(os.getenv("JCQ_AUTHOR_MIN_TEST_CASES", "5"))
 
 # solver가 풀이 LLM에 프롬프트로 노출하는 최대 샘플 케이스 수.
 SOLVER_SAMPLE_LIMIT: int = int(os.getenv("JCQ_SOLVER_SAMPLE_LIMIT", "2"))
@@ -85,7 +86,43 @@ DISCRIMINATION_ENABLED: bool = os.getenv("JCQ_DISCRIMINATION_ENABLED", "1").lowe
 DISCRIMINATION_ATTACKS: int = int(os.getenv("JCQ_DISCRIMINATION_ATTACKS", "2"))
 # 테스트가 최소 몇 개의 공격 풀이를 '탈락(non-AC)'시켜야 통과로 보는지. 기본 1 — 0개면
 # 테스트가 어떤 결함도 못 걸러낸다는 뜻이라 폐기. (LLM 공격이 전부 실패하면 fail-open)
+# **표적 차원으로만** 카운트한다: naive 공격은 TLE/MLE(성능), edge_skip 공격은 WA/RE(정확성)로
+# 탈락해야 유효. naive가 WA로 탈락하는 건 '느려서'가 아니라 '버그라서'이므로 성능 변별력이
+# 검증된 게 아니다 — attack.py:_STRATEGY_TARGET 참조.
 DISCRIMINATION_MIN_REJECT: int = int(os.getenv("JCQ_DISCRIMINATION_MIN_REJECT", "1"))
+
+# ─── 변별력 보강 루프(strengthen_tests) ────────────────────────────────────
+# attack_candidates에서 결함 풀이가 테스트를 통과(표적 차원 미검출)하면 후보를 곧장
+# 폐기하는 대신 strengthen_tests 노드로 이동해 그 결함을 '걸러내는' 판별 테스트를 추가하고
+# attack을 다시 돈다(전통적 generate→test→retry 루프). reference_code(정답)와 공격 코드
+# (오답)를 둘 다 sandbox에 돌려 출력이 갈리는 입력만 채택하므로, LLM이 만든 입력을 신뢰하지
+# 않고 검증한다. 비활성 시 attack→compare로 직행(기존 동작).
+STRENGTHEN_ENABLED: bool = os.getenv("JCQ_STRENGTHEN_ENABLED", "1").lower() not in (
+    "0",
+    "false",
+    "no",
+    "",
+)
+# attack→strengthen→attack 루프 최대 반복 수. 초과하면 보강을 포기하고 현 변별력으로 확정한다
+# (무한루프 방지 — 보강마다 strengthen_attempts를 증가시켜 라우터가 종료한다).
+STRENGTHEN_MAX_ATTEMPTS: int = int(os.getenv("JCQ_STRENGTHEN_MAX_ATTEMPTS", "2"))
+# 미검출 공격 1건당 LLM에 요청하는 후보 입력 수. 이 중 reference≠attack으로 판별에 성공한
+# 입력만 실제 테스트로 추가된다.
+STRENGTHEN_INPUTS_PER_ATTACK: int = int(os.getenv("JCQ_STRENGTHEN_INPUTS_PER_ATTACK", "4"))
+
+# judge_candidates에서 품질 심사 통과 못 한(judge_passed=False) 후보를 곧장 폐기하지 않고,
+# 판사가 반환한 judge_issues를 피드백으로 statement·rubric을 표적 수정(REVISE)한 뒤
+# author_solution을 재호출해 verify→judge 루프를 다시 돌게 하는 보강 흐름. 변별력 보강
+# (strengthen_tests)과 동일 패턴으로, attempts 카운터로 무한루프를 차단한다.
+REVISE_ENABLED: bool = os.getenv("JCQ_REVISE_ENABLED", "1").lower() not in (
+    "0",
+    "false",
+    "no",
+    "",
+)
+# judge→revise→verify→judge 루프 최대 반복 수. 초과하면 그 후보는 더 이상 수정하지 않고
+# 현 상태로 종료한다(다른 통과 후보가 있으면 solve로 진행, 없으면 END).
+REVISE_MAX_ATTEMPTS: int = int(os.getenv("JCQ_REVISE_MAX_ATTEMPTS", "2"))
 
 # ─── compare 게이트 승격 ──────────────────────────────────────────────────
 # 기록만 하던 compare 3축 중 환각·의도유사도를 persist 게이트로 사용한다.

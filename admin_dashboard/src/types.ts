@@ -3,11 +3,51 @@ export interface ConnSettings {
   baseToken: string;
   judgeUrl: string;
   judgeToken: string;
+  plagiarismUrl?: string;   // plagiarism_engine (:8003) — admin 토큰은 baseToken 공유
 }
 
 export type ConnStatus = "idle" | "ok" | "error" | "loading";
 
+// "reports" 라우트는 통합 뷰 — IssuesView가 '버그 제보'·'표절 검토'를 서브탭으로 묶는다.
 export type Route = "home" | "runs" | "problems" | "submissions" | "notices" | "reports" | "stats" | "users";
+
+/* ── 표절 검토 (plagiarism_engine) ─────────────────────────────────────── */
+export type PlagiarismStatus = "open" | "in_progress" | "confirmed" | "dismissed";
+
+export interface PlagiarismFragment { a_lines: (number | null)[]; b_lines: (number | null)[] }
+
+export interface PlagiarismPair {
+  id: number;
+  run_id: string;
+  problem_id: number;
+  problem_title?: string | null;
+  submission_a_id: number;
+  submission_b_id: number;
+  user_a_id: number;
+  user_b_id: number;
+  user_a_name?: string | null;
+  user_b_name?: string | null;
+  similarity: number;
+  longest_fragment: number;
+  total_overlap: number;
+  fragments: PlagiarismFragment[];
+  agent_verdict?: string | null;
+  agent_confidence?: number | null;
+  agent_rationale?: string | null;
+  agent_debate?: {
+    structural?: string;
+    semantic?: string;
+    defense?: string;
+    scores?: { structural?: number; semantic?: number; defense?: number; adjudicator?: number };
+  } | null;
+  status: PlagiarismStatus;
+  admin_notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // 상세에서만
+  code_a?: string | null;
+  code_b?: string | null;
+}
 
 export interface ProblemRow {
   id: number;

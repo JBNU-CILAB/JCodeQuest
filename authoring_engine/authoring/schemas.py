@@ -35,13 +35,22 @@ class CandidateProblem(TypedDict):
     judge_scores: list[float]  # per-judge 점수 (중앙값 산출 근거, 메타 기록용)
     judge_rationale: str
     judge_issues: list[str]
+    # revise_problem: judge_passed=False 후보의 judge_issues를 반영해 statement·rubric을
+    # 표적 수정 → author_solution 재호출 → verify→judge로 루프백. attempts로 종료 제어.
+    revise_attempts: int          # revise 노드 진입 횟수 (루프 종료 카운터)
+    revise_history: list[dict]    # [{attempt, issues_in, note}] — forensics/뷰어용
     # solve_problem: Ollama LLM이 직접 문제 풀기
     solver_results: list[dict]  # [{judge_id, verdict, code, rationale}]
     solver_passed: bool
-    # attack_candidates: 결함을 심은 공격 풀이가 테스트에 걸리는지(변별력) 검사
-    attack_results: list[dict]  # [{strategy, verdict, rejected, code, rationale}]
-    discrimination_score: float  # rejected / valid_attacks
+    # attack_candidates: 결함을 심은 공격 풀이가 테스트에 걸리는지(변별력) 검사.
+    # rejected_on_target: 전략 표적 차원(naive→TLE/MLE, edge_skip→WA/RE)으로 걸러졌는가.
+    attack_results: list[dict]  # [{strategy, verdict, rejected, rejected_on_target, code, rationale}]
+    discrimination_score: float  # rejected_on_target / valid_attacks
     discrimination_passed: bool
+    # strengthen_tests: 변별력 미달 시 판별 테스트를 추가하고 attack을 재검증하는 보강 루프.
+    strengthen_attempts: int     # 보강 노드 진입 횟수 (루프 종료 카운터)
+    strengthen_added: int        # 이번 run에서 추가된 판별 테스트 수
+    strengthen_note: str         # 전략별 추가 내역 요약 (viewer/로그용)
     # compare_to_original: 단일 judge가 원본과 변형을 비교한 3축 수치(환각/의도/난이도).
     # compare_passed는 환각·의도유사도 임계로 판정하는 게이트 결과(난이도는 기록만).
     comparison_hallucination: float

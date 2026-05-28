@@ -187,12 +187,15 @@ Rules:
   Do not bypass it with a different algorithm.
 - reference_code MUST satisfy intent_rubric.expected_complexity.
 
-Test inputs (stdin), 5–8 items, generated as follows:
-- At least 5 test cases for every problem. This is an absolute requirement.
+Test inputs (stdin), exactly 5 items, generated as follows:
+- Exactly 5 test cases — no more, no fewer. This is an absolute requirement.
+  Compose the 5 from: (a) one input per must_handle item, (b) 1–2 general-case
+  inputs, (c) exactly 1 stress input. Adjust the count of general inputs so the
+  total is exactly 5; if must_handle has 4+ items, merge or pick the most
+  distinct ones to keep the total at 5.
 - The unit system in each test case must be exact. If a value would have
   decimals, truncate to at most 3 decimal places. Every case must follow this.
 - Each must_handle item must be covered by exactly one corresponding input.
-- 1–2 general-case inputs.
 - Exactly 1 stress input near the maximum of the input range, designed to
   exercise the time-complexity boundary.
 - Each stdin must exactly follow the input format in the statement (line
@@ -230,8 +233,8 @@ forbidden_patterns: {forbidden_patterns}
 - time_limit_ms: {time_limit_ms}
 - memory_limit_mb: {memory_limit_mb}
 
-Produce a reference_code faithful to the specification above and 5–8 stdin
-inputs following the rules above. Respond with JSON only."""
+Produce a reference_code faithful to the specification above and exactly 5
+stdin inputs following the rules above. Respond with JSON only."""
 
 # ─── judge_quality ────────────────────────────────────────────────────────────
 # 3-judge quality vote prompt. The target is the problem itself, not student code.
@@ -388,6 +391,50 @@ forbidden_patterns: {forbidden_patterns}
 
 Write the flawed solution for the "{strategy}" strategy. Output Python code only."""
 
+# ─── strengthen_tests (변별력 보강 — 판별 테스트 입력 생성) ──────────────────────
+# attack에서 표적 차원으로 못 걸러낸 결함 풀이를 '걸러내는' 입력을 만든다. 정답(reference)과
+# 공격 코드를 둘 다 sandbox에 돌려 출력이 갈리는 입력만 채택하므로, LLM은 '그럴듯한 입력
+# 후보'만 내면 되고 정답 보장은 sandbox가 한다. expected_stdout은 LLM이 아니라 reference
+# 실행 결과로 채운다.
+
+STRENGTHEN_SYSTEM = """\
+You generate ADDITIONAL test inputs (stdin) that expose a flaw the current test
+set fails to catch. You will be told which flaw type the inputs must target:
+- "naive": produce LARGE inputs near the MAXIMUM of the stated input range, sized
+  so a brute-force solution that ignores the complexity bound would time out,
+  while a correct solution stays within the limit. Push the input size to the
+  stated maximum — small inputs are useless here.
+- "edge_skip": produce BOUNDARY / corner-case inputs targeting the listed
+  must_handle items (empty input, the minimum and maximum values, a single
+  element, all-equal values, duplicates, off-by-one boundaries) that a solution
+  skipping those edges would get wrong.
+
+Hard rules:
+- Each input MUST exactly follow the input format declared in the statement
+  (line breaks, spacing, value ranges). An ill-formed input is wasted.
+- Produce DIVERSE inputs — do not repeat the same shape.
+- Do NOT include expected outputs — only stdin payloads (they are computed by
+  running the reference solution in a sandbox).
+
+Output a single JSON object. No markdown, no code fences. Schema:
+{"inputs": ["<stdin payload 1>", "<stdin payload 2>", ...]}"""
+
+STRENGTHEN_USER = """\
+[Flaw to expose] {strategy}
+[Number of inputs to produce] {n}
+
+[Problem]
+{title}
+
+{statement}
+
+[Intent specification — the tests SHOULD enforce these]
+expected_complexity: {expected_complexity}
+must_handle: {must_handle}
+
+Produce {n} stdin inputs targeting the "{strategy}" flaw, each following the
+input format exactly. Respond with JSON only."""
+
 # ─── compare_to_original ──────────────────────────────────────────────────────
 # A single judge scores the variant against the original on 3 axes.
 # Not a gate — purely recorded. authoring_meta stores it; the viewer surfaces it.
@@ -492,3 +539,83 @@ Candidate test-case summary:
 
 Compare the two problems and produce the 3-axis scores and rationale.
 Respond with JSON only."""
+
+
+# ─── revise_problem ──────────────────────────────────────────────────────────
+# judge_candidates에서 judge_passed=False인 후보의 statement·intent_rubric을 표적
+# 수정한다. 판사가 낸 issues를 결함 목록으로 다루고, 잘 된 부분은 유지하라고 강제한다.
+# 출력은 DRAFT_SYSTEM과 동일한 스키마({title, statement, intent_rubric}) — 이후
+# author_solution을 재호출해 reference_code/test_inputs를 다시 만들고 verify→judge
+# 루프를 재진입한다.
+
+REVISE_SYSTEM = """\
+You are revising an algorithm problem to fix specific quality issues raised by a
+quality judge. The problem already has a draft (title/statement/intent_rubric)
+that is close to acceptable; you are NOT redesigning it from scratch.
+
+Hard rules:
+- PRESERVE the problem's core theme, input/output format, and overall
+  difficulty. Do not change the algorithm class implied by expected_approach
+  unless an issue explicitly demands it.
+- Apply MINIMAL, TARGETED edits that directly address the listed issues. Each
+  issue should map to a visible change in statement or intent_rubric.
+- The output schema and language rules are IDENTICAL to the original draft:
+  - "title" and "statement": Korean.
+  - All intent_rubric fields: Korean (except expected_complexity uses big-O).
+  - intent_rubric MUST contain: expected_approach, expected_complexity,
+    must_handle (list), forbidden_patterns (list), key_insight, one_line_summary.
+- If an issue says the test coverage is insufficient or must_handle is too
+  thin, update must_handle and/or forbidden_patterns so that the next
+  author_solution step will generate the right tests — but do NOT emit
+  reference_code or test_inputs here (a separate stage does that).
+- If issues conflict with each other, prefer the fix that improves clarity and
+  intent consistency over surface phrasing tweaks.
+
+Output a single JSON object. No markdown, no code fences. Same schema as draft:
+
+{
+  "title": "<짧은 한국어 제목>",
+  "statement": "<문제 서술 (markdown 가능). 입출력 형식·입력 범위 포함>",
+  "intent_rubric": {
+    "expected_approach": "<자연성 — 사고 흐름 1~2문장 (한국어)>",
+    "expected_complexity": "<O(...) big-O notation>",
+    "must_handle": ["<항목 (한국어)>", ...],
+    "forbidden_patterns": ["<구체적 안티패턴 (한국어)>", ...],
+    "key_insight": "<부합성 — 알고리즘 핵심 통찰 1문장 (한국어)>",
+    "one_line_summary": "<한 줄 메타 (한국어)>"
+  }
+}"""
+
+REVISE_USER = """\
+[Constraints — must remain unchanged]
+- category: {category}
+- level: {level}
+- time_limit_ms: {time_limit_ms}
+- memory_limit_mb: {memory_limit_mb}
+
+[Current draft — revise this]
+title: {title}
+
+statement:
+{statement}
+
+intent_rubric:
+- expected_approach: {expected_approach}
+- expected_complexity: {expected_complexity}
+- must_handle: {must_handle}
+- forbidden_patterns: {forbidden_patterns}
+- key_insight: {key_insight}
+- one_line_summary: {one_line_summary}
+
+[Quality judge feedback — these are the defects to fix]
+Judge issues (each line is one defect raised by the 3-judge ensemble):
+{issues_block}
+
+Judge rationale (qualitative context, may overlap with issues):
+{judge_rationale}
+
+[Attempt]
+This is revision attempt #{attempt} of at most {max_attempts}.
+
+Apply minimal targeted edits so the next round of judging passes. Preserve
+what is already good. Respond with JSON only following the schema above."""
