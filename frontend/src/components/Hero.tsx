@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { apiGet } from '../lib/api'
@@ -127,19 +128,24 @@ function PodiumBlock({ rank, geom }: { rank: number; geom: PodiumGeom }) {
 }
 
 function PodiumColumn({ entry }: { entry: LeaderboardEntry | null | undefined }) {
+  const { profile } = useAuth()
   if (!entry) {
     return <div style={{ width: 200 }} aria-hidden />
   }
   const geom = PODIUM[entry.rank] ?? PODIUM[3]
   const isFirst = entry.rank === 1
+  const isMe = profile?.id === entry.user_id
+  const to = isMe ? '/mypage' : `/users/${entry.user_id}`
   return (
     <div
       className="flex flex-col items-center"
       style={{ width: geom.width }}
     >
-      <div
-        className="flex flex-col items-center"
+      <Link
+        to={to}
+        className="flex flex-col items-center group rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         style={{ marginTop: `${geom.liftPx}px` }}
+        aria-label={`${entry.display_name} 프로필 보기`}
       >
         <Avatar entry={entry} size={isFirst ? 104 : 84} />
         <div className="mt-2 flex items-center gap-1.5 font-mono text-[13px]">
@@ -150,7 +156,9 @@ function PodiumColumn({ entry }: { entry: LeaderboardEntry | null | undefined })
           >
             [{entry.rank}]
           </span>
-          <span className="text-zinc-900 font-medium">{entry.display_name}</span>
+          <span className="text-zinc-900 font-medium group-hover:text-blue-700 transition">
+            {entry.display_name}
+          </span>
         </div>
         {entry.tier && (
           // 1위는 더 큰 배지 + 마스터일 경우 후광 펄스. 시상대 시각적 위계.
@@ -167,7 +175,7 @@ function PodiumColumn({ entry }: { entry: LeaderboardEntry | null | undefined })
         <div className="text-[10px] tracking-[0.25em] text-zinc-400 mt-0.5">
           SCORE
         </div>
-      </div>
+      </Link>
       <div className="mt-4">
         <PodiumBlock rank={entry.rank} geom={geom} />
       </div>
