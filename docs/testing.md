@@ -4,17 +4,25 @@ JCodeQuest 백엔드 테스트의 구조와 실행 방법을 정리한 문서.
 
 ## 디렉터리 구조
 
+> 샌드박스·잡큐가 judge_engine으로 분리되면서 `test_sandbox.py`·`test_jobqueue.py`는 **`judge_engine/tests/`** 로 이동했다. backend `tests/`는 API·스토리지·통합 위주.
+
 ```
 backend/
 ├── pytest.ini               # asyncio_mode=auto, testpaths=tests
 └── tests/
-    ├── conftest.py          # 임시 SQLite DB 부트스트랩, 쿨다운 0 fixture, sample_problem
-    ├── test_sandbox.py      # 샌드박스 단위(러너/리소스 한도/표준입출력)
+    ├── conftest.py          # 임시 SQLite DB 부트스트랩 + 환경 플래그, 쿨다운 0 fixture, sample_problem
+    ├── test_auth.py         # Supabase JWT / dev-stub 인증
     ├── test_storage.py      # 스토리지 단위(SubmissionRow CRUD, attempt_status)
-    ├── test_jobqueue.py     # JobQueue 단위(워커 1, 워커 N, 종료)
     ├── test_cooldown.py     # 쿨다운 계산 단위 + API 429/Retry-After
-    ├── test_pipeline.py     # POST /grade → 큐 → DB → GET/SSE E2E (LLM mock)
-    ├── test_tutor.py        # POST /tutor/{id} 흐름 (OpenAI mock)
+    ├── test_pipeline.py     # POST /grade → judge 위임 → webhook → GET/SSE E2E (submit_to_engine mock)
+    ├── test_tutor.py        # POST /tutor/{id} 흐름 (OpenAI mock + 유저 API 키)
+    ├── test_me_api_key.py   # PUT /me/api-key (vault)
+    ├── test_me_submissions.py
+    ├── test_problems_api.py # /problems, /problems/weeks
+    ├── test_leaderboard.py  # /leaderboard, by-grade
+    ├── test_stats.py        # /internal/stats/*
+    ├── test_users.py / test_admin_users.py
+    ├── test_internal_runs.py / test_internal_embeddings.py
     ├── live/                # 실 Ollama·OpenAI 라이브 슈트 (gated)
     │   ├── conftest.py      # JCQ_RUN_LIVE_LLM gate, JSONL/MD 아티팩트 레코더
     │   ├── test_live_ensemble.py
@@ -22,6 +30,11 @@ backend/
     ├── scripts/
     │   └── smoke_e2e.py     # 살아있는 uvicorn에 붙는 스모크 (pytest 아님)
     └── artifacts/           # 라이브 슈트 산출물 (.gitkeep만 추적)
+
+judge_engine/
+└── tests/
+    ├── test_sandbox.py      # 샌드박스 단위(러너/리소스 한도/표준입출력)
+    └── test_jobqueue.py     # JobQueue 단위(워커 1, 워커 N, 종료)
 ```
 
 ## 테스트 계층
@@ -71,19 +84,24 @@ source backend/env.sh
 테스트 슈트가 의존하는 fixture들은 `tests/conftest.py`에 모여있다.
 
 - **임시 SQLite**: `_bootstrap_db` (session, autouse)가 `JCQ_DB_URL`을 임시 파일로 박고 `init_db()` 호출. 슈트 종료 후 unlink.
+- **환경 플래그**: conftest import 시점에 `JCQ_ALLOW_NON_POSTGRES=1`(SQLite 허용), `JCQ_AUTH_ALLOW_DEV_STUB=1`, `JCQ_COOKIE_INSECURE=1`, `SUPABASE_JWT_SECRET`(테스트용 더미), `JCQ_SKIP_ENSEMBLE=""`를 세팅한다.
 - **쿨다운 무력화**: `_disable_cooldown` (autouse)가 `SUBMISSION_COOLDOWN_S=0`으로 monkeypatch. 쿨다운 자체를 검증하는 케이스는 자기 fixture에서 다시 켠다(`test_cooldown.py` 참조).
 - **시드 문제**: `sample_problem` (Problem 객체) / `seeded_problem_id` (DB에 INSERT 후 id 반환).
 
 ## LLM 의존 제거 패턴
 
-통합 테스트는 LLM 호출을 monkeypatch로 갈아끼운다. 패치 대상은 **호출자 모듈**(`src.judge.jobs.grading`, `src.tutor.client` 등)에 import된 심볼이지, 정의 모듈이 아니다.
+통합 테스트는 외부 호출을 monkeypatch로 갈아끼운다. 패치 대상은 **호출자 모듈**(정의 모듈이 아님)에 import된 심볼이다.
+
+채점은 이제 judge_engine으로 위임되므로(3-judge `vote`는 judge_engine에 있음), backend 통합 테스트는 backend→judge HTTP 호출인 `submit_to_engine`을 가짜로 갈아끼우고 webhook(`apply_grading_event`)을 직접 호출해 결과를 주입한다. 패치 대상은 **API 라우터가 import한 심볼**(`src.api.grading.submit_to_engine`)이다:
 
 ```python
-import src.judge.jobs.grading as grading_mod
-async def fake_vote(problem, code, test_results, base_url=None):
-    return _fake_ac()
-monkeypatch.setattr(grading_mod, "vote", fake_vote)
+import src.api.grading as grading_api
+async def _fake_submit(submission_id, problem, code, *a, **kw):
+    ...  # 채점을 큐에 넣는 대신 테스트가 직접 webhook을 흉내냄
+monkeypatch.setattr(grading_api, "submit_to_engine", _fake_submit)
 ```
+
+튜터 LLM은 `src.tutor.client`의 호출 심볼을 patch한다. judge_engine 자체 테스트는 `vote`를 그 importer 모듈에서 patch한다.
 
 ## 라이브 슈트 아티팩트
 

@@ -46,7 +46,7 @@
 
 **핵심 가치**
 - *"테스트만 통과하면 끝"이 아니다.* — Intent Rubric(4축)으로 풀이 의도까지 평가
-- *"문제 하나 만들기가 한 학기 작업"이 아니다.* — LangGraph 7-노드 파이프라인이 검증된 변형 문제를 양산
+- *"문제 하나 만들기가 한 학기 작업"이 아니다.* — LangGraph 9-노드 파이프라인이 검증된 변형 문제를 양산
 
 ---
 
@@ -97,7 +97,7 @@ flowchart TB
 ### Backend — `:8000`
 - FastAPI. 학생/채점/튜터 API의 단일 진입점
 - Supabase JWT(ES256/RS256/HS256) 검증, 세션(`SessionRow`) 관리
-- 라우터: `auth`, `me`, `problems`, `grading`, `tutor`, `internal`, `leaderboard`, `notices`
+- 라우터: `auth`, `me`, `problems`, `grading`, `tutor`, `submissions`, `leaderboard`, `notices`, `reports`, `internal`
 - DB 접근은 backend만이 수행 — judge/authoring은 HTTP로 위임
 
 ### Judge Engine — `:8002`
@@ -107,7 +107,7 @@ flowchart TB
 - 채점 결과는 backend `/internal/grade-events` 웹훅으로 회신
 
 ### Authoring Engine — `:8001`
-- LangGraph 7-노드 DAG로 변형 문제 생성
+- LangGraph 9-노드 DAG로 변형 문제 생성
 - CLI(`authoring/main.py`) + HTTP 뷰어(`authoring/server.py`)
 - backend·judge에 HTTP로 의존 (자체 DB·실행환경 없음)
 
@@ -330,8 +330,9 @@ multiplier = 0.5 + 0.5 * eff                 # → [0.5, 1.0]
 
 | 코드 품질 | 결과 |
 |---|---|
-| 시간·메모리 모두 ≤ 한도의 50% | `multiplier = 1.0` (만점) |
-| 한도 거의 다 씀 | `multiplier ≈ 0.5` (반값) |
+| 시간·메모리 거의 안 씀 (≈0%) | `multiplier ≈ 1.0` (만점) |
+| 시간·메모리 각각 한도의 50% | `multiplier = 0.75` |
+| 한도 거의 다 씀 (≈100%) | `multiplier = 0.5` (하한) |
 
 > "통과만 시키지 말고 잘 짜라" — 점수로 유인.
 
@@ -417,8 +418,8 @@ multiplier = 0.5 + 0.5 * eff                 # → [0.5, 1.0]
 
 ### B. 관리자 / 출제자 플로우 (2분)
 1. 관리자 대시보드(:6010)에서 원본 문제 1개 선택
-2. "변형 생성 5개" 실행 → Authoring SSE로 7-노드 진행률
-3. 어느 후보가 어디서 떨어졌는지 표시 (verify/judge/solve)
+2. "변형 생성 5개" 실행 → Authoring SSE로 9-노드 진행률
+3. 어느 후보가 어디서 떨어졌는지 표시 (verify/judge/solve/attack/compare)
 4. 승인된 변형이 `parent_id`로 원본에 매달려 DB 저장
 
 ### C. 의도 채점 데모 (1분)
@@ -444,7 +445,7 @@ multiplier = 0.5 + 0.5 * eff                 # → [0.5, 1.0]
 > *"AI가 출제하고, AI 3명이 의도까지 채점하며, 학생은 게임처럼 푼다."*
 
 ### 핵심 기여
-1. **LangGraph 7-노드 자동 출제 파이프라인** — 자기 검증 포함
+1. **LangGraph 9-노드 자동 출제 파이프라인** — 자기 검증 포함
 2. **3-Judge LLM 앙상블 채점** — 의도·복잡도·안티패턴까지 평가
 3. **Intent Rubric (4축)** — 출제와 채점을 동일 루브릭으로 묶음
 4. **3 서비스 마이크로아키텍처** — 명확한 책임 분리, 단일 DB 진입점
@@ -461,7 +462,7 @@ JCodeQuest/
 ├── shared/              # jcq-shared (Pydantic 모델)
 ├── backend/             # FastAPI :8000 (DB 단일 진입점)
 │   └── src/
-│       ├── api/         # auth, me, problems, grading, tutor, internal, leaderboard, notices
+│       ├── api/         # auth, me, problems, grading, tutor, submissions, leaderboard, notices, reports, internal
 │       ├── auth/        # supabase_jwt.py
 │       ├── judge/       # client.py, jobs/grading.py
 │       └── storage/     # models.py, db.py, sessions.py, vault.py
@@ -476,8 +477,8 @@ JCodeQuest/
 │       ├── main.py             # CLI
 │       ├── server.py           # HTTP 뷰어
 │       └── pipeline/
-│           ├── graph.py        # 7-노드 DAG
-│           └── nodes/          # fetch, generate, verify, judge, solver, compare, persist
+│           ├── graph.py        # 9-노드 DAG
+│           └── nodes/          # fetch, retrieve, generate, verify, judge, solver, attack, compare, persist
 ├── frontend/            # Vite + React + TS :5173
 ├── admin_dashboard/     # 정적 HTML :6010
 ├── scripts/             # dev.sh, verify_all.py

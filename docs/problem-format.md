@@ -2,8 +2,8 @@
 
 JCodeQuest의 모든 문제는 이 스키마를 따른다. 손으로 적든 출제 LLM이 자동 생성하든 동일한 형식이 채점 파이프라인에 들어간다.
 
-진실값(source of truth)은 `backend/src/schemas.py`의 Pydantic 모델
-(`Problem`, `IntentRubric`, `TestCase`). 이 문서는 그 모델의 의도를 풀어 쓴 출제·검수 가이드.
+진실값(source of truth)은 `shared/jcq_shared/schemas.py`의 Pydantic 모델
+(`Problem`, `IntentRubric`, `TestCase`) — backend·judge_engine·authoring_engine이 공유한다. 이 문서는 그 모델의 의도를 풀어 쓴 출제·검수 가이드.
 
 ---
 
@@ -64,7 +64,7 @@ JCodeQuest의 모든 문제는 이 스키마를 따른다. 손으로 적든 출�
 - 가능한 한 다음 종류 모두 포함:
   - **경계**: `intent_rubric.must_handle`에 적은 모든 항목과 1:1 대응되는 케이스
   - **일반**: 평이한 입력 1 ~ 2개
-  - **스트레스**: 시간복잡도 한계를 자극하는 큰 입력 — `reference_code` 기준 `time_limit_ms`의 **30 ~ 70%**에서 통과해야 함 (학생 풀이의 여유 확보)
+  - **스트레스**: 시간복잡도 한계를 자극하는 큰 입력 — `reference_code` 기준 `time_limit_ms`의 **80% 이내**에서 통과해야 함(`verify_candidates`의 `JCQ_AUTHOR_PERF_RATIO` 게이트). 학생 풀이 여유를 위해 30~70% 권장
 
 ---
 
@@ -156,11 +156,13 @@ class IntentRubric(BaseModel):
 
 다음을 모두 만족해야 DB에 `status="approved"`로 저장된다 (실패 시 `status="draft"`로 보류 → 사람 검수 큐).
 
-1. `reference_code`를 sandbox에서 모든 `test_cases`에 대해 실행 → **전부 PASS** (출제 그래프의 `verify_executes` 노드가 강제)
-2. `reference_code`의 `max(elapsed_ms)`가 `time_limit_ms`의 **50% 이하** — 학생 풀이 여유 확보
+1. `reference_code`를 sandbox에서 모든 `test_cases`에 대해 실행 → **전부 PASS** (출제 그래프의 `verify_candidates` 노드가 강제)
+2. `reference_code`의 `max(elapsed_ms)`가 `time_limit_ms`의 **`JCQ_AUTHOR_PERF_RATIO`(기본 0.8 = 80%) 이내** — 학생 풀이 여유 확보 (이전 0.5에서 완화)
 3. `intent_rubric`의 모든 필드가 비어있지 않고, `must_handle`·`forbidden_patterns`는 각 1개 이상
-4. `forbidden_patterns`의 모든 항목이 §3.6의 "구체적" 기준 충족 — 출제 그래프의 `judge_quality` 노드가 평가
-5. (예정) statement 임베딩 cosine < 0.92 — 같은 카테고리의 다른 approved 문제와의 중복 차단
+4. `forbidden_patterns`의 모든 항목이 §3.6의 "구체적" 기준 충족 — 출제 그래프의 `judge_candidates` 노드(3-judge, 점수 중앙값)가 평가
+5. statement 임베딩 novelty 검사 — `generate_variants` 내부에서 같은 카테고리 형제와 cosine `JCQ_NOVELTY_THRESHOLD`(기본 0.88) 이상이면 재생성 (fail-open). 별도 노드가 아님
+
+> 위는 수동/원본 문제의 품질 기준이다. 출제 엔진이 만든 **변형**은 추가로 `solve_candidates`(풀이 가능) ∧ `attack_candidates`(테스트 변별력) ∧ `compare_to_original`(환각/의도) 3게이트를 모두 통과해야 `persist_approved`된다 — 자세한 건 `docs/authoring-engine.md`.
 
 ---
 
