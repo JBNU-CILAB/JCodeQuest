@@ -92,6 +92,230 @@
         "title": "AttemptStatusResponse",
         "type": "object"
       },
+      "BattleJoinResponse": {
+        "properties": {
+          "battle_id": {
+            "title": "Battle Id",
+            "type": "integer"
+          },
+          "joined": {
+            "description": "참가 등록 결과 — 항상 true(멱등)",
+            "title": "Joined",
+            "type": "boolean"
+          },
+          "participant_count": {
+            "title": "Participant Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "battle_id",
+          "joined",
+          "participant_count"
+        ],
+        "title": "BattleJoinResponse",
+        "type": "object"
+      },
+      "BattleStatusResponse": {
+        "description": "GET /battles/current·/battles/{id}·SSE 공통 스냅샷.\n\nSSE는 인증 헤더를 못 실으므로(EventSource 한계) joined/my_rank는 인증된 REST\n응답에서만 채워지고, SSE 스트림에선 기본값으로 비워둔다 — 프론트는 scoreboard의\nuser_id를 자기 프로필 id와 매칭해 직접 파생한다.",
+        "properties": {
+          "always_open": {
+            "default": false,
+            "description": "개발용 상시 개방 모드 여부. true면 클라이언트가 카운트다운 대신 '상시 개방' 표시.",
+            "title": "Always Open",
+            "type": "boolean"
+          },
+          "battle_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "배틀 날짜 (KST, YYYY-MM-DD)",
+            "title": "Battle Date"
+          },
+          "battle_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "진행/예정 배틀 ID. 없으면 null",
+            "title": "Battle Id"
+          },
+          "end_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End At"
+          },
+          "joined": {
+            "default": false,
+            "description": "요청자 참가 여부(인증 REST에서만 채움)",
+            "title": "Joined",
+            "type": "boolean"
+          },
+          "lobby_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lobby At"
+          },
+          "my_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "요청자 현재 순위(인증 REST에서만 채움)",
+            "title": "My Rank"
+          },
+          "next_start_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "진행 중 배틀이 없을 때 다음 시작 예정 시각",
+            "title": "Next Start At"
+          },
+          "participant_count": {
+            "default": 0,
+            "description": "참가자 수",
+            "title": "Participant Count",
+            "type": "integer"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProblemDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "active/finished 단계에서만 — 그 전엔 비공개(null)"
+          },
+          "scoreboard": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreboardEntry"
+            },
+            "title": "Scoreboard",
+            "type": "array"
+          },
+          "server_time": {
+            "description": "서버 현재 시각 — 클라 카운트다운 동기화 기준",
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          },
+          "start_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start At"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "scheduled",
+                  "lobby",
+                  "active",
+                  "finished"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "배틀 단계. 오늘 배틀이 아직 없으면 null",
+            "title": "Status"
+          }
+        },
+        "required": [
+          "server_time"
+        ],
+        "title": "BattleStatusResponse",
+        "type": "object"
+      },
+      "BattleSubmitRequest": {
+        "description": "POST /battles/{id}/submit — 배틀 진행 중 코드 제출. 문제는 배틀에 고정돼 있어 body에 없음.",
+        "properties": {
+          "code": {
+            "description": "제출할 Python 소스 — UTF-8, 최대 64 KiB",
+            "examples": [
+              "n = int(input())\nprint(n * 2)\n"
+            ],
+            "maxLength": 65536,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "BattleSubmitRequest",
+        "type": "object"
+      },
+      "BattleSubmitResponse": {
+        "properties": {
+          "status": {
+            "default": "queued",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submission_id": {
+            "description": "생성된 제출 ID — /grade/{id} 또는 배틀 SSE로 추적",
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id"
+        ],
+        "title": "BattleSubmitResponse",
+        "type": "object"
+      },
       "BugReportCreateRequest": {
         "description": "사용자가 Solver 화면에서 제보. problem_id는 옵션 (시스템/UI 카테고리 대비).\ncode_snapshot은 BugReportModal의 includeCode 체크박스가 켜졌을 때만 채워서 보냄.",
         "properties": {
@@ -1197,6 +1421,93 @@
         "title": "RecentSubmissionsResponse",
         "type": "object"
       },
+      "ScoreboardEntry": {
+        "description": "실시간 스코어보드 한 행. 코드는 비공개 — 통과수/AC/시도/순위만 노출.\n\n정렬은 storage.battles.compute_scoreboard가 (AC 먼저 → 통과수 → 빠른 시각)으로 끝낸\n뒤 1부터 rank를 매긴다. display_name은 익명 사용자면 nickname('익명' fallback)으로 마스킹.",
+        "properties": {
+          "attempts": {
+            "description": "제출 횟수",
+            "examples": [
+              2
+            ],
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "display_name": {
+            "examples": [
+              "김민석"
+            ],
+            "title": "Display Name",
+            "type": "string"
+          },
+          "is_ac": {
+            "description": "전체 통과(AC) 여부",
+            "title": "Is Ac",
+            "type": "boolean"
+          },
+          "rank": {
+            "description": "1부터 시작하는 현재 순위",
+            "title": "Rank",
+            "type": "integer"
+          },
+          "solved_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "베스트 결과까지 걸린 시간(초, start_at 기준). 미제출이면 null.",
+            "title": "Solved Seconds"
+          },
+          "tests_passed": {
+            "description": "베스트 제출의 통과 테스트 수",
+            "examples": [
+              3
+            ],
+            "title": "Tests Passed",
+            "type": "integer"
+          },
+          "total_tests": {
+            "description": "전체 테스트 수",
+            "examples": [
+              5
+            ],
+            "title": "Total Tests",
+            "type": "integer"
+          },
+          "user_id": {
+            "examples": [
+              1
+            ],
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rank",
+          "user_id",
+          "display_name",
+          "tests_passed",
+          "total_tests",
+          "is_ac",
+          "attempts"
+        ],
+        "title": "ScoreboardEntry",
+        "type": "object"
+      },
       "StreakResponse": {
         "description": "GET /me/streak — '새 문제를 처음 AC한 날' 기준 연속 일수.\n\n날짜 경계는 KST(UTC+9)로 계산. 오늘 또는 어제까지 이어진 연속이면 current가 유지되고,\n그보다 더 오래 끊겼다면 current=0이 된다. daily_solves는 잔디 시각화를 위한 최근 window 일치\n일별 새 문제 풀이 수 (오래된 → 최신 순).",
         "properties": {
@@ -1804,6 +2115,347 @@
         "summary": "Logout",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/battles/current": {
+      "get": {
+        "description": "오늘(KST) 배틀이 있으면 그 스냅샷을, 없으면 status=null + 다음 시작 예정 시각을 반환. 클라이언트는 server_time/start_at/end_at으로 카운트다운을 그린다.",
+        "operationId": "get_current_battle_battles_current_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BattleStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "오늘/다음 Code Battle 현황",
+        "tags": [
+          "battles"
+        ]
+      }
+    },
+    "/battles/{battle_id}": {
+      "get": {
+        "operationId": "get_battle_battles__battle_id__get",
+        "parameters": [
+          {
+            "description": "배틀 ID",
+            "in": "path",
+            "name": "battle_id",
+            "required": true,
+            "schema": {
+              "description": "배틀 ID",
+              "examples": [
+                1
+              ],
+              "title": "Battle Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BattleStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "배틀 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "배틀 스냅샷",
+        "tags": [
+          "battles"
+        ]
+      }
+    },
+    "/battles/{battle_id}/events": {
+      "get": {
+        "description": "Server-Sent Events. 구독 즉시 현재 스냅샷을 푸시하고, 단계 전이/제출 채점 완료 등 상태 변경 시마다 동일 페이로드를 푸시한다. 15초마다 keep-alive. status=finished면 종료. **인증 헤더를 못 싣으므로 joined/my_rank는 비어 있다 — 프론트가 scoreboard로 파생.**",
+        "operationId": "stream_battle_events_battles__battle_id__events_get",
+        "parameters": [
+          {
+            "description": "배틀 ID",
+            "in": "path",
+            "name": "battle_id",
+            "required": true,
+            "schema": {
+              "description": "배틀 ID",
+              "examples": [
+                1
+              ],
+              "title": "Battle Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "배틀 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "배틀 상태 SSE 스트림",
+        "tags": [
+          "battles"
+        ]
+      }
+    },
+    "/battles/{battle_id}/join": {
+      "post": {
+        "description": "lobby/active 단계에서만 참가 가능. 이미 참가했으면 그대로 성공.",
+        "operationId": "join_battle_battles__battle_id__join_post",
+        "parameters": [
+          {
+            "description": "배틀 ID",
+            "in": "path",
+            "name": "battle_id",
+            "required": true,
+            "schema": {
+              "description": "배틀 ID",
+              "examples": [
+                1
+              ],
+              "title": "Battle Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BattleJoinResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "배틀 없음"
+          },
+          "409": {
+            "description": "참가할 수 없는 단계 (이미 종료 등)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "배틀 참가 (멱등)",
+        "tags": [
+          "battles"
+        ]
+      }
+    },
+    "/battles/{battle_id}/submit": {
+      "post": {
+        "description": "active 단계에서만 제출 가능. 미참가자는 자동 참가 처리. 일반 /grade와 독립된 쿨다운·시도 상한을 쓴다(이미 해결한 문제 409·문제당 3회 제한은 적용하지 않음). 채점 결과는 배틀 SSE로 스코어보드에 반영된다.",
+        "operationId": "submit_battle_battles__battle_id__submit_post",
+        "parameters": [
+          {
+            "description": "배틀 ID",
+            "in": "path",
+            "name": "battle_id",
+            "required": true,
+            "schema": {
+              "description": "배틀 ID",
+              "examples": [
+                1
+              ],
+              "title": "Battle Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "jcq_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Jcq Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BattleSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BattleSubmitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "배틀/문제 없음"
+          },
+          "409": {
+            "description": "진행 중(active)인 배틀이 아님"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "쿨다운 중 또는 최대 제출 횟수 초과"
+          },
+          "503": {
+            "description": "채점 엔진 응답 없음"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "배틀 중 코드 제출",
+        "tags": [
+          "battles"
         ]
       }
     },
