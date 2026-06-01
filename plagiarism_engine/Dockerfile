@@ -14,6 +14,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # node-gyp가 native 빌드 시 `python` 명령을 찾는데 slim 이미지엔 심볼릭이 없으므로 명시.
     NPM_CONFIG_PYTHON=/usr/local/bin/python3
 
+# Node.js 20(NodeSource) + tree-sitter 네이티브 빌드 도구(build-essential, git).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl ca-certificates gnupg \
+        build-essential git && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 RUN pip install --upgrade "pip>=23.1"
