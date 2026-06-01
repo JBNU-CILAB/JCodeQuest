@@ -1,11 +1,25 @@
-import { useState, useRef, useCallback } from "react";
+import { Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
 import type { ConnSettings, ProblemRow, TestCase, ProblemDetail } from "../types";
 import { adminFetch, fmtDate } from "../api";
 import AuthoringMetaPanel from "../components/AuthoringMetaPanel";
+import ComparisonTab from "../components/ComparisonTab";
+import { ProblemStatsTab } from "./StatsView";
+import { invalidateProblemPickerCache } from "../components/ProblemPicker";
+import { unwrap, useResource } from "../lib/resource";
 
 interface Props { settings: ConnSettings }
 
-type Tab = "create" | "variant" | "list";
+// 4탭 단일 바: 관리(원본 등록/원본 목록) + 분석(문제별 통계/원본-변형 비교).
+// '변형 출제'는 제거됨 — 변형 트리거는 파이프라인 runs 화면에서 수행.
+type Tab = "create" | "list" | "stats" | "comparison";
+
+const TAB_SUBTITLES: Record<Tab, string> = {
+  create:     "원본 문제 등록",
+  list:       "원본 목록 + 출제 메타 조회",
+  stats:      "문제별 채점 통계 · LLM-as-Judge 앙상블 동향 (행 클릭 시 상세 차트)",
+  comparison: "원본-변형 4축 점수 (hallucination / intent / difficulty / judge)",
+};
+type ProblemFilter = "all" | "variant" | "original";
 
 /* ────────────────────────────────────────────────────────── */
 function CreateTab({ settings }: Props) {
@@ -48,6 +62,10 @@ function CreateTab({ settings }: Props) {
       let pretty = body;
       try { pretty = JSON.stringify(JSON.parse(body), null, 2); } catch {}
       setOutput({ kind: r.ok ? "ok" : "err", msg: `[${r.status}]\n\n${pretty}` });
+      if (r.ok) {
+        // 다른 뷰의 ProblemPicker 가 최신 목록을 받도록 캐시 무효화.
+        invalidateProblemPickerCache();
+      }
     } catch (err: unknown) {
       setOutput({ kind: "err", msg: `네트워크 오류: ${(err as Error).message}` });
     } finally {
@@ -156,166 +174,134 @@ function CreateTab({ settings }: Props) {
 }
 
 /* ────────────────────────────────────────────────────────── */
-interface StreamLine { ts: string; tag: string; kind: "ok" | "err" | "info" | "warn" | "plain"; body: string }
 
-function VariantTab({ settings }: Props) {
-  const [problemId, setProblemId] = useState("");
-  const [count, setCount] = useState("3");
-  const [lines, setLines] = useState<StreamLine[]>([]);
-  const [running, setRunning] = useState(false);
-  const [traceUrl, setTraceUrl] = useState<string | null>(null);
-  const ctrlRef = useRef<AbortController | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+const LEVEL_COLOR: Record<string, string> = {
+  bronze: "badge-amber", silver: "badge-gray", gold: "badge-amber",
+  platinum: "badge-blue", diamond: "badge-purple",
+};
 
-  function addLine(kind: StreamLine["kind"], tag: string, body: string) {
-    const ts = new Date().toLocaleTimeString("ko-KR", { hour12: false });
-    setLines((p) => [...p, { ts, tag, kind, body }]);
-    setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+/** Suspense 안에서 use(promise) 로 문제 목록을 읽어 행만 렌더. 부모 mutation 후 refresh() → 이 컴포넌트만 재렌더. */
+function ProblemRows({
+  promise,
+  filter,
+  onOpen,
+  onDelete,
+  onList,
+}: {
+  promise: Promise<ProblemRow[]>;
+  filter: ProblemFilter;
+  onOpen: (pid: number) => void;
+  onDelete: (pid: number, title: string) => void;
+  onList: (list: ProblemRow[]) => void;
+}) {
+  const all = use(promise);
+  // 부모(parent_title 조회용 캐시 등)가 목록을 참조할 수 있도록 commit 후 전파.
+  useEffect(() => { onList(all); }, [all, onList]);
+  const visible =
+    filter === "variant" ? all.filter((p) => p.parent_id != null) :
+    filter === "original" ? all.filter((p) => p.parent_id == null) :
+    all;
+  if (visible.length === 0) {
+    return (
+      <tr className="empty-row">
+        <td colSpan={9}>
+          {all.length === 0
+            ? "문제 없음"
+            : filter === "variant" ? "변형 문제 없음" : "원본 문제 없음"}
+        </td>
+      </tr>
+    );
   }
-
-  function handlePayload(p: Record<string, unknown>) {
-    if (p.event === "node_start") {
-      addLine("info", "NODE", `▶ ${p.node}`);
-    } else if (p.event === "node_end") {
-      const node = p.node as string | undefined;
-      const data = p.data as Record<string, unknown> | undefined;
-      if (node === "persist_approved" && data?.approved_ids) {
-        addLine("ok", "DONE", `approved: ${JSON.stringify(data.approved_ids)}`);
-      } else {
-        addLine("ok", "END", `◼ ${node} — ${JSON.stringify(data ?? {}).slice(0, 120)}`);
-      }
-    } else if (p.event === "error") {
-      addLine("err", "ERR", String(p.message ?? p));
-    } else {
-      addLine("plain", "EVT", JSON.stringify(p).slice(0, 200));
-    }
-  }
-
-  async function start() {
-    const pid = parseInt(problemId, 10);
-    const cnt = parseInt(count, 10);
-    if (!pid || pid < 1) { addLine("err", "ERR", "problem_id를 입력하세요"); return; }
-    if (!cnt || cnt < 1) { addLine("err", "ERR", "count를 입력하세요"); return; }
-
-    setLines([]);
-    setTraceUrl(null);
-    setRunning(true);
-    ctrlRef.current = new AbortController();
-
-    addLine("info", "POST", `/api/runs problem_id=${pid} count=${cnt}`);
-    try {
-      const r = await adminFetch("/api/runs", settings, {
-        method: "POST",
-        body: JSON.stringify({ problem_id: pid, count: cnt }),
-        signal: ctrlRef.current.signal,
-      });
-      if (!r.ok) {
-        const body = await r.text();
-        addLine("err", "ERR", `[${r.status}] ${body.slice(0, 300)}`);
-        setRunning(false);
-        return;
-      }
-      const { run_id, langsmith_trace_url } = await r.json();
-      addLine("ok", "RUN", `run_id=${run_id}`);
-      if (langsmith_trace_url) setTraceUrl(langsmith_trace_url);
-      addLine("info", "STREAM", `구독 시작 /api/runs/${run_id}/events`);
-
-      const resp = await adminFetch(`/api/runs/${run_id}/events`, settings, {
-        signal: ctrlRef.current.signal,
-      });
-      const reader = resp.body!.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const frames = buf.split("\n\n");
-        buf = frames.pop() ?? "";
-        for (const frame of frames) {
-          for (const line of frame.split("\n")) {
-            if (!line.startsWith("data:")) continue;
-            const raw = line.slice(5).trim();
-            if (raw === "[DONE]") { addLine("ok", "DONE", "스트림 완료"); break; }
-            try { handlePayload(JSON.parse(raw)); } catch { addLine("plain", "RAW", raw); }
-          }
-        }
-      }
-    } catch (err: unknown) {
-      if ((err as Error).name !== "AbortError")
-        addLine("err", "ERR", `오류: ${(err as Error).message}`);
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  function stop() { ctrlRef.current?.abort(); setRunning(false); }
-
   return (
-    <div>
-      <div className="card">
-        <div className="card-title"><span className="card-icon">◈</span> 변형 출제</div>
-        <div className="card-desc">기존 원본 문제를 시드로 LangGraph 파이프라인을 실행하여 변형 문제를 자동 생성합니다.</div>
-        <div className="filter-row">
-          <div className="field narrow">
-            <label>원본 ID</label>
-            <input type="number" value={problemId} onChange={(e) => setProblemId(e.target.value)} placeholder="1" min={1} />
-          </div>
-          <div className="field narrow">
-            <label>생성 수</label>
-            <input type="number" value={count} onChange={(e) => setCount(e.target.value)} min={1} max={10} />
-          </div>
-          <div className="field" style={{ maxWidth: 100, marginTop: "auto" }}>
-            {running
-              ? <button type="button" className="btn btn-danger" onClick={stop}>■ 중단</button>
-              : <button type="button" className="btn btn-primary" onClick={start}>▶ 실행</button>
-            }
-          </div>
-          {traceUrl && (
-            <div className="field" style={{ marginTop: "auto" }}>
-              <a href={traceUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
-                ↗ LangSmith 트레이스
-              </a>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-title">
-          <span className="card-icon">◈</span> 실행 로그
-          {running && <span className="spinner" style={{ marginLeft: 8 }} />}
-          <span className="spacer" />
-          <button className="btn btn-ghost btn-sm" onClick={() => setLines([])}>지우기</button>
-        </div>
-        <div className="output-panel" style={{ maxHeight: 440 }}>
-          {lines.length === 0 && <span className="text-muted">대기 중...</span>}
-          {lines.map((l, i) => (
-            <div key={i} className="stream-line">
-              <span className="stream-ts">{l.ts}</span>
-              <span className={`stream-tag ${l.kind}`}>{l.tag}</span>
-              <span className="stream-body">{l.body}</span>
-            </div>
-          ))}
-          <div ref={endRef} />
-        </div>
-      </div>
-    </div>
+    <>
+      {visible.map((p) => (
+        <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => onOpen(p.id)}>
+          <td className="num">{p.id}</td>
+          <td>{p.title}</td>
+          <td><span className="badge badge-blue">{p.category}</span></td>
+          <td><span className={`badge ${LEVEL_COLOR[p.level] ?? "badge-gray"}`}>{p.level}</span></td>
+          <td className="num">{p.points}</td>
+          <td className="num">{p.time_limit_ms}</td>
+          <td className="num">{p.parent_id ?? "—"}</td>
+          <td className="text-sm text-muted">{fmtDate(p.created_at).slice(0, 10)}</td>
+          <td className="actions">
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={(e) => { e.stopPropagation(); onDelete(p.id, p.title); }}
+            >
+              삭제
+            </button>
+          </td>
+        </tr>
+      ))}
+    </>
   );
 }
 
-/* ────────────────────────────────────────────────────────── */
+function ProblemRowsFallback() {
+  return (
+    <tr className="empty-row">
+      <td colSpan={9}><span className="spinner" style={{ width: 12, height: 12 }} /> 불러오는 중…</td>
+    </tr>
+  );
+}
+
+/** 세그먼트 카운터 — Promise 결과의 길이로 계산. Suspense 안에서 use 로 읽는다. */
+function ProblemCounts({
+  promise,
+  filter,
+  setFilter,
+}: {
+  promise: Promise<ProblemRow[]>;
+  filter: ProblemFilter;
+  setFilter: (f: ProblemFilter) => void;
+}) {
+  const all = use(promise);
+  const variant = all.filter((p) => p.parent_id != null).length;
+  const counts = { all: all.length, variant, original: all.length - variant };
+  return (
+    <>
+      {([
+        ["all",      "전체 문제", counts.all],
+        ["variant",  "변형 문제만", counts.variant],
+        ["original", "원본 문제만", counts.original],
+      ] as [ProblemFilter, string, number][]).map(([key, label, n]) => (
+        <button
+          key={key}
+          role="tab"
+          aria-selected={filter === key}
+          className={`seg-btn${filter === key ? " active" : ""}`}
+          onClick={() => setFilter(key)}
+        >
+          {label}
+          <span className="seg-count">{n}</span>
+        </button>
+      ))}
+    </>
+  );
+}
+
 function ListTab({ settings }: Props) {
-  const [problems, setProblems] = useState<ProblemRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [includeVariants, setIncludeVariants] = useState(false);
+  const [filter, setFilter] = useState<ProblemFilter>("all");
   const [output, setOutput] = useState<{ kind: "ok" | "err" | ""; msg: string }>({ kind: "", msg: "" });
   const [detail, setDetail] = useState<ProblemDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // 클릭된 문제가 변형이면 원본 제목을 채워 슬라이드오버 헤더에 노출.
+  const [parentTitle, setParentTitle] = useState<string | null>(null);
+  // ProblemRows 가 commit 시점에 전달해주는 목록 캐시(parent_title 룩업용).
+  const [problemsCache, setProblemsCache] = useState<ProblemRow[]>([]);
+
+  // 문제 목록 — useResource 로 promise 관리. 자식이 use(promise) 로 읽는다.
+  // 원본+변형을 한 번에 받아 클라이언트에서 필터 전환.
+  const fetchProblems = useCallback(async (): Promise<ProblemRow[]> => {
+    return unwrap<ProblemRow[]>(await adminFetch(`/api/problems?originals_only=false`, settings));
+  }, [settings]);
+  const { promise: problemsPromise, refresh, isPending } = useResource(fetchProblems, [settings]);
 
   async function showDetail(pid: number) {
     setDetailLoading(true);
     setDetail(null);
+    setParentTitle(null);  // 새 detail 열 때 이전 parentTitle 잔존 방지
     try {
       const r = await adminFetch(`/api/problems/${pid}`, settings);
       if (!r.ok) {
@@ -332,23 +318,23 @@ function ListTab({ settings }: Props) {
     }
   }
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setOutput({ kind: "", msg: "" });
-    try {
-      const r = await adminFetch(`/api/problems?originals_only=${includeVariants ? "false" : "true"}`, settings);
-      if (!r.ok) {
-        const t = await r.text();
-        setOutput({ kind: "err", msg: `[${r.status}] ${t.slice(0, 200)}` });
-        return;
-      }
-      setProblems(await r.json());
-    } catch (err: unknown) {
-      setOutput({ kind: "err", msg: (err as Error).message });
-    } finally {
-      setLoading(false);
-    }
-  }, [settings, includeVariants]);
+  // 변형이면 원본 제목을 채운다: 로컬 problems 캐시 우선, 없으면 /api/problems/{parent}로 fetch.
+  useEffect(() => {
+    const parentId = detail?.parent_id ?? null;
+    if (parentId == null) { setParentTitle(null); return; }
+    const cached = problemsCache.find((p) => p.id === parentId);
+    if (cached?.title) { setParentTitle(cached.title); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await adminFetch(`/api/problems/${parentId}`, settings);
+        if (!r.ok || cancelled) return;
+        const d = await r.json();
+        if (!cancelled) setParentTitle(typeof d?.title === "string" ? d.title : null);
+      } catch { /* 헤더 부가정보 — 실패해도 무시 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [detail?.parent_id, problemsCache, settings]);
 
   async function deleteProblem(pid: number, title: string) {
     if (!confirm(`문제 #${pid} "${title}"을(를) 삭제할까요?\n변형 문제도 함께 삭제됩니다.`)) return;
@@ -358,7 +344,8 @@ function ListTab({ settings }: Props) {
       const body = await r.json().catch(() => ({}));
       if (r.ok) {
         setOutput({ kind: "ok", msg: `✓ 삭제 완료 — id=${pid}` });
-        setProblems((p) => p.filter((pr) => pr.id !== pid));
+        invalidateProblemPickerCache();  // 다른 뷰의 드롭다운도 다음 마운트 시 새 목록 받도록
+        refresh();                        // 이 뷰의 테이블은 use(promise) 가 새 데이터로 알아서 그린다
       } else {
         setOutput({ kind: "err", msg: `[${r.status}] ${JSON.stringify(body, null, 2)}` });
       }
@@ -367,30 +354,37 @@ function ListTab({ settings }: Props) {
     }
   }
 
-  const levelColor: Record<string, string> = {
-    bronze: "badge-amber", silver: "badge-gray", gold: "badge-amber",
-    platinum: "badge-blue", diamond: "badge-purple",
-  };
+  // ProblemRows 가 commit 시점에 호출하는 콜백 — 항등성 유지를 위해 메모이즈.
+  const handleList = useCallback((list: ProblemRow[]) => setProblemsCache(list), []);
 
   return (
     <div>
       <div className="card">
         <div className="filter-row">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={includeVariants} onChange={(e) => setIncludeVariants(e.target.checked)} />
-            <span>변형 문제 포함</span>
-          </label>
-          <button className="btn btn-primary btn-sm" onClick={load} disabled={loading}>
-            {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "↻"}&nbsp;불러오기
+          <div className="seg" role="tablist" aria-label="문제 유형 필터">
+            <Suspense fallback={<span className="text-muted text-sm">로딩 중…</span>}>
+              <ProblemCounts promise={problemsPromise} filter={filter} setFilter={setFilter} />
+            </Suspense>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={refresh} disabled={isPending}>
+            {isPending ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "↻"}&nbsp;새로고침
           </button>
         </div>
         <div className="card-desc" style={{ marginTop: 8 }}>
           행을 클릭하면 RAG 과정과 LLM-as-a-Judge 지표(품질·변별력·비교·신규성)를 확인할 수 있습니다.
-          변형 문제에 메타가 채워집니다 — "변형 문제 포함"을 켜고 조회하세요.
+          출제 메타는 변형 문제에만 채워집니다 — "변형 문제만"으로 좁혀 조회하세요.
         </div>
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card" style={{ padding: 0, position: "relative" }}>
+        {isPending && (
+          <span
+            className="text-xs text-muted"
+            style={{ position: "absolute", top: 8, right: 12, opacity: 0.7 }}
+          >
+            <span className="spinner" style={{ width: 10, height: 10 }} /> 갱신 중…
+          </span>
+        )}
         <div className="table-wrap">
           <table>
             <thead>
@@ -400,28 +394,15 @@ function ListTab({ settings }: Props) {
               </tr>
             </thead>
             <tbody>
-              {problems.length === 0 ? (
-                <tr className="empty-row"><td colSpan={9}>문제 없음 — 불러오기를 눌러주세요</td></tr>
-              ) : problems.map((p) => (
-                <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => showDetail(p.id)}>
-                  <td className="num">{p.id}</td>
-                  <td>{p.title}</td>
-                  <td><span className="badge badge-blue">{p.category}</span></td>
-                  <td><span className={`badge ${levelColor[p.level] ?? "badge-gray"}`}>{p.level}</span></td>
-                  <td className="num">{p.points}</td>
-                  <td className="num">{p.time_limit_ms}</td>
-                  <td className="num">{p.parent_id ?? "—"}</td>
-                  <td className="text-sm text-muted">{fmtDate(p.created_at).slice(0, 10)}</td>
-                  <td className="actions">
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={(e) => { e.stopPropagation(); deleteProblem(p.id, p.title); }}
-                    >
-                      삭제
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              <Suspense fallback={<ProblemRowsFallback />}>
+                <ProblemRows
+                  promise={problemsPromise}
+                  filter={filter}
+                  onOpen={showDetail}
+                  onDelete={deleteProblem}
+                  onList={handleList}
+                />
+              </Suspense>
             </tbody>
           </table>
         </div>
@@ -434,10 +415,11 @@ function ListTab({ settings }: Props) {
         loading={detailLoading}
         onClose={() => setDetail(null)}
         settings={settings}
+        parentTitle={parentTitle}
         onUpdated={(updated) => {
           setDetail(updated);
           // 목록의 표시값(제목/카테고리/난이도/점수/시간)도 즉시 반영
-          setProblems((prev) =>
+          setProblemsCache((prev) =>
             prev.map((p) =>
               p.id === updated.id
                 ? {
@@ -460,19 +442,31 @@ function ListTab({ settings }: Props) {
 /* ────────────────────────────────────────────────────────── */
 export default function ProblemsView({ settings }: Props) {
   const [tab, setTab] = useState<Tab>("create");
+  // useMemo to silence unused — kept for future tab-specific subtitle theming
+  const subtitle = useMemo(() => TAB_SUBTITLES[tab], [tab]);
 
   return (
     <div className="main problems">
       <div className="page-head">
-        <h1>문제 관리</h1>
-        <span className="sub">원본 등록 · LangGraph 변형 출제 · 출제 메타 조회</span>
+        <h1>문제 · 통계</h1>
+        <span className="sub">{subtitle}</span>
       </div>
 
       <div className="tabs">
+        {/* 관리(CRUD) 그룹 */}
         {([
           ["create",  "원본 등록"],
-          ["variant", "변형 출제"],
           ["list",    "원본 목록"],
+        ] as [Tab, string][]).map(([t, label]) => (
+          <button key={t} className={`tab-btn${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
+            {label}
+          </button>
+        ))}
+        {/* 분석 그룹과 시각 구분 (탭 바 안의 얇은 세퍼레이터) */}
+        <span className="tab-sep" aria-hidden="true" />
+        {([
+          ["stats",      "문제별 통계"],
+          ["comparison", "원본-변형 비교"],
         ] as [Tab, string][]).map(([t, label]) => (
           <button key={t} className={`tab-btn${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
             {label}
@@ -480,9 +474,10 @@ export default function ProblemsView({ settings }: Props) {
         ))}
       </div>
 
-      {tab === "create"  && <CreateTab  settings={settings} />}
-      {tab === "variant" && <VariantTab settings={settings} />}
-      {tab === "list"    && <ListTab    settings={settings} />}
+      {tab === "create"     && <CreateTab        settings={settings} />}
+      {tab === "list"       && <ListTab          settings={settings} />}
+      {tab === "stats"      && <ProblemStatsTab  settings={settings} />}
+      {tab === "comparison" && <ComparisonTab    settings={settings} />}
     </div>
   );
 }

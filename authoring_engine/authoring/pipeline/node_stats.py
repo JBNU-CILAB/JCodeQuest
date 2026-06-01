@@ -9,15 +9,19 @@ from __future__ import annotations
 
 from typing import Any
 
-# graph.py의 실제 노드 순서 (9개). RunsView NODE_DEFS와 1:1 대응.
+# graph.py의 실제 노드 순서 (10개). RunsView NODE_DEFS와 1:1 대응.
+# strengthen_tests는 attack→strengthen→attack 루프로 attack 사이에 여러 번 실행될 수 있으나,
+# 선형 표시에선 attack 직후에 한 칸으로 둔다(node_states는 키별 last-wins).
 NODE_ORDER: list[str] = [
     "fetch_problem",
     "retrieve_exemplars",
     "generate_variants",
     "verify_candidates",
     "judge_candidates",
+    "revise_problem",
     "solve_candidates",
     "attack_candidates",
+    "strengthen_tests",
     "compare_to_original",
     "persist_approved",
 ]
@@ -29,8 +33,10 @@ NODE_KIND: dict[str, str] = {
     "generate_variants": "llm",
     "verify_candidates": "sandbox",
     "judge_candidates": "llm",
+    "revise_problem": "llm",
     "solve_candidates": "llm",
     "attack_candidates": "llm",
+    "strengthen_tests": "llm",
     "compare_to_original": "llm",
     "persist_approved": "db",
 }
@@ -148,6 +154,50 @@ def summarize_node(node_key: str, delta: dict[str, Any]) -> dict[str, Any]:
         out["candidates_out"] = sum(
             1 for c in cands if c.get("solver_passed") and c.get("discrimination_passed", True)
         )
+        return out
+
+    if node_key == "strengthen_tests":
+        # 보강 대상이었던 후보(strengthen_added 필드 보유)만 표시 — 통과/미공격 후보는 제외.
+        results = []
+        for i, c in enumerate(cands):
+            added = c.get("strengthen_added")
+            if added is None:
+                continue
+            results.append({
+                "idx": _cand_idx(c, i),
+                "status": "pass" if added > 0 else "warn",
+                "note": f"+{added} tests" if added else "no discriminating input",
+            })
+        out["candidate_results"] = results
+        out["candidates_in"] = sum(1 for c in cands if c.get("strengthen_added") is not None)
+        out["candidates_out"] = sum(1 for c in cands if (c.get("strengthen_added") or 0) > 0)
+        out["retries"] = _max_extra(cands, "strengthen_attempts")
+        return out
+
+    if node_key == "revise_problem":
+        # revise 대상이었던 후보(revise_attempts > 0)만 표시 — 첫 진입에 통과한 후보 제외.
+        results = []
+        for i, c in enumerate(cands):
+            attempts = c.get("revise_attempts") or 0
+            if attempts <= 0:
+                continue
+            history = c.get("revise_history") or []
+            last_note = history[-1].get("note", "") if history else ""
+            errored = last_note.startswith("error")
+            results.append({
+                "idx": _cand_idx(c, i),
+                "status": "warn" if errored else "pass",
+                "note": f"attempt {attempts} · {last_note or '—'}",
+            })
+        out["candidate_results"] = results
+        touched = sum(1 for c in cands if (c.get("revise_attempts") or 0) > 0)
+        out["candidates_in"] = touched
+        out["candidates_out"] = sum(
+            1 for c in cands
+            if (c.get("revise_attempts") or 0) > 0
+            and (c.get("revise_history") or [{}])[-1].get("note") == "revised"
+        )
+        out["retries"] = _max_extra(cands, "revise_attempts")
         return out
 
     if node_key == "compare_to_original":

@@ -46,12 +46,12 @@ PID/로그는 `.dev-logs/` 아래. 포트 충돌이면 `down` 후 재시도.
 
 서비스별 템플릿은 각 디렉토리의 `.env.example`. 의미·전체 목록은 `docs/environment.md`. 여기엔 dev 흐름에 직결되는 키만 정리.
 
-- **`JCQ_DB_URL`** — Supabase Transaction Pooler URL. backend·authoring 둘 다 동일 값(authoring은 dev 모드에서만 DB 직접 접근하는 경로가 있음 — Docker 환경에서는 backend HTTP로 위임).
+- **`JCQ_DB_URL`** — Supabase Transaction Pooler URL. **backend 전용** (DB의 유일한 진입점). authoring·judge는 DB를 직접 보지 않고 backend `/internal/*`·judge `/api/sandbox/run`에 HTTP로 위임하므로 `JCQ_DB_URL`이 필요 없다 — 대신 `JCQ_BACKEND_URL`/`JCQ_JUDGE_URL`을 가리킨다.
 - **`SUPABASE_URL`** — JWT JWKS 검증용 Project URL. ES256/RS256 신규 프로젝트는 이거 하나로 충분, 레거시 HS256은 `SUPABASE_JWT_SECRET` 추가.
-- **`JCQ_INTERNAL_SECRET`** — backend ↔ judge webhook 인증. 양 서비스 같은 값.
+- **`JCQ_INTERNAL_SECRET`** — backend ↔ judge ↔ authoring 내부 라우트 인증. **세 서비스 모두 같은 값**.
 - **`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`** — 프런트가 Supabase Auth와 직접 통신. Vite는 빌드 타임에 인라인하므로 prod 빌드 시 값 변경하면 재빌드 필요.
 - **`OLLAMA_BASE_URL`** — 3-judge ensemble + 출제 LLM 호스트.
-- **`OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`** — 튜터 (`/tutor`) 엔드포인트용. OpenAI 호환 게이트웨이 사용 가능.
+- **`OPENAI_BASE_URL` / `OPENAI_MODEL`** — 튜터 (`/tutor`) 서버 설정. OpenAI 호환 게이트웨이 사용 가능. **API 키는 전역 env가 아니라 유저별 vault**(`PUT /me/api-key`)에 저장 — `OPENAI_API_KEY` env는 더 이상 쓰지 않음.
 
 ### 개발 편의 플래그 (운영 금지)
 
@@ -91,7 +91,7 @@ authoring_engine/.venv/bin/python  scripts/dump_openapi.py authoring
 
 ## 코드 컨벤션 함정 (CLAUDE.md 요약)
 
-- **Callsite patch.** 테스트는 LLM 호출을 import한 모듈에 monkeypatch (`src.judge.jobs.grading.vote`), 정의 모듈이 아님.
+- **Callsite patch.** 테스트는 외부 호출을 import한 모듈에 monkeypatch — 정의 모듈이 아님. 채점이 judge_engine으로 위임되므로 backend 통합 테스트는 `src.api.grading.submit_to_engine`을 가짜로 갈고 webhook을 직접 흉내낸다(3-judge `vote`는 judge_engine 소속).
 - **테스트는 SQLite, 운영은 PostgreSQL.** `tests/conftest.py`가 임시 SQLite로 갈아끼움 — PostgreSQL 한정 SQL을 ORM에 넣을 땐 SQLite fallback 또는 env 게이팅 필요.
 - **샌드박스는 adversarial-grade 아님.** `judge/sandbox/runner.py`는 import 레이어 차단 + RLIMIT만. 진짜 격리는 별도 레이어.
 - **제출 쿨다운** 기본 10s/(user, problem). 테스트는 `_disable_cooldown` autouse fixture로 0으로.

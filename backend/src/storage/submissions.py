@@ -70,9 +70,18 @@ def attempt_status(
 
 
 def create_submission(
-    session: Session, *, user_id: int, problem_id: int, code: str
+    session: Session,
+    *,
+    user_id: int,
+    problem_id: int,
+    code: str,
+    battle_id: int | None = None,
 ) -> int:
-    row = SubmissionRow(user_id=user_id, problem_id=problem_id, code=code)
+    # battle_id 기본 None → 일반 제출 경로는 호출이 그대로 동작. 값이 있으면 Code Battle
+    # 제출로 마킹되어 save_grading의 첫-AC exp 가산을 건너뛴다(배틀 보상은 별도).
+    row = SubmissionRow(
+        user_id=user_id, problem_id=problem_id, code=code, battle_id=battle_id
+    )
     session.add(row)
     session.commit()
     session.refresh(row)
@@ -97,7 +106,13 @@ def save_grading(
     test_results: list[TestResult],
     ensemble: EnsembleResult | None = None,
     points_awarded: int = 0,
-) -> None:
+) -> bool:
+    """채점 결과를 영속화. 반환값은 "이번 호출에서 첫 AC가 확정됐는가"(일반 제출 한정).
+
+    True 인 경우 caller(apply_grading_event)가 표절 검사 트리거 같은 first-AC 부수효과를
+    실행할 수 있다. 배틀 제출(`battle_id` 존재)은 일반 first-AC 라인을 타지 않으므로 항상
+    False 반환 — exp 가산도 건너뛴다(`finalize_battle` 순위 보상으로 분리).
+    """
     row = session.get(SubmissionRow, submission_id)
     if row is None:
         raise ValueError(f"submission {submission_id} not found")
@@ -115,9 +130,12 @@ def save_grading(
     row.points_awarded = points_awarded if final_verdict == "AC" else None
     session.add(row)
 
-    # 첫 AC 시점에만 user.exp 가산. attempt_status가 solved이면 POST를 409로 막지만,
-    # 직접 save_grading을 호출하는 경로(테스트 등)에서도 중복 가산되지 않도록 방어.
-    if final_verdict == "AC" and points_awarded > 0:
+    is_first_ac = False
+    # 첫 AC 시점에만 user.exp 가산 + 표절 검사 트리거. attempt_status 가 solved 면 POST 를
+    # 409 로 막지만, save_grading 을 직접 호출하는 경로(테스트 등)에서도 중복 가산되지 않게
+    # 방어. Code Battle 제출(battle_id 존재)은 일반 exp 를 주지 않는다 — 배틀 보상은
+    # finalize_battle 의 순위 기반 가산으로 분리(배틀로 일반 문제 exp 파밍 방지).
+    if final_verdict == "AC" and row.battle_id is None:
         prior_ac = session.exec(
             select(SubmissionRow.id).where(
                 SubmissionRow.user_id == row.user_id,
@@ -127,9 +145,12 @@ def save_grading(
             )
         ).first()
         if prior_ac is None:
-            bump_user_exp(session, row.user_id, delta=points_awarded)
+            is_first_ac = True
+            if points_awarded > 0:
+                bump_user_exp(session, row.user_id, delta=points_awarded)
 
     session.commit()
+    return is_first_ac
 
 
 def get_submission(session: Session, submission_id: int) -> SubmissionRow | None:
@@ -253,6 +274,22 @@ def list_user_submissions(
     )
     rows = session.exec(page).all()
     return list(rows), int(total)
+
+
+def list_problem_submissions(
+    session: Session,
+    problem_id: int,
+    *,
+    verdict: str | None = None,
+    limit: int = 1000,
+) -> list[SubmissionRow]:
+    """한 문제의 제출 전체(코드 포함) — 표절 비교용. verdict 필터(예: 'AC').
+    같은 유저의 여러 제출이 섞이지 않도록 호출측에서 유저당 1건으로 추릴 수 있다."""
+    stmt = select(SubmissionRow).where(SubmissionRow.problem_id == problem_id)
+    if verdict is not None:
+        stmt = stmt.where(SubmissionRow.final_verdict == verdict)
+    stmt = stmt.order_by(SubmissionRow.created_at.asc(), SubmissionRow.id.asc()).limit(limit)
+    return list(session.exec(stmt).all())
 
 
 def list_recent_submissions(

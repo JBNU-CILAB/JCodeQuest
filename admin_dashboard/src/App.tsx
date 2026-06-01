@@ -8,29 +8,28 @@ import RunsView from "./views/RunsView";
 import ProblemsView from "./views/ProblemsView";
 import SubmissionsView from "./views/SubmissionsView";
 import NoticesView from "./views/NoticesView";
-import ReportsView from "./views/ReportsView";
-import StatsView from "./views/StatsView";
+import IssuesView from "./views/IssuesView";
 import UsersView from "./views/UsersView";
 
-const NAV: { route: Route; label: string; Icon: (p: React.SVGProps<SVGSVGElement>) => JSX.Element }[] = [
+const NAV: { route: Route; label: string; Icon: (p: React.SVGProps<SVGSVGElement>) => React.JSX.Element }[] = [
   { route: "home",        label: "통합 현황",       Icon: RailIcons.home },
   { route: "runs",        label: "파이프라인 runs", Icon: RailIcons.runs },
-  { route: "stats",       label: "통계",            Icon: RailIcons.stats },
-  { route: "problems",    label: "문제 관리",       Icon: RailIcons.problems },
+  // 문제·통계: 원본/변형 관리 + 채점·앙상블 통계 + 원본-변형 비교를 단일 5탭 바로 묶음.
+  { route: "problems",    label: "문제 · 통계",     Icon: RailIcons.problems },
   { route: "submissions", label: "풀이 기록",       Icon: RailIcons.submissions },
   { route: "notices",     label: "공지사항",        Icon: RailIcons.notices },
-  { route: "reports",     label: "버그 제보",       Icon: RailIcons.reports },
+  // 신고·검토: 버그 제보 + 표절 검토를 서브탭으로 묶은 단일 진입점.
+  { route: "reports",     label: "신고·검토",       Icon: RailIcons.reports },
   { route: "users",       label: "유저 / 권한",     Icon: RailIcons.users },
 ];
 
 const ROUTE_TITLE: Record<Route, string> = {
   home:        "통합 현황",
   runs:        "파이프라인 runs",
-  stats:       "통계 · 분석",
-  problems:    "문제 관리",
+  problems:    "문제 · 통계",
   submissions: "풀이 기록",
   notices:     "공지 관리",
-  reports:     "버그 제보",
+  reports:     "신고·검토",
   users:       "사용자 관리",
 };
 
@@ -121,11 +120,10 @@ export default function App() {
       {/* ── Main view ── */}
       {route === "home" && <HomeView settings={settings} />}
       {route === "runs" && <RunsView settings={settings} />}
-      {route === "stats" && <StatsView settings={settings} />}
       {route === "problems" && <ProblemsView settings={settings} />}
       {route === "submissions" && <SubmissionsView settings={settings} />}
       {route === "notices" && <NoticesView settings={settings} />}
-      {route === "reports" && <ReportsView settings={settings} />}
+      {route === "reports" && <IssuesView settings={settings} />}
       {route === "users" && <UsersView settings={settings} />}
 
       {showSettings && (

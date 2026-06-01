@@ -76,7 +76,7 @@
   --radius-xl:   12px;
 
   /* Typography */
-  --font-ui:     -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Inter", system-ui, sans-serif;
+  --font-ui:     "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
   --font-mono:   "JetBrains Mono", "NeoDunggeunmo", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --font-pixel:  "NeoDunggeunmo", "JetBrains Mono", monospace;
 
@@ -352,6 +352,14 @@ body {
   border-bottom-color: var(--accent);
   font-weight: 500;
 }
+/* .tabs 안에서 관리·분석 두 그룹을 시각 분리하는 얇은 세로 라인. */
+.tab-sep {
+  display: inline-block;
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 10px;
+  background: var(--border);
+}
 
 /* ── Forms ──────────────────────────────────────────────────── */
 .form-grid {
@@ -416,6 +424,53 @@ textarea.code {
   cursor: pointer;
 }
 .checkbox-row span { font-size: 13.5px; color: var(--text); }
+
+/* ── Segmented control (필터 칩) ─────────────────────────────── */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+.seg-btn:hover { color: var(--text); }
+.seg-btn.active {
+  color: var(--accent-text);
+  background: var(--bg-card);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.seg-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.seg-btn.active .seg-count {
+  background: var(--accent-lite);
+  color: var(--accent-text);
+}
 
 /* ── Buttons ────────────────────────────────────────────────── */
 .btn {
@@ -681,7 +736,8 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .detail-panel {
   position: fixed;
   right: 0; top: 0; bottom: 0;
-  width: 540px;
+  /* 문제 statement·테스트 케이스·rubric을 한 화면에 보기 좋게 — 좁은 창에서는 92vw로 축소. */
+  width: min(880px, 92vw);
   background: var(--bg-card);
   border-left: 1px solid var(--border);
   z-index: 100;
@@ -1102,6 +1158,9 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .pill.failed  .dot { background: var(--st-failed); }
 .pill.skipped { background: #f1f5f9; color: var(--muted-soft); }
 .pill.skipped .dot { background: var(--st-skipped); }
+.pill.blocked { background: var(--amber-bg); color: var(--amber); }
+.pill.blocked .dot { background: var(--amber); }
+.raw-status { font-size: 10.5px; font-family: var(--font-mono); color: var(--muted-soft); }
 @keyframes pulse {
   0%   { box-shadow: 0 0 0 0   rgba(245,158,11,0.55); }
   70%  { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
@@ -1115,6 +1174,9 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .main.runs.drawer-open.drawer-wide { grid-template-columns: 300px minmax(0, 1fr) min(62vw, 880px); }
 .main.home, .main.stats, .main.problems, .main.notices, .main.users,
 .main.submissions, .main.reports { display: block; padding: 28px 36px; overflow: auto; }
+/* IssuesView 래퍼 — 내부에 또 다른 .main.reports/.main.plagiarism이 자식으로 들어오므로
+ * padding은 0(내부 뷰 자체가 28x36 padding을 가짐). 기본 .main의 grid/overflow:hidden을 풀어준다. */
+.main.issues { display: block; padding: 0; overflow: auto; }
 /* 통합 현황 — 레퍼런스 대시보드 느낌의 점 배경 */
 .main.home {
   background-color: var(--bg-page);
@@ -1256,6 +1318,8 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .node-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); border-color: var(--muted-x); }
 .node-card.failed { border-color: #fecaca; }
 .node-card.running { border-color: #fcd34d; }
+.node-card.blocked { border-color: #fcd34d; background: var(--amber-bg); }
+.node-card.skipped { opacity: 0.55; }
 .node-card.selected { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft), var(--shadow-hover); }
 .node-head { display: flex; align-items: center; gap: 8px; }
 .node-idx { font-family: var(--font-mono); font-size: 11px; color: var(--muted); background: var(--bg-soft); padding: 2px 6px; border-radius: 5px; font-weight: 600; }
@@ -1278,8 +1342,26 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .graph-stage.vertical .arrow::after { right: 50%; top: auto; bottom: -1px; transform: translateX(50%) rotate(135deg); }
 .graph-stage.vertical .graph-legend { justify-content: center; margin-top: 36px; }
 
+/* 역방향 루프 화살표 — source 우측에서 활처럼 부풀어 target 우측으로 들어가는 곡선.
+ * 점선 회색이 기본(조건부 루프), 한 번이라도 돈 루프는 .active로 보라 실선 강조.
+ * z-index를 노드 위로 띄워(SVG는 stage 직속) 곡선이 노드 옆에서 드러나게 한다. */
+.loop-edge-svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 2; }
+.loop-edge-svg path.loop-back { fill: none; stroke: #9ca3af; stroke-width: 1.75; stroke-dasharray: 6 5; opacity: 0.5; transition: stroke 0.2s, opacity 0.2s, stroke-width 0.2s; }
+/* 마커 화살촉은 path의 fill="context-stroke"로 stroke 색을 자동 상속(별도 색 지정 불요). */
+.loop-edge-svg .loop-edge.active path.loop-back { stroke: #7c3aed; stroke-dasharray: none; stroke-width: 2.25; opacity: 0.9; }
+.loop-edge-svg .loop-label { font-size: 10px; font-weight: 600; fill: #6b7280; opacity: 0.7; }
+.loop-edge-svg .loop-edge.active .loop-label { fill: #7c3aed; opacity: 1; }
+
 /* ── 3-LLM 앙상블 노드: 펼침 토글 + 가로 트리 판사 서브노드 ──────────── */
 .ensemble-group { display: flex; flex-direction: column; align-items: center; }
+/* IssuesView: '버그 제보'와 '표절 검토'를 묶은 단일 탭 안의 세그먼티드 서브탭.
+ * 본문(.main) 위에 얇은 토글 바를 얹어 두 뷰를 즉시 전환한다. */
+.issues-tabs { display: flex; align-items: center; gap: 6px; padding: 14px 28px 0; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.issues-tab { background: transparent; border: none; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; }
+.issues-tab:hover { color: var(--ink); }
+.issues-tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+.issues-tab-sub { margin-left: auto; color: var(--muted-x); font-size: 11px; }
+
 .ensemble-main { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ensemble-toggle {
   display: inline-flex; align-items: center; gap: 5px;
@@ -1563,6 +1645,64 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .jlist li { font-size: 12px; line-height: 1.5; }
 .jnest { border-left: 2px solid var(--border); padding-left: 10px; display: flex; flex-direction: column; gap: 8px; }
 
+/* ── generate_variants 필드 스팬 (LLM I/O JSON 핵심 요소 막대) ──────────────── */
+.fspans { border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 11px; background: var(--bg-soft); margin-bottom: 9px; }
+.fspans-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fspan-kind { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.02em; padding: 2px 8px; border-radius: 6px; background: #f3e8ff; color: #6b21a8; }
+.fspan-verdict { margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+.fspan-verdict.ok  { background: var(--st-done-bg); color: var(--st-done); }
+.fspan-verdict.bad { background: var(--st-failed-bg); color: var(--st-failed); }
+.fspan-list { display: flex; flex-direction: column; gap: 6px; }
+.fspan { display: grid; grid-template-columns: minmax(104px, 32%) 1fr auto; gap: 9px; align-items: center; }
+.fspan-label { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted); word-break: break-all; }
+.fspan-track { height: 7px; border-radius: 999px; background: var(--bg-subtle); overflow: hidden; }
+.fspan-fill { height: 100%; border-radius: 999px; background: var(--brand); transition: width .35s var(--ease); }
+.fspan-fill.ok      { background: var(--st-done); }
+.fspan-fill.warn    { background: var(--amber); }
+.fspan-fill.bad     { background: var(--st-failed); }
+.fspan-fill.neutral { background: var(--muted-soft); }
+.fspan-val { font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-align: right; min-width: 50px; }
+.fspan-val.ok      { color: var(--st-done); }
+.fspan-val.warn    { color: var(--amber); }
+.fspan-val.bad     { color: var(--st-failed); }
+.fspan-val.neutral { color: var(--ink-2); }
+.fspan-hints { margin: 8px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.fspan-hints li { font-size: 11px; line-height: 1.5; color: var(--muted); }
+.fspan-hints li.bad  { color: var(--st-failed); }
+.fspan-hints li.warn { color: var(--amber); }
+.fspan-hints li b { font-family: var(--font-mono); font-weight: 700; }
+
+/* 입력 컨텍스트 칩 */
+.fchips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.fchip { font-size: 10.5px; padding: 2px 8px; border-radius: 6px; background: var(--bg-panel); border: 1px solid var(--border-soft); color: var(--ink-2); }
+.fchip b { font-family: var(--font-mono); font-weight: 700; color: var(--muted); margin-right: 4px; }
+.fchip.warn { background: var(--st-running-bg); border-color: #fcd34d; color: #b45309; }
+
+/* 노드 단위 진단 배너 (출제 실패 한눈 요약) */
+.gen-diag { border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; margin-bottom: 12px; }
+.gen-diag.clean     { border-color: #c6e9d4; background: var(--st-done-bg); }
+.gen-diag.has-block { border-color: #fecaca; background: var(--st-failed-bg); }
+.gen-diag-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.gen-diag-title { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.gen-diag-chip { margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+.gen-diag-chip.ok  { background: var(--st-done); color: #fff; }
+.gen-diag-chip.bad { background: var(--st-failed); color: #fff; }
+.gen-diag-summary { font-size: 11.5px; line-height: 1.65; color: var(--ink-2); margin-bottom: 9px; }
+.gen-diag-summary b { font-weight: 700; }
+.gen-diag-summary code { font-family: var(--font-mono); font-size: 10.5px; background: rgba(0,0,0,0.05); padding: 1px 4px; border-radius: 4px; }
+.gen-diag-rows { display: flex; flex-direction: column; gap: 6px; }
+.gen-diag-row { background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: 7px; padding: 7px 9px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gen-diag-row.ok { opacity: 0.72; }
+.gen-diag-row.blocked, .gen-diag-row.parsefail, .gen-diag-row.nooutput, .gen-diag-row.error { border-left: 3px solid var(--st-failed); }
+.gen-diag-row.badshape { border-left: 3px solid var(--amber); }
+.gen-diag-kind { font-family: var(--font-mono); font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 5px; background: #f3e8ff; color: #6b21a8; }
+.gen-diag-st { font-size: 11.5px; font-weight: 600; }
+.gen-diag-st.ok { color: var(--st-done); }
+.gen-diag-st.blocked, .gen-diag-st.parsefail, .gen-diag-st.nooutput, .gen-diag-st.error { color: var(--st-failed); }
+.gen-diag-st.badshape { color: var(--amber); }
+.gen-diag-blockers { flex-basis: 100%; margin: 2px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
+.gen-diag-blockers li { font-size: 11px; line-height: 1.5; color: var(--ink-2); }
+
 /* ── persist_approved 후보 분류 (생성 / 탈락) ─────────────────────────── */
 .persist-class { display: flex; flex-direction: column; gap: 14px; }
 .pclass-group { display: flex; flex-direction: column; gap: 7px; }
@@ -1638,6 +1778,24 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
   font-family: var(--font-mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
   max-height: 420px; overflow: auto;
 }
+
+/* 표절 검토 — 코드 A/B 나란히 비교 */
+/* 코드 A · 코드 B를 세로 스택(위아래)으로 — 슬라이드오버 폭을 코드 한 줄이 전부 차지하므로
+ * 줄바꿈 없이 긴 라인도 가로 스크롤 없이 한눈에 읽힌다. 각 블록은 자체 스크롤. */
+.plag-codes { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.plag-codes .code-block { max-height: 420px; overflow: auto; font-size: 11.5px; }
+/* 표절 매칭 라인 형광펜 마킹 — code-block-marked는 라인 단위 <div>가 컨테이너 padding 없이
+ * 좌우 끝까지 배경색을 깔 수 있도록 inner padding을 0으로 풀어준다. */
+.code-block.code-block-marked { padding: 6px 0; }
+.code-line { display: flex; align-items: flex-start; padding: 0 12px; line-height: 1.55; }
+.code-line-num {
+  display: inline-block; min-width: 34px; padding-right: 10px;
+  text-align: right; color: var(--muted-x); user-select: none; flex-shrink: 0;
+}
+.code-line-text { white-space: pre; flex: 1; min-width: 0; }
+/* 매칭된 라인 — 형광 노랑. 거터 색은 살짝 톤다운된 호박색으로 라인 번호도 강조. */
+.code-line.match { background: #fef9c3; }
+.code-line.match .code-line-num { color: #854d0e; font-weight: 600; }
 
 /* search input (non-runs views) */
 .search-wide { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; background: var(--bg-panel); color: var(--ink); }

@@ -12,6 +12,7 @@ const LOGO_FRAME_MS = 250
 const NAV_LINKS: Array<{ label: string; to: string }> = [
   { label: '공지', to: '/notices' },
   { label: '문제페이지', to: '/problems' },
+  { label: '코드배틀', to: '/battle' },
   { label: '랭킹', to: '/ranking' },
 ]
 

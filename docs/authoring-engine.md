@@ -68,7 +68,7 @@ shared 패키지(`jcq-shared`)는 `file:../shared`로 editable 설치된다. 출
 
 | 변수 | 기본값 | 용도 |
 |------|--------|------|
-| `JCQ_ADMIN_TOKEN` | — | `/api/health`를 제외한 모든 라우트(`/api/runs`, `/api/problems`, `/api/notices`, `/api/spans`, `/api/admin/*`)는 `Authorization: Bearer <token>` 요구. 미설정이면 503 fail-closed. |
+| `JCQ_ADMIN_TOKEN` | — | `/api/health`를 제외한 모든 라우트(`/api/runs`, `/api/problems`, `/api/notices`, `/api/reports`, `/api/spans`, `/api/admin/*`)는 `Authorization: Bearer <token>` 요구. 미설정이면 503 fail-closed. |
 | `JCQ_DASHBOARD_ORIGIN` | (unset) | 콤마 구분 origin 리스트. 별 도메인 대시보드에서 호출 시 CORS preflight 통과용. 미설정이면 동일 origin만 허용. |
 
 > **SSE 주의**: 브라우저 `EventSource`는 `Authorization` 헤더를 보낼 수 없다. 대시보드에서 `/api/runs/{run_id}/events`를 직접 구독해야 한다면 query token 방식이나 fetch+stream 폴리필이 별도로 필요하다.
@@ -174,9 +174,9 @@ fetch_problem
 
 - `reference_code`를 각 `test_input.stdin`에 대해 judge_engine `POST /api/sandbox/run`으로 실행 → `expected_stdout`를 채움.
 - 통과 기준:
-  - `test_inputs`가 최소 4개 이상이어야 한다(`_MIN_TEST_CASES = 4`). 미달이면 즉시 fail.
+  - `test_inputs`가 최소 4개 이상이어야 한다(`JCQ_AUTHOR_MIN_TEST_CASES`, 기본 4). 미달이면 즉시 fail.
   - 모든 케이스가 sandbox `status == "OK"`.
-  - 각 케이스 실행 시간이 **time_limit_ms의 50% 이내**(`_PERF_RATIO = 0.5`). 50%를 넘으면 fail.
+  - 각 케이스 실행 시간이 **time_limit_ms의 `JCQ_AUTHOR_PERF_RATIO`(기본 0.8 = 80%) 이내**. 초과하면 fail. (0.5는 stress 케이스에서 너무 빡빡해 0.8로 완화됨.)
 - 실패 시 최대 `JCQ_AUTHOR_RETRIES`회 동안 `author_solution` 프롬프트만 재호출해 `reference_code`+`test_inputs`를 재생성한 뒤 재시도. 재시도 횟수는 `c["verify_attempts"]`에 기록.
 - 출력: `c["test_cases"]`(채워진 expected_stdout 포함), `c["verify_passed"]`, `c["verify_error"]`.
 
@@ -314,8 +314,9 @@ python -m authoring.main --problem-id 1 --count 5
   - `verify_candidates`: 0~2회 추가(재시도 시 author_solution만 재호출)
   - `judge_candidates`: 3회 (3 판사)
   - `solve_candidates`: 3회 (3 풀이자)
+  - `attack_candidates`: `JCQ_DISCRIMINATION_ATTACKS`회 (기본 2, Melchior 단독)
   - `compare_to_original`: 1회 (Melchior 단독)
-  - **합계 ≈ 9~11회** (재시도 없을 때 9회)
+  - **합계 ≈ 11~13회** (재시도 없을 때 11회). `retrieve_exemplars`는 임베딩만 쓰고 LLM 호출 없음
 - 모델이 이미 로드돼 있는 경우(핫스타트): 변형 1건 ≈ **30~120초**. `--count 5`면 약 **3~10분**.
 - 모델 콜드스타트: 14B / 16B-MoE 로딩에 모델당 30s~수 분 추가. 첫 호출만 무겁고 이후는 `keep_alive="30m"` 동안 유지.
 - 권장: systemd에서 `OLLAMA_KEEP_ALIVE=24h`를 박아 모델 unload 자체를 막을 것 (`docs/setup-ollama.md` §2).
@@ -337,7 +338,12 @@ uvicorn authoring.server:app --host 0.0.0.0 --port 8001
 |--------|------|------|------|
 | `GET` | `/api/health` | 없음 | Liveness probe |
 | `POST` | `/api/runs` | admin | `{problem_id, count}` → `{run_id, trace_id}` 즉시 반환, 백그라운드 스레드에서 파이프라인 시작 |
-| `GET` | `/api/runs/{run_id}/events` | admin (SSE) | LangGraph `graph.stream()` 출력을 `update`/`done`/`error` 이벤트로 푸시 |
+| `GET` | `/api/runs` | admin | 과거(backend 영속) + 진행 중 run 목록. `status`/`problem_id`/`limit`/`offset` 필터 |
+| `GET` | `/api/runs/{run_id}` | admin | run 상세 — `node_states` 포함 |
+| `POST` | `/api/runs/{run_id}/retry` | admin | 같은 파라미터로 재실행 |
+| `DELETE` | `/api/runs/{run_id}` | admin | 단건 삭제 |
+| `POST` | `/api/runs/delete` | admin | 다건 일괄 삭제(body: ids) |
+| `GET` | `/api/runs/{run_id}/events` | admin (SSE) | LangGraph `graph.stream()` 출력을 `update`/`done`/`error` 이벤트로 푸시 (진행 중 run만) |
 | `GET` | `/api/problems` | admin | `originals_only=true|false` 쿼리. 변형 통계 포함 요약 배열 |
 | `GET` | `/api/problems/{id}` | admin | 상세(rubric, test_cases, authoring_meta 포함) |
 | `POST` | `/api/problems` | admin | 원본 문제 1건 직접 등록(출제 엔진 우회, 운영자/시드 용도). `expected_stdout` 비면 sandbox로 자동 채움 |
@@ -345,6 +351,8 @@ uvicorn authoring.server:app --host 0.0.0.0 --port 8001
 | `GET` | `/api/problems/{id}/children` | admin | 해당 원본의 변형 목록(상세) |
 | `GET` | `/api/notices` | admin | `limit=1..200`. backend `/internal/notices`에 위임 |
 | `POST` `PATCH` `DELETE` | `/api/notices[/{id}]` | admin | 공지 CRUD — backend 위임 |
+| `GET` | `/api/reports` | admin | 버그/문제 신고 목록. `status`/`category` 필터 — backend `/internal/reports` 위임 |
+| `GET` `PATCH` `DELETE` | `/api/reports/{id}` | admin | 신고 상세 조회·상태 변경·삭제 |
 | `GET` | `/api/admin/problems/{id}/comparison` | admin | 단일 변형의 `comparison` 3축 점수 |
 | `GET` | `/api/admin/originals/{id}/comparison` | admin | 한 원본의 모든 변형 비교 점수 + 평균/min/max 집계 |
 | `GET` | `/api/spans/{trace_id}` | admin | LangSmith 스팬 트리(prompts/IO/tokens/latency) |
@@ -468,7 +476,7 @@ WHERE parent_id = 1;
 - **첫 호출이 너무 느림** — 모델 cold start. `keep_alive="30m"`이 코드에 들어있지만 OS 메모리 압박이 있으면 swap된다. systemd로 `OLLAMA_KEEP_ALIVE=24h` 박는 게 안정적.
 - **저장된 변형이 0개** — 단계별 로그(Rich 테이블 또는 SSE update 이벤트)로 어디서 떨어지는지 확인. 흔한 패턴:
   - `검증 ✗ test_inputs가 N개로 부족` → author_solution이 4개 미만의 케이스만 만들었다. `JCQ_AUTHOR_MODEL`을 더 큰 모델로 바꾸거나 `JCQ_AUTHOR_RETRIES`를 늘려보기.
-  - `검증 ✗ 너무 느림 (Xms > Yms)` → reference_code가 제한시간의 50%를 넘김. complexity가 의도와 어긋난 풀이거나 입력 범위 과대 — 프롬프트 수정.
+  - `검증 ✗ 너무 느림 (Xms > Yms)` → reference_code가 제한시간의 `JCQ_AUTHOR_PERF_RATIO`(기본 80%)를 넘김. complexity가 의도와 어긋난 풀이거나 입력 범위 과대 — 프롬프트 수정.
   - `품질심사 ✗` → 중앙값 score < 0.7 또는 2명 미만 pass. `JCQ_JUDGE_PASS_THRESHOLD`를 0.6 정도로 일시 완화하거나 프롬프트 튜닝.
   - `풀이검증 ✗ 0/3` → 3 LLM 모두 풀지 못함. 너무 어렵거나 statement가 모호. `JCQ_SOLVER_PASS_MIN_AC=1`인데도 0이면 의미상 풀이 불가능한 문제 — `authoring_meta.solver_results`의 rationale을 읽어보면 LLM이 어디서 막혔는지 보인다.
   - `변별력 ✗ 0 rejected` → `attack_candidates`가 심은 결함 풀이를 테스트가 하나도 못 걸러냄. 테스트셋이 약함 — `must_handle` 경계 케이스나 큰 입력(`naive` TLE 유발)을 `test_inputs`에 더 넣도록 `author_solution` 프롬프트 보강. `authoring_meta.discrimination.attacks`에서 어떤 공격이 AC로 통과했는지 확인.

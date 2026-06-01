@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import type { ConnSettings, RunSummaryT, RunDetailT, RunNodeStateT, SpanT, SpansState } from "../types";
+import { Suspense, use, useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import type { ConnSettings, ProblemRow, RunSummaryT, RunDetailT, RunNodeStateT, SpanT, SpansState } from "../types";
 import { adminFetch } from "../api";
 import { Icon, NodeKindIcon } from "../components/Icons";
 import { NODE_DEFS, fmtDuration, fmtTokens, fmtRelTime } from "../runsConfig";
+import { unwrap, useResource } from "../lib/resource";
+import { invalidateProblemPickerCache } from "../components/ProblemPicker";
 
 interface Props { settings: ConnSettings }
 
@@ -12,6 +14,35 @@ const EMPTY_STATES: Record<string, RunNodeStateT> = Object.fromEntries(
 
 function statusOf(detail: RunDetailT | null, key: string): RunNodeStateT {
   return detail?.node_states?.[key] ?? { status: "queued" };
+}
+
+/* raw status(예외 없이 실행됨)를 '결과 기반' 표시 상태로 재해석:
+   게이트가 후보를 전멸(candidates_out===0)시키면 그 노드는 'blocked', 이후 done 노드는
+   사실상 no-op이므로 'skipped'. 예외(failed)/running/queued는 그대로. 프론트 파생(백엔드 무변경). */
+function deriveNodeStatuses(detail: RunDetailT | null): Record<string, string> {
+  const ns = detail?.node_states ?? {};
+  const order = NODE_DEFS.map((d) => d.key);
+  const out: Record<string, string> = {};
+  for (const k of order) out[k] = ns[k]?.status ?? "queued";
+
+  // 첫 dead-end = done이고 candidates_out===0이며 (유입이 없거나 >0)인 게이트
+  let deadIdx = -1;
+  for (let i = 0; i < order.length; i++) {
+    const s = ns[order[i]];
+    if (!s || s.status !== "done") continue;
+    const co = s.candidates_out;
+    if (typeof co === "number" && co === 0 && (s.candidates_in == null || s.candidates_in > 0)) {
+      deadIdx = i;
+      break;
+    }
+  }
+  if (deadIdx === -1) return out;
+
+  out[order[deadIdx]] = "blocked";
+  for (let i = deadIdx + 1; i < order.length; i++) {
+    if (out[order[i]] === "done") out[order[i]] = "skipped";
+  }
+  return out;
 }
 
 /* 삭제 확인 대상 — 개별(one) 또는 status별 일괄(bulk). */
@@ -234,23 +265,31 @@ function RunsSidebar({
 }
 
 /* ── Node Card ─────────────────────────────────────────────────────────── */
+// 노드 pill 라벨 — "done"은 '작업 성공'을 더 직관적으로 표시하려 "Success"로 바꾼다.
+// (.pill의 text-transform: uppercase로 최종 표시는 SUCCESS — FAILED/RUNNING과 일관.)
+function nodeStatusLabel(s: string): string {
+  return s === "done" ? "Success" : s;
+}
+
 function NodeCard({
-  idx, def, state, selected, onClick,
+  idx, def, state, selected, onClick, displayStatus,
 }: {
   idx: number;
   def: typeof NODE_DEFS[number];
   state: RunNodeStateT;
   selected: boolean;
   onClick: () => void;
+  displayStatus?: string;
 }) {
   const isLlm = def.kind === "llm";
   const cands = state.candidate_results ?? [];
   const tokTotal = state.tokens?.total ?? 0;
+  const st = displayStatus ?? state.status;
 
   return (
     <button
       data-node={def.key}
-      className={`node-card ${state.status}${selected ? " selected" : ""}`}
+      className={`node-card ${st}${selected ? " selected" : ""}`}
       onClick={onClick}
       type="button"
     >
@@ -262,7 +301,7 @@ function NodeCard({
         </span>
         <span className="node-name">{def.label}</span>
         <span className="node-pill-slot">
-          <span className={`pill ${state.status}`}><span className="dot" />{state.status}</span>
+          <span className={`pill ${st}`}><span className="dot" />{nodeStatusLabel(st)}</span>
         </span>
       </div>
 
@@ -320,9 +359,59 @@ function PipelineGraph({
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
-  // 실패/선택 노드를 세로 중앙으로 자동 스크롤 — 포렌식 핵심 어포던스.
+  const derived = deriveNodeStatuses(detail);
+  const blockedNode = NODE_DEFS.find((d) => derived[d.key] === "blocked")?.key ?? null;
+
+  // ── 역방향 루프 화살표 측정 ─────────────────────────────────────────────
+  // loopback이 지정된 노드(strengthen→attack, revise→verify)에 대해
+  // SVG 곡선으로 source 우측에서 target 우측까지 활처럼 그린다. 화살표 끝은
+  // target 노드 우측 가장자리에 점선으로 표시 → "조건 만족 시 되돌아감" 의미.
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [loopEdges, setLoopEdges] = useState<Array<{
+    key: string; targetKey: string; d: string; midX: number; midY: number;
+    active: boolean;
+  }>>([]);
+  const [resizeTick, setResizeTick] = useState(0);
   useEffect(() => {
-    const target = selectedNode || detail?.failed_at_node;
+    const onResize = () => setResizeTick((t) => t + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const stageRect = stage.getBoundingClientRect();
+    const next: typeof loopEdges = [];
+    for (const def of NODE_DEFS) {
+      if (!def.loopback) continue;
+      const src = stage.querySelector<HTMLElement>(`[data-node="${def.key}"]`);
+      const tgt = stage.querySelector<HTMLElement>(`[data-node="${def.loopback}"]`);
+      if (!src || !tgt) continue;
+      const sr = src.getBoundingClientRect();
+      const tr = tgt.getBoundingClientRect();
+      // stage가 scale(zoom)된 상태 → 좌표를 unscaled로 환산해 SVG도 함께 스케일되게.
+      const sx = (sr.right - stageRect.left) / zoom;
+      const sy = (sr.top + sr.height / 2 - stageRect.top) / zoom;
+      const tx = (tr.right - stageRect.left) / zoom;
+      const ty = (tr.top + tr.height / 2 - stageRect.top) / zoom;
+      const bow = 80; // 활(curve)이 노드 우측으로 부풀어 나가는 거리
+      const d = `M ${sx} ${sy} C ${sx + bow} ${sy}, ${tx + bow} ${ty}, ${tx} ${ty}`;
+      const midX = (sx + tx) / 2 + bow * 0.75;
+      const midY = (sy + ty) / 2;
+      // 이 루프가 실제로 돌았는지(되돌아간 적 있는지) — node_states.retries > 0 또는 done.
+      const srcState = detail?.node_states?.[def.key];
+      const active = !!srcState && (
+        (typeof srcState.retries === "number" && srcState.retries > 0) ||
+        srcState.status === "done" || srcState.status === "running"
+      );
+      next.push({ key: def.key, targetKey: def.loopback, d, midX, midY, active });
+    }
+    setLoopEdges(next);
+  }, [detail?.id, detail?.node_states, zoom, openEnsembles, resizeTick]);
+
+  // 실패/막힌/선택 노드를 세로 중앙으로 자동 스크롤 — 포렌식 핵심 어포던스.
+  useEffect(() => {
+    const target = selectedNode || detail?.failed_at_node || blockedNode;
     if (!target) return;
     requestAnimationFrame(() => {
       const el = document.querySelector<HTMLElement>(`[data-node="${target}"]`);
@@ -331,7 +420,7 @@ function PipelineGraph({
       const desired = el.offsetTop - (wrap.clientHeight - el.offsetHeight) / 2;
       wrap.scrollTo({ top: Math.max(0, desired), behavior: "smooth" });
     });
-  }, [detail?.id, selectedNode, detail?.failed_at_node]);
+  }, [detail?.id, selectedNode, detail?.failed_at_node, blockedNode]);
 
   // 판사 서브노드가 선택되면 해당 앙상블 노드를 자동으로 펼친다.
   useEffect(() => {
@@ -341,7 +430,27 @@ function PipelineGraph({
   }, [selectedJudge, selectedNode]);
 
   return (
-    <div className="graph-stage vertical" style={{ transform: `scale(${zoom})` }}>
+    <div ref={stageRef} className="graph-stage vertical" style={{ transform: `scale(${zoom})` }}>
+      {loopEdges.length > 0 && (
+        <svg className="loop-edge-svg" aria-hidden="true">
+          <defs>
+            <marker
+              id="loop-back-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="7" markerHeight="7" orient="auto"
+            >
+              {/* fill="context-stroke"는 사용처 path의 stroke 색을 그대로 받아온다 →
+                  loop가 active로 보라색이 되면 화살촉도 보라로 자동 전환. */}
+              <path d="M0 0 L10 5 L0 10 z" fill="context-stroke" />
+            </marker>
+          </defs>
+          {loopEdges.map((e) => (
+            <g key={e.key} className={`loop-edge${e.active ? " active" : ""}`}>
+              <path className="loop-back" d={e.d} markerEnd="url(#loop-back-arrow)" />
+              <text x={e.midX} y={e.midY} className="loop-label">↻ loop back</text>
+            </g>
+          ))}
+        </svg>
+      )}
       <div className="node-row">
         {NODE_DEFS.map((def, i) => {
           const state = statusOf(detail, def.key);
@@ -356,6 +465,7 @@ function PipelineGraph({
                       idx={i}
                       def={def}
                       state={state}
+                      displayStatus={derived[def.key]}
                       selected={selectedNode === def.key && !selectedJudge}
                       onClick={() => onSelectNode(def.key)}
                     />
@@ -393,11 +503,12 @@ function PipelineGraph({
                   idx={i}
                   def={def}
                   state={state}
+                  displayStatus={derived[def.key]}
                   selected={selectedNode === def.key}
                   onClick={() => onSelectNode(def.key)}
                 />
               )}
-              {!isLast && <span className={`arrow ${state.status === "skipped" ? "skipped" : ""}`} />}
+              {!isLast && <span className={`arrow ${derived[def.key] === "skipped" || derived[def.key] === "blocked" ? "skipped" : ""}`} />}
             </span>
           );
         })}
@@ -650,6 +761,267 @@ function IOBlock({ dir, label, children }: { dir: "in" | "out"; label: string; c
   );
 }
 
+/* ── generate_variants 필드 스팬: LLM 입출력 JSON을 핵심 요소 막대로 분해 ──────
+   draft_problem / author_solution 출력 JSON에서 prompts.py 규칙에 대응하는 핵심
+   요소를 뽑아 라벨+막대+제약검사로 보여준다. 어떤 요소가 요건을 못 채워 후보가
+   탈락했는지가 막대 색(ok 초록 / warn 주황 / bad 빨강)으로 즉시 드러난다.
+   규칙 동기화(authoring_engine/authoring/pipeline/prompts.py · jcq_shared IntentRubric):
+   - draft: intent_rubric 필수 4 필드(expected_approach·expected_complexity·
+     key_insight·one_line_summary) 중 하나라도 비면 IntentRubric 검증 실패로 폐기.
+     must_handle·forbidden_patterns는 품질 신호(≥1 권장, 기본 []이라 폐기 사유는 아님).
+   - solution: test_inputs ≥ 5 (절대 요건), is_sample 정확히 1개, reference_code 비어있지 않음. */
+type FieldTone = "ok" | "warn" | "bad" | "neutral";
+interface FieldSpan { label: string; display: string; ratio: number; tone: FieldTone; hint?: string }
+interface GenFields { kind: "draft" | "solution"; fields: FieldSpan[]; blockers: string[] }
+
+const RUBRIC_REQUIRED = ["expected_approach", "expected_complexity", "key_insight", "one_line_summary"] as const;
+const MIN_TESTS = 5;
+const GEN_KIND_LABEL: Record<string, string> = { draft: "draft_problem", solution: "author_solution" };
+
+const _clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
+const _isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const _gstr = (v: unknown) => (typeof v === "string" ? v : "");
+const _garr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const _filled = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+
+/* 출력 JSON 모양으로 draft/solution 판별 — 다른 노드(judge/compare 등) 출력과 겹치지 않는다. */
+function genKindOf(obj: unknown): "draft" | "solution" | null {
+  if (!_isObj(obj)) return null;
+  if ("reference_code" in obj || "test_inputs" in obj) return "solution";
+  if ("intent_rubric" in obj || ("title" in obj && "statement" in obj)) return "draft";
+  return null;
+}
+
+function draftFields(obj: Record<string, unknown>): GenFields {
+  const blockers: string[] = [];
+  const title = _gstr(obj.title);
+  const statement = _gstr(obj.statement);
+  const rubric = _isObj(obj.intent_rubric) ? obj.intent_rubric : {};
+  const missing = RUBRIC_REQUIRED.filter((k) => !_filled(rubric[k]));
+  const present = RUBRIC_REQUIRED.length - missing.length;
+  const mustN = _garr(rubric.must_handle).length;
+  const forbN = _garr(rubric.forbidden_patterns).length;
+
+  if (!title.trim()) blockers.push("title 비어 있음");
+  if (missing.length) blockers.push(`intent_rubric 필수 필드 누락(${missing.join(", ")}) → 검증 실패로 폐기`);
+
+  const fields: FieldSpan[] = [
+    {
+      label: "intent_rubric 필수", display: `${present} / ${RUBRIC_REQUIRED.length}`,
+      ratio: present / RUBRIC_REQUIRED.length, tone: missing.length ? "bad" : "ok",
+      hint: missing.length ? `누락: ${missing.join(", ")} — IntentRubric 검증 실패로 후보 폐기` : undefined,
+    },
+    {
+      label: "statement 길이", display: `${statement.length.toLocaleString()}자`,
+      ratio: _clamp01(statement.length / 1200),
+      tone: statement.length < 80 ? "bad" : statement.length < 300 ? "warn" : "ok",
+      hint: statement.length < 80 ? "본문이 너무 짧음 — 입출력 형식/제약 누락 의심" : undefined,
+    },
+    { label: "title 길이", display: title ? `${title.length}자` : "없음", ratio: _clamp01(title.length / 30), tone: title.trim() ? "ok" : "bad" },
+    {
+      label: "must_handle", display: `${mustN}개`, ratio: _clamp01(mustN / 4), tone: mustN >= 1 ? "ok" : "warn",
+      hint: mustN === 0 ? "엣지 케이스 미정의 — 이후 judge/attack 게이트 탈락 위험" : undefined,
+    },
+    {
+      label: "forbidden_patterns", display: `${forbN}개`, ratio: _clamp01(forbN / 4), tone: forbN >= 1 ? "ok" : "warn",
+      hint: forbN === 0 ? "안티패턴 미정의 — 채점 변별력 약화" : undefined,
+    },
+  ];
+  return { kind: "draft", fields, blockers };
+}
+
+function solutionFields(obj: Record<string, unknown>): GenFields {
+  const blockers: string[] = [];
+  const code = _gstr(obj.reference_code);
+  const tests = _garr(obj.test_inputs);
+  const sampleN = tests.filter((t) => _isObj(t) && t.is_sample === true).length;
+  const codeLines = code ? code.split("\n").length : 0;
+
+  if (!code.trim()) blockers.push("reference_code 비어 있음");
+  if (tests.length < MIN_TESTS) blockers.push(`test_inputs ${tests.length}개 (< ${MIN_TESTS} 절대 요건)`);
+
+  const fields: FieldSpan[] = [
+    {
+      label: "test_inputs", display: `${tests.length}개`, ratio: _clamp01(tests.length / 8),
+      tone: tests.length >= MIN_TESTS ? "ok" : "bad",
+      hint: tests.length < MIN_TESTS ? `${MIN_TESTS}개 이상 필요(절대 요건) — 부족 시 폐기` : undefined,
+    },
+    {
+      label: "is_sample 수", display: `${sampleN}개`, ratio: _clamp01(sampleN / 2),
+      tone: sampleN === 1 ? "ok" : sampleN === 0 ? "bad" : "warn",
+      hint: sampleN === 1 ? undefined : sampleN === 0 ? "예제 0개 — 학생 노출 샘플 없음" : "예제 과다 — 정확히 1개 권장",
+    },
+    {
+      label: "reference_code", display: code ? `${codeLines}줄` : "없음", ratio: _clamp01(code.length / 2000),
+      tone: code.trim() ? "ok" : "bad", hint: code.trim() ? undefined : "레퍼런스 코드 없음 — verify 단계에서 실패",
+    },
+  ];
+  return { kind: "solution", fields, blockers };
+}
+
+function extractGenFields(obj: unknown): GenFields | null {
+  const kind = genKindOf(obj);
+  if (kind === "draft") return draftFields(obj as Record<string, unknown>);
+  if (kind === "solution") return solutionFields(obj as Record<string, unknown>);
+  return null;
+}
+
+/* draft/solution 입력 프롬프트(텍스트)에서 요청 파라미터를 best-effort로 추출 — 칩으로 표시.
+   DRAFT_USER/SOLUTION_USER 템플릿이 고정 형식이라 정규식이 안전하고, 못 찾으면 그 칩은 생략. */
+function genInputSpans(kind: "draft" | "solution", msgs: ChatMsg[]): FieldSpan[] {
+  const userMsg = msgs.filter((m) => m.role === "user").map((m) => m.content).join("\n");
+  if (!userMsg) return [];
+  const grab = (re: RegExp) => userMsg.match(re)?.[1]?.trim();
+  const out: FieldSpan[] = [];
+  if (kind === "draft") {
+    const vi = grab(/variant index:\s*(\d+)/i); if (vi) out.push({ label: "변형 #", display: vi, ratio: 0, tone: "neutral" });
+    const cat = grab(/category:\s*([^\n]+)/i); if (cat) out.push({ label: "category", display: cat, ratio: 0, tone: "neutral" });
+    const lvl = grab(/level:\s*([^\n]+)/i); if (lvl) out.push({ label: "level", display: lvl, ratio: 0, tone: "neutral" });
+    out.push({ label: "grounding", display: userMsg.includes("Reference problems in the same category") ? "RAG exemplar" : "seed 폴백", ratio: 0, tone: "neutral" });
+    if (userMsg.includes("[NOVELTY]")) out.push({ label: "novelty 재draft", display: "재시도", ratio: 0, tone: "warn", hint: "이전 draft가 기존 문제와 유사해 재생성됨" });
+  } else {
+    const cmp = grab(/expected_complexity[^\n:]*:\s*([^\n]+)/i); if (cmp) out.push({ label: "expected_complexity", display: cmp, ratio: 0, tone: "neutral" });
+    const mh = grab(/must_handle:\s*([^\n]*)/i);
+    const mhN = mh ? mh.split(",").filter((s) => s.trim()).length : 0;
+    out.push({ label: "must_handle 전달", display: `${mhN}개`, ratio: 0, tone: mhN ? "neutral" : "warn", hint: mhN ? undefined : "전달된 엣지 케이스 없음 — solution이 커버할 케이스 부재" });
+  }
+  return out;
+}
+
+/* 핵심 요소 막대 묶음 — 라벨/막대/값 + 위반 사유 힌트. */
+function FieldBars({ gf }: { gf: GenFields }) {
+  const hints = gf.fields.filter((f) => f.hint);
+  return (
+    <div className="fspans">
+      <div className="fspans-head">
+        <span className={`fspan-kind ${gf.kind}`}>{GEN_KIND_LABEL[gf.kind]}</span>
+        {gf.blockers.length === 0
+          ? <span className="fspan-verdict ok">구조 합격</span>
+          : <span className="fspan-verdict bad">탈락 요인 {gf.blockers.length}</span>}
+      </div>
+      <div className="fspan-list">
+        {gf.fields.map((f, i) => (
+          <div className="fspan" key={i}>
+            <span className="fspan-label">{f.label}</span>
+            <div className="fspan-track"><div className={`fspan-fill ${f.tone}`} style={{ width: `${Math.max(f.ratio * 100, f.ratio > 0 ? 4 : 0)}%` }} /></div>
+            <span className={`fspan-val ${f.tone}`}>{f.display}</span>
+          </div>
+        ))}
+      </div>
+      {hints.length > 0 && (
+        <ul className="fspan-hints">
+          {hints.map((f, i) => <li key={i} className={f.tone}><b>{f.label}</b> · {f.hint}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* 입력 컨텍스트 칩 묶음 (categorical — 막대 대신 칩). */
+function FieldChips({ spans }: { spans: FieldSpan[] }) {
+  if (!spans.length) return null;
+  return (
+    <div className="fchips">
+      {spans.map((s, i) => (
+        <span key={i} className={`fchip ${s.tone}`} title={s.hint}><b>{s.label}</b> {s.display}</span>
+      ))}
+    </div>
+  );
+}
+
+/* 입력 프롬프트로 draft/solution 호출을 판별 — 출력 JSON이 깨져도 '어떤 호출인지'는 알 수 있다.
+   DRAFT_*엔 [Target]/variant index, SOLUTION_*엔 reference_code/[Intent specification]가 들어간다. */
+function genCallKind(span: SpanT): "draft" | "solution" | null {
+  const msgs = findMessages(span.inputs);
+  const text = msgs ? msgs.map((m) => m.content).join("\n") : "";
+  if (/reference_code|\[Intent specification\]|test_inputs/i.test(text)) return "solution";
+  if (/\[Target\]|variant index/i.test(text)) return "draft";
+  return genKindOf(tryParseJson(findCompletion(span.outputs) ?? "")); // 폴백: 출력 모양
+}
+
+type DiagStatus = "ok" | "blocked" | "parsefail" | "nooutput" | "badshape" | "error";
+function diagLabel(status: DiagStatus, n: number): string {
+  switch (status) {
+    case "ok": return "✓ 구조 합격";
+    case "parsefail": return "✗ JSON 파싱 실패";
+    case "nooutput": return "✗ 출력 없음";
+    case "badshape": return "⚠ 예상 밖 구조";
+    case "error": return "✗ LLM 에러";
+    default: return `✗ 탈락 요인 ${n}`;
+  }
+}
+
+/* generate_variants 전용 — 노드의 모든 LLM span을 호출별로 진단해 보여주는 배너.
+   핵심: ① 호출을 절대 누락하지 않는다(분류 실패도 행으로 노출), ② 입력 프롬프트로 호출 종류를
+   식별해 출력이 깨져도 draft/solution을 라벨링, ③ 노드가 후보 0개(BLOCKED)면 호출이 다 정상
+   보여도 무조건 실패(빨강)로 표시한다 — 후보가 안 만들어졌다는 사실이 진단의 ground truth다. */
+function GenVariantsDiagnosis({ spans, candidatesOut }: { spans: SpanT[]; candidatesOut: number | null }) {
+  type DiagRow = { kind: string; status: DiagStatus; blockers: string[]; error?: string };
+  const rows: DiagRow[] = [];
+  for (const s of spans) {
+    if (s.run_type !== "llm") continue;
+    const label = GEN_KIND_LABEL[genCallKind(s) ?? ""] ?? "LLM 호출";
+    if (s.error) { rows.push({ kind: label, status: "error", blockers: [], error: s.error }); continue; }
+    const comp = findCompletion(s.outputs);
+    if (comp == null || comp.trim() === "") {
+      rows.push({ kind: label, status: "nooutput", blockers: ["LLM이 응답을 반환하지 않음 — 타임아웃/중단 가능"] });
+      continue;
+    }
+    const cj = tryParseJson(comp);
+    if (!cj) {
+      rows.push({ kind: label, status: "parsefail", blockers: [`출력이 JSON으로 파싱되지 않음 → _clean_json 단계에서 폐기 (${comp.length.toLocaleString()}자 · 응답 잘림/잡텍스트 의심)`] });
+      continue;
+    }
+    const gf = extractGenFields(cj);
+    if (!gf) { rows.push({ kind: label, status: "badshape", blockers: ["JSON이지만 draft/solution 구조가 아님 — 핵심 키 누락 의심"] }); continue; }
+    rows.push({ kind: GEN_KIND_LABEL[gf.kind], status: gf.blockers.length ? "blocked" : "ok", blockers: gf.blockers });
+  }
+  if (!rows.length) return null;
+
+  const bad = rows.filter((r) => r.status !== "ok");
+  const producedNothing = candidatesOut === 0;
+  const failed = producedNothing || bad.length > 0;
+  // 모든 LLM 호출은 정상인데 후보 0개 → 사유는 노드 내부 단계(주로 author_solution 파싱/검증)에 있음.
+  const silentDrop = producedNothing && bad.length === 0;
+
+  return (
+    <div className={`gen-diag ${failed ? "has-block" : "clean"}`}>
+      <div className="gen-diag-head">
+        <span className="gen-diag-title">출제 실패 진단</span>
+        {!failed
+          ? <span className="gen-diag-chip ok">구조 위반 없음 · {rows.length} 호출</span>
+          : producedNothing
+            ? <span className="gen-diag-chip bad">후보 0개 · BLOCKED</span>
+            : <span className="gen-diag-chip bad">{bad.length} / {rows.length} 호출에서 탈락 요인</span>}
+      </div>
+      {producedNothing && (
+        <div className="gen-diag-summary">
+          이 노드는 후보를 <b>0개</b> 생성해 <code>_route_after_generate</code>가 곧바로 END로 보냈습니다
+          {bad.length > 0
+            ? <> — 아래 <b>{bad.length}개 호출</b>의 출력이 폐기됐습니다.</>
+            : silentDrop
+              ? <> — LLM 출력은 형식상 정상이라 사유는 노드 내부(주로 author_solution 파싱/검증)에 있습니다. 아래 raw 출력 또는 run errors를 확인하세요.</>
+              : null}
+        </div>
+      )}
+      <div className="gen-diag-rows">
+        {rows.map((r, i) => (
+          <div key={i} className={`gen-diag-row ${r.status}`}>
+            <span className="gen-diag-kind">{r.kind}</span>
+            <span className={`gen-diag-st ${r.status}`}>{diagLabel(r.status, r.blockers.length)}</span>
+            {(r.blockers.length > 0 || r.error) && (
+              <ul className="gen-diag-blockers">
+                {r.blockers.map((b, j) => <li key={j}>{b}</li>)}
+                {r.error && <li>{r.error.slice(0, 160)}</li>}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── persist_approved 전용: 후보를 생성/탈락으로 분류 ──────────────────── */
 type Cand = Record<string, unknown>;
 const _snum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -840,21 +1212,24 @@ function SpanCard({ span, depth, onPreview }: { span: SpanT; depth: number; onPr
                 <CodeBlock text={jsonPreview(span.outputs)} />
               </details>
             </>
-          ) : pretty ? (
+          ) : pretty ? (() => {
+            const cj = completion != null ? tryParseJson(completion) : null;
+            const gf = cj ? extractGenFields(cj) : null;          // generate_variants 출력이면 필드 분해
+            const inSpans = gf && msgs ? genInputSpans(gf.kind, msgs) : [];
+            return (
             <>
               {msgs && (
                 <IOBlock dir="in" label={`Input · prompt (${msgs.length} messages)`}>
+                  {inSpans.length > 0 && <FieldChips spans={inSpans} />}
                   <ChatView messages={msgs} />
                 </IOBlock>
               )}
-              {completion != null && (() => {
-                const cj = tryParseJson(completion);
-                return (
-                  <IOBlock dir="out" label={cj ? "Output · completion (구조화)" : "Output · completion"}>
-                    {cj ? <StructuredJson data={cj} /> : <CodeBlock text={completion || "—"} />}
-                  </IOBlock>
-                );
-              })()}
+              {completion != null && (
+                <IOBlock dir="out" label={cj ? (gf ? `Output · 필드 분석 — ${GEN_KIND_LABEL[gf.kind]}` : "Output · completion (구조화)") : "Output · completion"}>
+                  {gf && <FieldBars gf={gf} />}
+                  {cj ? <StructuredJson data={cj} /> : <CodeBlock text={completion || "—"} />}
+                </IOBlock>
+              )}
               <details className="span-io span-raw"><summary>raw JSON</summary>
                 <div className="span-io-label" style={{ marginTop: 6 }}>inputs</div>
                 <CodeBlock text={jsonPreview(span.inputs)} />
@@ -862,7 +1237,8 @@ function SpanCard({ span, depth, onPreview }: { span: SpanT; depth: number; onPr
                 <CodeBlock text={jsonPreview(span.outputs)} />
               </details>
             </>
-          ) : (
+            );
+          })() : (
             <>
               <IOBlock dir="in" label="Input"><IOValue v={span.inputs} /></IOBlock>
               <IOBlock dir="out" label="Output"><IOValue v={span.outputs} /></IOBlock>
@@ -896,6 +1272,7 @@ function NodeDrawer({
 }) {
   const def = NODE_DEFS.find((n) => n.key === nodeKey);
   const state = detail.node_states?.[nodeKey] ?? { status: "queued" };
+  const dStatus = deriveNodeStatuses(detail)[nodeKey] ?? state.status;
   const [tab, setTab] = useState("overview");
   const [collapsed, setCollapsed] = useState(false);
   const [preview, setPreview] = useState<Cand | null>(null);
@@ -934,7 +1311,8 @@ function NodeDrawer({
             {judgeFilter && <span className="judge-badge"><Icon.LLM /> {judgeFilter}</span>}
           </h3>
           <div className="drawer-meta">
-            <span className={`pill ${state.status}`}><span className="dot" />{state.status}</span>
+            <span className={`pill ${dStatus}`}><span className="dot" />{dStatus}</span>
+            {dStatus !== state.status && <span className="raw-status">실행: {state.status}</span>}
             <span>
               {judgeFilter
                 ? `${judgeFilter} 판사 LLM`
@@ -983,7 +1361,7 @@ function NodeDrawer({
             <p style={{ margin: "0 0 16px", color: "var(--muted)", fontSize: 13, lineHeight: 1.6 }}>{def.note}</p>
             <div className="section-title">실행</div>
             <dl className="kv">
-              <dt>status</dt><dd>{state.status}</dd>
+              <dt>status</dt><dd>{dStatus}{dStatus !== state.status ? ` (실행: ${state.status})` : ""}</dd>
               <dt>duration</dt><dd>{fmtDuration(state.duration_ms)}</dd>
               <dt>retries</dt><dd>{state.retries ?? 0}</dd>
               {state.candidates_in != null && (
@@ -1096,6 +1474,11 @@ function NodeDrawer({
                 <div className="drawer-code error">{spans.message}</div>
               )}
 
+              {/* generate_variants 전용 — draft/solution 호출별 구조 위반 한눈 진단 */}
+              {ready && nodeKey === "generate_variants" && !judgeFilter && nodeSpans.length > 0 && (
+                <GenVariantsDiagnosis spans={nodeSpans} candidatesOut={state.candidates_out ?? null} />
+              )}
+
               {/* 성공 — 이 노드(또는 선택 판사)의 span I/O */}
               {ready && nodeSpans.length > 0 && (
                 <>
@@ -1149,16 +1532,61 @@ function NodeDrawer({
 }
 
 /* ── New-run inline form ───────────────────────────────────────────────── */
-function NewRunForm({ onStart, onCancel }: { onStart: (pid: number, count: number) => void; onCancel: () => void }) {
+function NewRunForm({ settings, onStart, onCancel }: {
+  settings: ConnSettings;
+  onStart: (pid: number, count: number) => void;
+  onCancel: () => void;
+}) {
   const [pid, setPid] = useState("");
   const [count, setCount] = useState("3");
+  // 원본 문제만 변형 출제 가능 → originals_only=true. 폼이 열릴 때 1회 fetch.
+  const [problems, setProblems] = useState<ProblemRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await adminFetch("/api/problems?originals_only=true", settings);
+        if (cancelled) return;
+        if (!r.ok) { setError(`[${r.status}] 원본 문제 목록 로드 실패`); setProblems([]); return; }
+        const list: ProblemRow[] = await r.json();
+        list.sort((a, b) => b.id - a.id);  // 최신순(id desc)
+        setProblems(list);
+      } catch (e) {
+        if (!cancelled) { setError((e as Error).message); setProblems([]); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [settings]);
+
+  const loaded = problems !== null;
+  const ready = loaded && (problems?.length ?? 0) > 0;
+  const p = parseInt(pid, 10);
+  const c = parseInt(count, 10);
+  const canRun = ready && p > 0 && c > 0;
+
   return (
-    <div style={{ margin: "auto", maxWidth: 420, textAlign: "center" }}>
+    <div style={{ margin: "auto", maxWidth: 560, textAlign: "center" }}>
       <div className="section-title" style={{ textAlign: "left" }}>새 파이프라인 run</div>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: "center" }}>
-        <div style={{ textAlign: "left" }}>
-          <label style={{ fontSize: 11.5, color: "var(--muted)" }}>원본 문제 ID</label>
-          <input className="search-wide" type="number" min={1} value={pid} onChange={(e) => setPid(e.target.value)} placeholder="1" style={{ width: 110, display: "block" }} />
+        <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
+          <label style={{ fontSize: 11.5, color: "var(--muted)" }}>원본 문제</label>
+          <select
+            className="search-wide"
+            value={pid}
+            onChange={(e) => setPid(e.target.value)}
+            disabled={!ready}
+            style={{ display: "block", width: "100%" }}
+          >
+            <option value="">
+              {!loaded ? "원본 문제 불러오는 중…" : ready ? "— 원본 문제 선택 —" : "원본 문제가 없습니다"}
+            </option>
+            {problems?.map((pr) => (
+              <option key={pr.id} value={String(pr.id)}>
+                #{pr.id} · {pr.title}
+              </option>
+            ))}
+          </select>
         </div>
         <div style={{ textAlign: "left" }}>
           <label style={{ fontSize: 11.5, color: "var(--muted)" }}>생성 수</label>
@@ -1166,17 +1594,51 @@ function NewRunForm({ onStart, onCancel }: { onStart: (pid: number, count: numbe
         </div>
         <button
           className="btn btn-primary"
-          onClick={() => { const p = parseInt(pid, 10); const c = parseInt(count, 10); if (p > 0 && c > 0) onStart(p, c); }}
+          disabled={!canRun}
+          onClick={() => { if (canRun) onStart(p, c); }}
         >▶ 실행</button>
         <button className="btn btn-ghost" onClick={onCancel}>취소</button>
       </div>
+      {error && (
+        <div className="output-panel err" style={{ marginTop: 8, textAlign: "left" }}>{error}</div>
+      )}
     </div>
+  );
+}
+
+/**
+ * Suspense 안에서 use(promise) 로 runs 를 읽어 RunsSidebar 에 전달.
+ * 부모가 refresh() 하면 새 Promise 가 들어와 사이드바만 재렌더된다.
+ * 초기 한 번 onInitial(runs) 를 호출해 첫 항목 자동 선택 / 빈 상태이면 신규 패널 열기.
+ */
+type SidebarBoundProps = {
+  promise: Promise<RunSummaryT[]>;
+  onInitial: (runs: RunSummaryT[]) => void;
+} & Omit<React.ComponentProps<typeof RunsSidebar>, "runs">;
+
+function RunsSidebarBound({ promise, onInitial, ...rest }: SidebarBoundProps) {
+  const runs = use(promise);
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    onInitial(runs);
+  }, [runs, onInitial]);
+  return <RunsSidebar runs={runs} {...rest} />;
+}
+
+function SidebarFallback() {
+  return (
+    <aside className="runs-sidebar">
+      <div className="runs-sidebar-head">
+        <h3>Recent runs <span className="count"><span className="spinner" style={{ width: 10, height: 10 }} /></span></h3>
+      </div>
+    </aside>
   );
 }
 
 /* ── Runs View (top-level) ─────────────────────────────────────────────── */
 export default function RunsView({ settings }: Props) {
-  const [runs, setRuns] = useState<RunSummaryT[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetailT | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -1214,17 +1676,12 @@ export default function RunsView({ settings }: Props) {
     }
   }, [settings]);
 
-  const loadRuns = useCallback(async () => {
-    try {
-      const r = await adminFetch("/api/runs?limit=100", settings);
-      if (!r.ok) { setError(`[${r.status}] runs 목록 로드 실패`); return; }
-      const data: RunSummaryT[] = await r.json();
-      setRuns(data);
-      return data;
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  // runs 목록 — useResource 의 Promise 를 RunsSidebarBound 가 use() 로 읽는다.
+  // mutation 후 refresh() 만 호출하면 사이드바가 알아서 새 데이터로 다시 그려진다.
+  const fetchRuns = useCallback(async (): Promise<RunSummaryT[]> => {
+    return unwrap<RunSummaryT[]>(await adminFetch("/api/runs?limit=100", settings));
   }, [settings]);
+  const { promise: runsPromise, refresh: refreshRuns } = useResource(fetchRuns, [settings]);
 
   const loadDetail = useCallback(async (id: string) => {
     try {
@@ -1238,19 +1695,19 @@ export default function RunsView({ settings }: Props) {
     }
   }, [settings]);
 
-  // 초기 로드
-  useEffect(() => {
-    (async () => {
-      const data = await loadRuns();
-      if (data && data.length > 0) {
-        setSelectedId(data[0].id);
-        loadDetail(data[0].id);
-      } else {
-        setShowNew(true);
-      }
-    })();
-    return () => streamRef.current?.abort();
-  }, [loadRuns, loadDetail]);
+  // 초기 자동 선택은 RunsSidebarBound 의 onInitial 콜백에서 처리 (Promise 가 settle 된 시점).
+  // 여기서는 SSE 스트림 cleanup 만 등록.
+  useEffect(() => () => streamRef.current?.abort(), []);
+
+  // 첫 runs 로드 콜백 — 첫 항목 자동 선택 / 없으면 신규 패널 열기.
+  const onInitialRuns = useCallback((data: RunSummaryT[]) => {
+    if (data.length > 0) {
+      setSelectedId(data[0].id);
+      loadDetail(data[0].id);
+    } else {
+      setShowNew(true);
+    }
+  }, [loadDetail]);
 
   function selectRun(id: string) {
     streamRef.current?.abort();
@@ -1289,7 +1746,8 @@ export default function RunsView({ settings }: Props) {
                   : prev);
               } else if (p.type === "done" || p.type === "error") {
                 await loadDetail(runId);
-                loadRuns();
+                refreshRuns();
+                if (p.type === "done") invalidateProblemPickerCache();
                 return;
               }
             } catch { /* ignore */ }
@@ -1299,7 +1757,7 @@ export default function RunsView({ settings }: Props) {
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError((e as Error).message);
     }
-  }, [settings, loadDetail, loadRuns]);
+  }, [settings, loadDetail, refreshRuns]);
 
   async function beginRun(problemId: number, count: number) {
     setShowNew(false);
@@ -1315,7 +1773,8 @@ export default function RunsView({ settings }: Props) {
         id: run_id, problem_id: problemId, problem_title: null, target_count: count,
         status: "running", started_at: new Date().toISOString(), saved_count: 0,
       };
-      setRuns((prev) => [optimistic, ...prev]);
+      // 사이드바는 use(promise) 가 source-of-truth — 새 run 이 곧 목록에 나타나도록 refresh.
+      refreshRuns();
       setSelectedId(run_id);
       setDetail({ ...optimistic, node_states: { ...EMPTY_STATES }, saved_problem_ids: [], errors: [] });
       setSelectedNode(null);
@@ -1338,7 +1797,7 @@ export default function RunsView({ settings }: Props) {
         target_count: base?.target_count ?? 1, status: "running",
         started_at: new Date().toISOString(), saved_count: 0,
       };
-      setRuns((prev) => [optimistic, ...prev]);
+      refreshRuns();
       setSelectedId(run_id);
       setDetail({ ...optimistic, node_states: { ...EMPTY_STATES }, saved_problem_ids: [], errors: [] });
       setSelectedNode(null);
@@ -1385,8 +1844,8 @@ export default function RunsView({ settings }: Props) {
         const id = pendingDel.id;
         const r = await adminFetch(`/api/runs/${id}`, settings, { method: "DELETE" });
         if (!r.ok && r.status !== 404) { setError(`[${r.status}] ${(await r.text()).slice(0, 200)}`); return; }
-        setRuns((prev) => prev.filter((x) => x.id !== id));
         clearSelectionIfGone((sid) => sid !== id);
+        refreshRuns();
       } else {
         const ids = pendingDel.ids;
         const r = await adminFetch(`/api/runs/delete`, settings, {
@@ -1395,9 +1854,9 @@ export default function RunsView({ settings }: Props) {
         });
         if (!r.ok) { setError(`[${r.status}] ${(await r.text()).slice(0, 200)}`); return; }
         const del = new Set(ids);
-        setRuns((prev) => prev.filter((x) => !del.has(x.id)));
         clearSelectionIfGone((sid) => !del.has(sid));
         exitSelect();
+        refreshRuns();
       }
     } catch (e) {
       setError((e as Error).message);
@@ -1411,20 +1870,23 @@ export default function RunsView({ settings }: Props) {
 
   return (
     <div className={`main runs${drawerOpen ? " drawer-open" : ""}${drawerOpen && drawerWide ? " drawer-wide" : ""}`}>
-      <RunsSidebar
-        runs={runs}
-        selectedId={selectedId}
-        onSelect={selectRun}
-        onNew={() => { setShowNew(true); setSelectedNode(null); }}
-        onRequestDelete={(r) => setPendingDel({ kind: "one", id: r.id, title: `#${r.problem_id ?? "?"} ${r.problem_title ?? r.id.slice(0, 12)}` })}
-        selectMode={selectMode}
-        selectedIds={selectedIds}
-        onEnterSelect={() => { setSelectMode(true); setSelectedIds(new Set()); }}
-        onExitSelect={exitSelect}
-        onToggleSelect={toggleSelect}
-        onSetSelection={(ids) => setSelectedIds(new Set(ids))}
-        onDeleteSelected={() => { if (selectedIds.size > 0) setPendingDel({ kind: "many", ids: [...selectedIds] }); }}
-      />
+      <Suspense fallback={<SidebarFallback />}>
+        <RunsSidebarBound
+          promise={runsPromise}
+          onInitial={onInitialRuns}
+          selectedId={selectedId}
+          onSelect={selectRun}
+          onNew={() => { setShowNew(true); setSelectedNode(null); }}
+          onRequestDelete={(r) => setPendingDel({ kind: "one", id: r.id, title: `#${r.problem_id ?? "?"} ${r.problem_title ?? r.id.slice(0, 12)}` })}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onEnterSelect={() => { setSelectMode(true); setSelectedIds(new Set()); }}
+          onExitSelect={exitSelect}
+          onToggleSelect={toggleSelect}
+          onSetSelection={(ids) => setSelectedIds(new Set(ids))}
+          onDeleteSelected={() => { if (selectedIds.size > 0) setPendingDel({ kind: "many", ids: [...selectedIds] }); }}
+        />
+      </Suspense>
 
       <div className="graph-wrap">
         <div className="graph-toolbar">
@@ -1467,7 +1929,7 @@ export default function RunsView({ settings }: Props) {
         <div className="graph-canvas">
           {showNew || !detail ? (
             <div style={{ display: "flex", height: "100%", padding: 40 }}>
-              <NewRunForm onStart={beginRun} onCancel={() => { setShowNew(false); if (selectedId) loadDetail(selectedId); }} />
+              <NewRunForm settings={settings} onStart={beginRun} onCancel={() => { setShowNew(false); if (selectedId) loadDetail(selectedId); }} />
             </div>
           ) : (
             <PipelineGraph

@@ -130,6 +130,11 @@ def verify_candidates(state: AuthoringState) -> dict:
         if not c.get("novelty_passed", True):
             updated.append(c)
             continue
+        # judge→revise 루프 재진입 가드 — 이미 판사 통과한 후보는 재verify 불필요(토큰 절약).
+        # 첫 진입 때는 모든 후보가 judge_passed=False라 기존 동작 그대로.
+        if c.get("judge_passed"):
+            updated.append(c)
+            continue
 
         test_cases: list[dict] = []
         passed = False

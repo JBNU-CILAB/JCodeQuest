@@ -116,6 +116,8 @@ def _base_candidate(
         "judge_score": 0.0,
         "judge_rationale": "",
         "judge_issues": [],
+        "revise_attempts": 0,
+        "revise_history": [],
         "solver_results": [],
         "solver_passed": False,
         "novelty_passed": True,

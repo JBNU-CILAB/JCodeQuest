@@ -153,7 +153,7 @@ export function MyPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 프로필 카드 */}
         <Card className="lg:col-span-1">
-          <CardHead title="내 프로필" icon={<span>👤</span>} />
+          <CardHead title="내 프로필" />
           <div className="flex flex-col items-center gap-3 mb-5">
             <button
               type="button"

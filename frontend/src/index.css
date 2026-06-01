@@ -8,6 +8,7 @@
   font-display: swap;
 }
 
+
 @theme {
   --color-header-1: #2b4a7c;
   --color-header-2: #1e3a64;
@@ -23,6 +24,7 @@
   --color-line-soft: #f1f3f7;
   --color-muted: #6b7280;
   --color-muted-soft: #9ca3af;
+  --font-sans: 'Pretendard', 'NeoDunggeunmo', system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
   --font-display: 'Brush Script MT', 'Snell Roundhand', cursive;
   --font-pixel: 'NeoDunggeunmo', 'Pretendard', system-ui, sans-serif;
   --ease-out-cubic: cubic-bezier(0.16, 1, 0.3, 1);
@@ -31,7 +33,6 @@
 
 html, body, #root { height: 100%; }
 body {
-  font-family: 'NeoDunggeunmo', 'Pretendard', system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
   background: var(--color-page);
   color: #1f2937;
 }
@@ -74,4 +75,8 @@ body {
 }
 @keyframes ml-in {
   to { opacity: 1; transform: translateX(0); }
+}
+@keyframes list-slide {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
 }

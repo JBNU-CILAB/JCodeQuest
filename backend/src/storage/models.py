@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Column, DateTime, UniqueConstraint
+from sqlalchemy import JSON, Column, Date, DateTime, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -137,6 +137,12 @@ class SubmissionRow(SQLModel, table=True):
     max_elapsed_ms: int | None = None
     peak_memory_kb: int | None = None
     points_awarded: int | None = None       # AC인 경우에만 채워짐
+    # Code Battle 제출이면 해당 배틀 ID, 일반 제출이면 NULL. NULL이면 save_grading의
+    # 첫-AC exp 가산이 그대로 동작하고, 값이 있으면 그 가산을 건너뛴다(배틀 보상은
+    # finalize_battle의 순위 보상으로 분리 — 배틀로 일반 exp 파밍 방지).
+    # ⚠️ 라이브 Postgres엔 create_all이 컬럼을 추가하지 않으므로 1회 수동 마이그레이션 필요:
+    #   ALTER TABLE submission ADD COLUMN battle_id INTEGER REFERENCES battle(id);
+    battle_id: int | None = Field(default=None, foreign_key="battle.id", index=True)
     created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
 
 
@@ -231,6 +237,117 @@ class BugReportRow(SQLModel, table=True):
     # open | in_progress | resolved | rejected — 운영자가 admin에서 토글.
     status: str = Field(default="open", index=True)
     # 운영자 내부 메모. 사용자에게 공개되지 않음.
+    admin_notes: str | None = None
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
+
+
+class BattleRow(SQLModel, table=True):
+    """매일 20시 Code Battle 한 판. battle_date가 유니크라 하루 1배틀만 존재한다
+    (스케줄러가 멀티워커/중복 호출돼도 get_or_create가 충돌 시 기존 row로 수렴).
+
+    상태 머신: scheduled → lobby → active → finished.
+    problem_id는 active 진입 전까지 NULL (문제 비공개). lobby/start/end_at은 타이머 기준
+    시각으로, 클라이언트 카운트다운과 스케줄러 전이가 같은 값을 본다.
+
+    신규 테이블이라 create_all이 양 DB에서 자동 생성한다(ALTER 불필요)."""
+
+    __tablename__ = "battle"
+    __table_args__ = (
+        UniqueConstraint("battle_date", name="uq_battle_date"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    # KST 기준 배틀 날짜. 하루 1판 유니크 키.
+    battle_date: date = Field(sa_column=Column(Date, nullable=False, index=True))
+    # active 진입 시 무작위 approved 문제로 채움. 그 전엔 NULL = 문제 비공개.
+    problem_id: int | None = Field(default=None, foreign_key="problem.id", index=True)
+    status: str = Field(default="scheduled", index=True)  # scheduled|lobby|active|finished
+    lobby_at: datetime = Field(sa_column=_tz_column())   # 로비 오픈(입장 가능) 시각
+    start_at: datetime = Field(sa_column=_tz_column())   # 풀이 시작(문제 공개) 시각
+    end_at: datetime = Field(sa_column=_tz_column())     # 풀이 종료(순위 확정) 시각
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
+
+
+class BattleParticipantRow(SQLModel, table=True):
+    """배틀 참가자 1명 + 그의 베스트 결과 캐시. (battle_id, user_id) 유니크 — 멱등 입장.
+
+    best_* 필드는 채점이 끝날 때마다 update_participant_from_submission이
+    '더 좋은 결과일 때만' 갱신한다(AC 우선 → 통과수 → 더 이른 시각). 스코어보드는
+    이 캐시만 정렬하면 되므로 매번 제출 전체를 재집계할 필요가 없다."""
+
+    __tablename__ = "battle_participant"
+    __table_args__ = (
+        UniqueConstraint("battle_id", "user_id", name="uq_battle_participant"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    battle_id: int = Field(foreign_key="battle.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    joined_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())
+
+    # 베스트 결과 캐시
+    best_tests_passed: int = Field(default=0)
+    total_tests: int = Field(default=0)
+    is_ac: bool = Field(default=False)
+    # 베스트 결과를 만든 제출의 시각(타이브레이크 키) + 제출 ID
+    best_at: datetime | None = Field(default=None, sa_column=_tz_column(nullable=True))
+    best_submission_id: int | None = Field(default=None, foreign_key="submission.id")
+    attempts: int = Field(default=0)
+
+    # finished 시 확정 기록 (그 전엔 NULL).
+    rank: int | None = Field(default=None)
+
+
+class PlagiarismRunRow(SQLModel, table=True):
+    """표절 검토 1회(문제별) 배치. plagiarism_engine이 Dolos로 의심 쌍을 뽑고
+    (옵션) 멀티에이전트로 판정한 결과 묶음. admin '표절 검토' 큐의 run 단위.
+
+    신규 테이블이라 create_all이 양 DB에서 자동 생성한다(ALTER 불필요)."""
+
+    __tablename__ = "plagiarism_run"
+
+    id: str = Field(primary_key=True)  # plagiarism_engine이 만든 hex run_id
+    problem_id: int = Field(index=True)
+    problem_title: str | None = None
+    status: str = Field(default="running", index=True)  # running | done | failed
+    submission_count: int = 0          # 비교 대상(AC) 제출 수
+    pair_count: int = 0                # 판정한 의심 쌍 수
+    flagged_count: int = 0             # 검토 큐로 올린 쌍 수
+    config: dict = Field(default_factory=dict, sa_column=Column(JSON))  # 임계값 스냅샷
+    errors: list = Field(default_factory=list, sa_column=Column(JSON))
+    started_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
+    ended_at: datetime | None = Field(default=None, sa_column=_tz_column(nullable=True))
+    total_duration_ms: int | None = None
+
+
+class PlagiarismPairRow(SQLModel, table=True):
+    """의심 쌍 = 사람 검토 단위. Dolos 결정적 증거(similarity·fragments)는 이의제기용으로
+    보존하고, 에이전트 판정(agent_*)은 보조(advisory)일 뿐 — 최종 판단은 운영자가 한다.
+
+    신규 테이블이라 create_all이 양 DB에서 자동 생성한다(ALTER 불필요)."""
+
+    __tablename__ = "plagiarism_pair"
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(index=True)
+    problem_id: int = Field(index=True)
+    submission_a_id: int = Field(index=True)
+    submission_b_id: int = Field(index=True)
+    user_a_id: int
+    user_b_id: int
+    # ── Dolos 결정적 증거 ──
+    similarity: float = 0.0            # 0..1
+    longest_fragment: int = 0
+    total_overlap: int = 0
+    fragments: list = Field(default_factory=list, sa_column=Column(JSON))  # [{a_lines, b_lines}]
+    # ── 에이전트 판정(Phase 2, advisory) ──
+    agent_verdict: str | None = None   # plagiarism|coincidental|boilerplate|independent|uncertain
+    agent_confidence: float | None = None
+    agent_rationale: str | None = None
+    agent_debate: dict | None = Field(default=None, sa_column=Column(JSON))
+    # ── 검토 큐 (bug_report 패턴 미러) ──
+    status: str = Field(default="open", index=True)  # open|in_progress|confirmed|dismissed
     admin_notes: str | None = None
     created_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column(index=True))
     updated_at: datetime = Field(default_factory=_utcnow, sa_column=_tz_column())

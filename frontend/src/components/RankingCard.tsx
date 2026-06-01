@@ -51,16 +51,16 @@ export function RankingCard() {
       <CardHead title="이번주 랭킹" right={right} />
       <div>
         {loading && (
-          <div className="py-8 text-center text-xs text-gray-400">불러오는 중...</div>
+          <div className="py-8 text-center text-xs text-gray-400">불러오는 중…</div>
         )}
         {error && (
           <div className="py-8 text-center text-xs text-red-500">
-            랭킹을 불러오지 못했습니다 — {error}
+            랭킹을 불러오지 못했습니다 · {error}
           </div>
         )}
         {!loading && !error && entries && entries.length === 0 && (
           <div className="py-8 text-center text-xs text-gray-400">
-            이번 주 기록이 아직 없습니다.
+            이번 주 첫 AC의 주인공이 되어보세요.
           </div>
         )}
         {!loading && !error && entries && entries.length > 0 && entries.map((u) => (

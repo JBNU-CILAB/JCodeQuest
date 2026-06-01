@@ -10,11 +10,17 @@ from authoring.pipeline.node_stats import NODE_KIND, NODE_ORDER, summarize_node
 def test_node_order_and_kinds_cover_graph():
     assert NODE_ORDER[0] == "fetch_problem"
     assert NODE_ORDER[-1] == "persist_approved"
-    assert len(NODE_ORDER) == 9
+    assert len(NODE_ORDER) == 11  # revise_problem 추가됨 (judge ⇄ revise 품질 보강 루프)
     assert set(NODE_KIND) == set(NODE_ORDER)
     assert NODE_KIND["generate_variants"] == "llm"
     assert NODE_KIND["verify_candidates"] == "sandbox"
     assert NODE_KIND["persist_approved"] == "db"
+    # strengthen_tests는 attack 직후에 위치한 변별력 보강 루프 노드.
+    assert NODE_ORDER[NODE_ORDER.index("attack_candidates") + 1] == "strengthen_tests"
+    assert NODE_KIND["strengthen_tests"] == "llm"
+    # revise_problem은 judge 직후에 위치한 품질 보강 루프 노드(verify로 루프백).
+    assert NODE_ORDER[NODE_ORDER.index("judge_candidates") + 1] == "revise_problem"
+    assert NODE_KIND["revise_problem"] == "llm"
 
 
 def test_fetch_and_retrieve_outputs_preview():
@@ -65,6 +71,41 @@ def test_attack_only_counts_solvable():
     assert s["candidates_in"] == 2
     assert s["candidates_out"] == 1
     assert {r["status"] for r in s["candidate_results"]} == {"pass", "warn"}
+
+
+def test_strengthen_node_stats():
+    delta = {
+        "candidates": [
+            {"index": 0, "strengthen_added": 2, "strengthen_attempts": 1},
+            {"index": 1, "strengthen_added": 0, "strengthen_attempts": 2},
+            {"index": 2},  # 보강 대상 아님(strengthen_added 없음) — 결과에서 제외
+        ]
+    }
+    s = summarize_node("strengthen_tests", delta)
+    assert len(s["candidate_results"]) == 2
+    assert s["candidates_in"] == 2
+    assert s["candidates_out"] == 1  # added>0 인 후보만
+    assert {r["status"] for r in s["candidate_results"]} == {"pass", "warn"}
+    assert s["retries"] == 1  # max(attempts-1) = max(0,1)
+
+
+def test_revise_node_stats():
+    delta = {
+        "candidates": [
+            {"index": 0, "revise_attempts": 1, "revise_history": [{"note": "revised"}]},
+            {"index": 1, "revise_attempts": 2, "revise_history": [
+                {"note": "revised"}, {"note": "error: RuntimeError: x"},
+            ]},
+            {"index": 2},  # revise 대상 아님(attempts 없음) — 결과에서 제외
+        ]
+    }
+    s = summarize_node("revise_problem", delta)
+    assert len(s["candidate_results"]) == 2
+    assert s["candidates_in"] == 2
+    assert s["candidates_out"] == 1  # 마지막 note가 "revised"인 후보만
+    statuses = {r["status"] for r in s["candidate_results"]}
+    assert statuses == {"pass", "warn"}
+    assert s["retries"] == 1  # max(attempts-1) = max(0,1) = 1
 
 
 def test_persist_saved_ids():

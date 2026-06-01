@@ -247,7 +247,6 @@ function TutorPanel({ submissionId }: { submissionId: number }) {
     <div className="bg-white border border-gray-200 rounded-2xl px-6 py-5 shadow-[0_1px_2px_rgba(31,41,55,0.03)]">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-          <span>🤖</span>
           <span>AI 튜터</span>
         </h2>
         <div className="text-xs text-gray-500">

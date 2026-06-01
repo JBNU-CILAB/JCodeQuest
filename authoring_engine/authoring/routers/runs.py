@@ -149,6 +149,11 @@ def _run_pipeline_blocking(run_id: str, trace_id: str, problem_id: int, count: i
                 errors=errors_acc,
             )
 
+        # short-circuit로 실행되지 않은 노드(후보 전멸 후)는 skipped로 마감 — queued/running 잔류 방지.
+        for n in NODE_ORDER:
+            if n not in completed and node_states[n]["status"] in ("queued", "running"):
+                node_states[n]["status"] = "skipped"
+
         total_ms = int((time.monotonic() - t_run0) * 1000)
         _persist_update(
             run_id,

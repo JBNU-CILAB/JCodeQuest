@@ -5,6 +5,7 @@ from jcq_shared.schemas import EnsembleResult, JudgeVote, JudgeVotePartial, Prob
 from langchain_ollama import ChatOllama
 
 from .prompts import judge_prompt
+from .sanitize import strip_comments
 
 # 2/3 이상 AC면 AC. 투표는 binary(AC|SUS)이고 판사 3명 → 분포는
 # 3-0 / 2-1 / 1-2 / 0-3 네 가지뿐이라 이 임계 하나로 mode까지 결정됨.
@@ -95,8 +96,11 @@ async def vote(
     base_url: str | None = None,
     submission_id: int | None = None,
 ) -> EnsembleResult:
+    # 판사에게 주는 건 주석 제거 사본 — 코드 주석을 통한 프롬프트 인젝션 차단.
+    # 샌드박스 실행(jobs.py)은 학생 원본 code를 그대로 쓰므로 채점 결과엔 영향 없음.
+    judge_code = strip_comments(code)
     votes = [
-        await _ask(s, problem, code, test_results, base_url, submission_id)
+        await _ask(s, problem, judge_code, test_results, base_url, submission_id)
         for s in JUDGES
     ]
     n_ac = sum(1 for v in votes if v.verdict == "AC")

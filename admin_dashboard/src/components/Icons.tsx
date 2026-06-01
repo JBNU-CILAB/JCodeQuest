@@ -55,6 +55,14 @@ export const RailIcons = {
       <path d="M5 20c1-3.6 4-5.5 7-5.5s6 1.9 7 5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
+  plagiarism: (p: P) => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" {...p}>
+      <rect x="3" y="3" width="10" height="13" rx="1.6" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7 7h2M7 10h2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="15.5" cy="15" r="4" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M18.5 18l2.5 2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
 };
 
 export const Icon = {

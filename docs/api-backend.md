@@ -12,17 +12,26 @@ FastAPI가 라우터·Pydantic 스키마로부터 위 문서를 자동 생성하
 
 ## 인증 모델
 
-- 세션 쿠키 이름: `jcq_session` (httponly, `lax`, `secure`는 `JCQ_COOKIE_INSECURE` 미설정 시 true).
-- 인증이 필요한 엔드포인트는 표에 **🔒** 로 표시. `get_current_user` 의존성이 쿠키를 검증하고 `UserRow`를 주입.
-- 비인증 호출은 `401 Unauthorized`.
+`get_current_user` 의존성(`src/auth/deps.py`)이 두 방식을 순서대로 시도해 `UserRow`를 주입한다:
+
+1. **Supabase Bearer JWT** (운영): `Authorization: Bearer <Supabase access_token>` → JWKS로 ES256/RS256 검증(레거시 HS256은 `SUPABASE_JWT_SECRET`) → `sub`/`email`/`user_metadata` 추출 → `provider="supabase"`로 upsert. 이메일은 `@jbnu.ac.kr`만 허용(`ALLOWED_EMAIL_DOMAIN` 상수).
+2. **세션 쿠키** (dev 전용): `jcq_session` (httponly, `lax`, `secure`는 `JCQ_COOKIE_INSECURE` 미설정 시 true) — `POST /auth/dev-login`이 발급하며 `JCQ_AUTH_ALLOW_DEV_STUB=1`일 때만 동작.
+
+- 인증이 필요한 엔드포인트는 표에 **🔒** 로 표시. 비인증/검증 실패는 `401 Unauthorized`.
+- **Google OAuth는 프런트(Supabase)가 처리** — backend에는 `/auth/login`·`/auth/callback`이 없다.
 
 | 그룹 | 경로 | 설명 |
 | --- | --- | --- |
-| `auth` | `/auth/*` | Google OAuth 로그인/로그아웃, dev stub |
-| `me` | `/me/*` | 본인 프로필·제출 이력 |
-| `problems` | `/problems/*` | 승인된 문제 목록·상세·시도 상태 |
+| `auth` | `/auth/*` | 로그아웃, dev-stub 로그인 |
+| `me` | `/me/*` | 본인 프로필·API 키·제출 이력·스트릭 |
+| `problems` | `/problems/*` | 승인된 문제 목록·주차별·상세·시도 상태 |
 | `grade` | `/grade/*` | 채점 요청·조회·SSE 스트림 |
-| `tutor` | `/tutor/*` | 튜터 메시지 생성·이력 |
+| `tutor` | `/tutor/*` | 튜터 메시지 생성·이력 (인증 + 유저 API 키 필요) |
+| `submissions` | `/submissions/recent` | 전체 사용자 최근 제출(공개) |
+| `leaderboard` | `/leaderboard/*` | 누적/주간/학년별 리더보드(공개) |
+| `notices` | `/notices/*` | 공지 목록·상세(공개) |
+| `reports` | `/reports` | 버그/문제 신고 접수 🔒 |
+| `internal` | `/internal/*` | judge_engine·authoring 전용. `JCQ_INTERNAL_SECRET` Bearer. 스키마 비노출(`include_in_schema=False`) |
 | (root) | `/health` | liveness probe |
 
 ---
@@ -37,17 +46,7 @@ FastAPI가 라우터·Pydantic 스키마로부터 위 문서를 자동 생성하
 
 ## `/auth` — 인증
 
-### `GET /auth/login`
-- 인증: 없음
-- 동작: Google OAuth `authorize_redirect`. state/nonce를 `SessionMiddleware`의 임시 쿠키에 저장.
-- 응답: `302` → Google.
-
-### `GET /auth/callback` (name: `auth_callback`)
-- 인증: 없음
-- 동작: ID 토큰 검증 → `JCQ_AUTH_ALLOWED_HD` (기본 `jbnu.ac.kr`) 검증 → `get_or_create_user` → 세션 발급(`SessionRow`) → `JCQ_FRONTEND_REDIRECT_URL`로 302.
-- 에러:
-  - `400` OAuth 실패 / `userinfo` 누락 / `sub`·`email` 누락
-  - `403` 이메일 미인증 또는 도메인 불일치
+> Google 로그인은 프런트의 `supabase.auth.signInWithOAuth`가 전담한다. backend는 발급된 JWT를 검증할 뿐 OAuth 리다이렉트 라우트(`/auth/login`·`/auth/callback`)를 갖지 않는다.
 
 ### `POST /auth/logout`
 - 인증: 쿠키 있으면 해당 `SessionRow` 삭제 후 쿠키 클리어 (없어도 200).
@@ -64,18 +63,36 @@ FastAPI가 라우터·Pydantic 스키마로부터 위 문서를 자동 생성하
 
 ## `/me` — 본인 정보
 
-### `GET /me` 🔒
+### `GET /me` 🔒 → `MeResponse`
 - 응답 `200`:
   ```json
   {
     "id": 1,
     "display_name": "...",
     "email": "...",
-    "provider": "google" | "dev_stub",
+    "provider": "supabase" | "dev_stub",
     "exp": 0,
-    "tier": "..."
+    "tier": "...",
+    "has_api_key": false,
+    "nickname": "...|null",
+    "grade": 3,
+    "department": "...|null",
+    "is_anonymous": false,
+    "avatar_url": "...|null"
   }
   ```
+
+### `PATCH /me` 🔒 → `MeResponse`
+프로필 부분 수정. body의 일부 필드만 보내면 그것만 갱신.
+- Body: `nickname`, `grade`(1–6), `department`, `is_anonymous`, `avatar_url` (모두 optional)
+
+### `PUT /me/api-key` 🔒
+튜터용 교내 GPT API 키를 vault에 등록/갱신. 평문은 응답/로그에 노출되지 않음(`PUT`의 422는 자동 redaction).
+- Body (`ApiKeyUpdateRequest`): `{ "api_key": "<20–512 printable ASCII>" }` — 패턴 `^[!-~]{20,512}$`
+- 응답 `200`: `{ "has_api_key": true }`
+
+### `GET /me/streak` 🔒 → `StreakResponse`
+연속 풀이 스트릭 통계.
 
 ### `GET /me/submissions` 🔒 → `SubmissionListResponse`
 본인이 낸 제출들을 최신순으로 반환. `code` 필드는 페이로드 비대해서 제외 — 상세는 `GET /grade/{id}`.
@@ -123,6 +140,14 @@ FastAPI가 라우터·Pydantic 스키마로부터 위 문서를 자동 생성하
   }
   ```
 
+### `GET /problems/weeks` → `WeeklyProblemBucketsResponse`
+- 인증: 없음
+- 동작: 문제가 출제된 ISO 주차(`YYYY-Www`)별 개수 버킷을 최신순으로 반환.
+
+### `GET /problems/weeks/{week}` → `list[ProblemSummary]`
+- 인증: 없음
+- 동작: 특정 ISO 주차(`YYYY-Www`)에 속한 승인 문제 목록.
+
 ### `GET /problems/{problem_id}` → `ProblemDetail`
 - 인증: 없음
 - 동작: `status != "approved"` 또는 미존재면 `404`.
@@ -161,8 +186,7 @@ FastAPI가 라우터·Pydantic 스키마로부터 위 문서를 자동 생성하
   ```
 - 에러: `404` 미존재 / 미승인 문제.
 
-### `GET /problems/{problem_id}/my-submissions` 🔒 → `SubmissionListResponse`
-문제 페이지에서 "내가 이 문제에 낸 시도들"을 보이기 위한 편의 엔드포인트. 파라미터는 `/me/submissions`와 동일하되 `problem_id`가 경로로 고정.
+> 문제별 "내 시도" 목록은 별도 라우트가 아니라 `GET /me/submissions?problem_id=<id>`로 조회한다.
 
 ---
 
@@ -239,7 +263,8 @@ FastAPI가 라우터·Pydantic 스키마로부터 위 문서를 자동 생성하
 
 ## `/tutor` — 튜터 메시지
 
-### `POST /tutor/{submission_id}` → `TutorResponse`
+### `POST /tutor/{submission_id}` 🔒 → `TutorResponse`
+인증 필수. 유저가 `PUT /me/api-key`로 등록한 교내 GPT 키(vault)로 호출하므로 **키가 없으면 거부**. 문제당 사용 횟수 상한이 있다(기본 3회).
 - Query:
   - `regenerate` (bool, default `false`) — `true`면 캐시 무시하고 새로 생성, 새 행으로 저장.
 - 응답:
@@ -248,9 +273,9 @@ FastAPI가 라우터·Pydantic 스키마로부터 위 문서를 자동 생성하
   ```
 - 에러:
   - `404` 제출 없음 / 제출에 매칭된 문제 없음
-  - `409` `status != "done"` (튜터링은 채점 종료 후에만)
+  - `409` `status != "done"`(채점 종료 후에만) / 유저 API 키 미등록 / 문제당 사용 한도 초과
 
-### `GET /tutor/{submission_id}/history` → `TutorHistoryResponse`
+### `GET /tutor/{submission_id}/history` 🔒 → `TutorHistoryResponse`
 - 응답:
   ```json
   {
@@ -264,19 +289,68 @@ FastAPI가 라우터·Pydantic 스키마로부터 위 문서를 자동 생성하
 
 ---
 
+## `/submissions` — 전체 제출 피드
+
+### `GET /submissions/recent` → `RecentSubmissionsResponse`
+- 인증: 없음
+- Query: `limit` (1–50, default 20)
+- 동작: 모든 사용자의 최근 제출을 최신순으로. 익명 유저는 표시명이 가려진다.
+
+---
+
+## `/leaderboard` — 리더보드
+
+### `GET /leaderboard` → `LeaderboardResponse`
+- 인증: 없음
+- Query:
+  - `period` (`all` | `week`, default `all`) — `all`은 누적 `exp`, `week`는 이번 ISO 주차 `points_awarded` 합.
+  - `limit` (1–100)
+
+### `GET /leaderboard/by-grade` → `LeaderboardResponse`
+- 인증: 없음
+- Query: `grade` (1–4), `limit` — 학년별 리더보드.
+
+---
+
+## `/notices` — 공지
+
+### `GET /notices` → `list[Notice]`
+- 인증: 없음
+- Query: `limit` (1–50). pinned 우선 정렬.
+
+### `GET /notices/{notice_id}` → `Notice`
+- 인증: 없음
+- 에러: `404` 미존재.
+
+---
+
+## `/reports` — 신고
+
+### `POST /reports` 🔒 → `BugReportCreateResponse`
+버그/문제 신고 접수.
+- Body (`BugReportCreateRequest`):
+  - `category` (`judging` | `statement` | `sample` | `system` | `other`)
+  - `title` (4–200자), `body` (10–10,000자)
+  - `problem_id` (optional), `code_snapshot` (optional, ≤ 64 KiB)
+- 응답 `200`: `{ "id": <int>, "status": "open" }`
+
+---
+
 ## 환경 변수 (요약)
 
 API 동작에 직접 영향이 있는 키만:
 
 | 변수 | 기본값 | 비고 |
 | --- | --- | --- |
-| `SESSION_SECRET_KEY` | (required) | OAuth state/nonce 쿠키 서명. 미설정 시 부팅 실패. |
-| `JCQ_FRONTEND_REDIRECT_URL` | `/` | OAuth 콜백 후 리다이렉트 목적지. |
-| `JCQ_AUTH_ALLOWED_HD` | `jbnu.ac.kr` | Google Workspace 도메인 게이트. 빈 문자열이면 해제. |
+| `JCQ_DB_URL` | (required) | Supabase PostgreSQL URL. `postgresql://`이 아니면 부팅 거부(`JCQ_ALLOW_NON_POSTGRES=1` 제외). |
+| `SUPABASE_URL` | (required) | JWT JWKS 검증용 프로젝트 URL. |
+| `SUPABASE_JWT_SECRET` | (unset) | HS256 레거시 프로젝트만. |
+| `JCQ_INTERNAL_SECRET` | (unset) | `/internal/*` Bearer. judge·authoring과 동일 값. |
 | `JCQ_AUTH_ALLOW_DEV_STUB` | (unset) | `1`이면 `POST /auth/dev-login` 등록. 프로덕션 금지. |
-| `JCQ_SESSION_DAYS` | `7` | 세션 TTL. |
+| `JCQ_SESSION_DAYS` | `7` | dev-stub 세션 TTL. |
 | `JCQ_COOKIE_INSECURE` | (unset) | 트루시면 `secure` 끔(로컬 http 개발용). |
-| `JCQ_QUEUE_CONCURRENCY` | `1` | 채점 워커 동시성. |
-| `MAX_CODE_LENGTH` | 64 KiB | `GradeRequest.code` 상한 (`schemas.py` 상수). |
+| `JCQ_CORS_ORIGINS` / `JCQ_CORS_ORIGIN_REGEX` | (unset) | 허용 origin. |
+| `OPENAI_MODEL` / `OPENAI_BASE_URL` | `gpt-5.1` / (unset) | 튜터 서버 설정(키는 유저별 vault). |
+| `MAX_CODE_LENGTH` | 64 KiB | `GradeRequest.code`·`code_snapshot` 상한 (`schemas.py` 상수). |
 
-전체 목록은 [`docs/environment.md`](environment.md).
+> `SESSION_SECRET_KEY`·`JCQ_FRONTEND_REDIRECT_URL`·`JCQ_AUTH_ALLOWED_HD`·`GOOGLE_*`는 Supabase 전환으로 더 이상 쓰지 않는다. `JCQ_QUEUE_CONCURRENCY`는 judge_engine으로 이전. 전체 목록은 [`docs/environment.md`](environment.md).

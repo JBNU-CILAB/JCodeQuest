@@ -9,6 +9,9 @@ interface Props {
   onClose: () => void;
   settings: ConnSettings;
   onUpdated?: (updated: ProblemDetail) => void;
+  /** 클릭된 문제가 변형(parent_id≠null)일 때 호출자가 채워 보내는 원본 문제의 제목.
+   *  로딩 중이거나 알 수 없으면 null/undefined. */
+  parentTitle?: string | null;
 }
 
 /* 점수 막대 — axis="hal"은 낮을수록 좋음(환각/유사도), "pos"는 높을수록 좋음(품질/의도). */
@@ -557,7 +560,7 @@ function EditForm({
   );
 }
 
-export default function AuthoringMetaPanel({ detail, loading, onClose, settings, onUpdated }: Props) {
+export default function AuthoringMetaPanel({ detail, loading, onClose, settings, onUpdated, parentTitle }: Props) {
   const [editing, setEditing] = useState(false);
   // 다른 문제로 바뀌면 편집 모드 해제
   useEffect(() => { setEditing(false); }, [detail?.id]);
@@ -574,7 +577,20 @@ export default function AuthoringMetaPanel({ detail, loading, onClose, settings,
           <div className="detail-title">
             {loading
               ? <><span className="spinner" style={{ width: 16, height: 16 }} /> 로딩 중...</>
-              : <>문제 #{detail?.id} · {detail?.title}{editing && <span className="badge badge-amber" style={{ marginLeft: 8 }}>편집 중</span>}</>}
+              : <>
+                  <div>
+                    문제 #{detail?.id} · {detail?.title}
+                    {editing && <span className="badge badge-amber" style={{ marginLeft: 8 }}>편집 중</span>}
+                  </div>
+                  {/* 변형(parent_id≠null)이면 원본 정보를 헤더 바로 아래에 작은 글씨로 노출 —
+                      어떤 원본에서 파생됐는지를 슬라이드오버 열자마자 알 수 있게. */}
+                  {detail?.parent_id != null && (
+                    <div className="detail-parent-line text-sm text-muted" style={{ marginTop: 2 }}>
+                      ↪ 원본 #{detail.parent_id}
+                      {parentTitle ? ` · ${parentTitle}` : (parentTitle === null ? "" : " · …")}
+                    </div>
+                  )}
+                </>}
           </div>
           {detail && !loading && !editing && (
             <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)} style={{ marginRight: 6 }}>

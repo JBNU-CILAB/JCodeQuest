@@ -1,35 +1,107 @@
 {
   "components": {
     "schemas": {
-      "CreateOriginalRequest": {
-        "description": "원본 문제 1건을 status='approved'로 직접 등록. 출제 엔진 우회 — 운영자/시드 용도.",
-        "examples": [
-          {
-            "category": "basic",
-            "expected_approach": "입력을 정수로 변환 후 2를 곱한다",
-            "expected_complexity": "O(1)",
-            "level": "bronze",
-            "memory_limit_mb": 256,
-            "one_line_summary": "정수 두 배 출력",
-            "points": 100,
-            "reference_code": "n = int(input())\nprint(n * 2)\n",
-            "statement": "정수 n이 주어지면 n*2를 출력하라.",
-            "test_cases": [
+      "ComparisonAggregateOut": {
+        "description": "한 원본의 모든 변형에 대한 비교 점수 집계 + 개별 엔트리.",
+        "properties": {
+          "difficulty_similarity": {
+            "$ref": "#/components/schemas/ComparisonStats"
+          },
+          "hallucination": {
+            "$ref": "#/components/schemas/ComparisonStats"
+          },
+          "intent_similarity": {
+            "$ref": "#/components/schemas/ComparisonStats"
+          },
+          "original_id": {
+            "title": "Original Id",
+            "type": "integer"
+          },
+          "original_title": {
+            "title": "Original Title",
+            "type": "string"
+          },
+          "scored_count": {
+            "description": "hallucination_score가 채워진 (compare 노드가 돈) 변형 수",
+            "title": "Scored Count",
+            "type": "integer"
+          },
+          "variant_count": {
+            "description": "parent_id == original_id인 문제 총 수",
+            "title": "Variant Count",
+            "type": "integer"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/ProblemComparisonOut"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "original_id",
+          "original_title",
+          "variant_count",
+          "scored_count",
+          "hallucination",
+          "intent_similarity",
+          "difficulty_similarity",
+          "variants"
+        ],
+        "title": "ComparisonAggregateOut",
+        "type": "object"
+      },
+      "ComparisonStats": {
+        "description": "수치 1개 컬럼에 대한 요약 통계 (대시보드 카드용).",
+        "properties": {
+          "count": {
+            "description": "None이 아닌 표본 수",
+            "title": "Count",
+            "type": "integer"
+          },
+          "max": {
+            "anyOf": [
               {
-                "expected_stdout": "6",
-                "is_sample": true,
-                "stdin": "3\n"
+                "type": "number"
               },
               {
-                "expected_stdout": "",
-                "is_sample": false,
-                "stdin": "10\n"
+                "type": "null"
               }
             ],
-            "time_limit_ms": 2000,
-            "title": "두 배 출력"
+            "title": "Max"
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
           }
+        },
+        "required": [
+          "count"
         ],
+        "title": "ComparisonStats",
+        "type": "object"
+      },
+      "CreateOriginalRequest": {
+        "description": "원본 문제 1건을 status='approved'로 직접 등록. 출제 엔진 우회 — 운영자/시드 용도.",
         "properties": {
           "category": {
             "default": "basic",
@@ -176,6 +248,156 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ProblemComparisonOut": {
+        "description": "단일 변형 1건의 compare_to_original 결과.",
+        "properties": {
+          "difficulty_similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0=난이도 차이 큼, 1=거의 동일.",
+            "title": "Difficulty Similarity"
+          },
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "hallucination_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0=환각 없음, 1=환각 심함. compare_to_original 노드가 미실행이면 null.",
+            "title": "Hallucination Score"
+          },
+          "intent_similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0=무관, 1=원본과 같은 알고리즘 부류.",
+            "title": "Intent Similarity"
+          },
+          "judge_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "기존 3-judge 품질 점수 (참고용).",
+            "title": "Judge Score"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "원본 문제 ID",
+            "title": "Parent Id"
+          },
+          "problem_id": {
+            "description": "변형 문제 ID",
+            "title": "Problem Id",
+            "type": "integer"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "solver_passed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solver Passed"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "problem_id",
+          "title",
+          "level"
+        ],
+        "title": "ProblemComparisonOut",
+        "type": "object"
+      },
+      "ProblemDeleteCascade": {
+        "description": "delete_problem이 돌려주는 cascade 카운트 — 사용자에게 \"X건 함께 삭제됨\" 표시용.",
+        "properties": {
+          "submissions": {
+            "default": 0,
+            "title": "Submissions",
+            "type": "integer"
+          },
+          "test_cases": {
+            "default": 0,
+            "title": "Test Cases",
+            "type": "integer"
+          },
+          "tutor_messages": {
+            "default": 0,
+            "title": "Tutor Messages",
+            "type": "integer"
+          },
+          "variants": {
+            "default": 0,
+            "title": "Variants",
+            "type": "integer"
+          }
+        },
+        "title": "ProblemDeleteCascade",
+        "type": "object"
+      },
+      "ProblemDeleteResponse": {
+        "properties": {
+          "cascade": {
+            "$ref": "#/components/schemas/ProblemDeleteCascade"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "cascade"
+        ],
+        "title": "ProblemDeleteResponse",
+        "type": "object"
+      },
       "ProblemDetailOut": {
         "properties": {
           "authoring_meta": {
@@ -199,7 +421,6 @@
                 "type": "null"
               }
             ],
-            "description": "변형들의 평균 judge_score (있는 것만)",
             "title": "Avg Judge Score"
           },
           "category": {
@@ -207,7 +428,7 @@
             "type": "string"
           },
           "child_count": {
-            "description": "이 원본에서 생성된 변형 수",
+            "default": 0,
             "title": "Child Count",
             "type": "integer"
           },
@@ -220,7 +441,6 @@
                 "type": "null"
               }
             ],
-            "description": "ISO 8601",
             "title": "Created At"
           },
           "id": {
@@ -267,7 +487,6 @@
                 "type": "null"
               }
             ],
-            "description": "원본 문제의 ID. 원본이면 null.",
             "title": "Parent Id"
           },
           "points": {
@@ -309,7 +528,6 @@
           "category",
           "level",
           "status",
-          "child_count",
           "statement",
           "reference_code",
           "points",
@@ -331,7 +549,6 @@
                 "type": "null"
               }
             ],
-            "description": "변형들의 평균 judge_score (있는 것만)",
             "title": "Avg Judge Score"
           },
           "category": {
@@ -339,7 +556,7 @@
             "type": "string"
           },
           "child_count": {
-            "description": "이 원본에서 생성된 변형 수",
+            "default": 0,
             "title": "Child Count",
             "type": "integer"
           },
@@ -352,7 +569,6 @@
                 "type": "null"
               }
             ],
-            "description": "ISO 8601",
             "title": "Created At"
           },
           "id": {
@@ -383,7 +599,6 @@
                 "type": "null"
               }
             ],
-            "description": "원본 문제의 ID. 원본이면 null.",
             "title": "Parent Id"
           },
           "status": {
@@ -401,10 +616,180 @@
           "title",
           "category",
           "level",
-          "status",
-          "child_count"
+          "status"
         ],
         "title": "ProblemSummaryOut",
+        "type": "object"
+      },
+      "RetryRequest": {
+        "properties": {
+          "from_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "실패 노드부터 재실행 힌트(현재는 전체 재실행으로 폴백).",
+            "title": "From Node"
+          }
+        },
+        "title": "RetryRequest",
+        "type": "object"
+      },
+      "RunBulkDeleteRequest": {
+        "properties": {
+          "ids": {
+            "description": "삭제할 run_id 목록",
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "title": "RunBulkDeleteRequest",
+        "type": "object"
+      },
+      "RunDetail": {
+        "description": "run 상세 — 노드별 상태 스냅샷 포함.",
+        "properties": {
+          "by_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By User"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "failed_at_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At Node"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "node_states": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Node States",
+            "type": "object"
+          },
+          "problem_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Id"
+          },
+          "problem_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Title"
+          },
+          "saved_count": {
+            "default": 0,
+            "title": "Saved Count",
+            "type": "integer"
+          },
+          "saved_problem_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Saved Problem Ids",
+            "type": "array"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "default": "running",
+            "title": "Status",
+            "type": "string"
+          },
+          "target_count": {
+            "default": 0,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "total_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Duration Ms"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RunDetail",
         "type": "object"
       },
       "RunRequest": {
@@ -415,6 +800,18 @@
           }
         ],
         "properties": {
+          "by_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "실행한 관리자 표시명 (RunsView 메타용, 옵션)",
+            "title": "By User"
+          },
           "count": {
             "default": 5,
             "description": "생성할 변형 개수 (검증/심사 통과 시에만 저장됨)",
@@ -456,6 +853,123 @@
           "trace_id"
         ],
         "title": "RunResponse",
+        "type": "object"
+      },
+      "RunSummary": {
+        "description": "run 목록 행 — 무거운 node_states 제외.",
+        "properties": {
+          "by_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By User"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "failed_at_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At Node"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "problem_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Id"
+          },
+          "problem_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Title"
+          },
+          "saved_count": {
+            "default": 0,
+            "title": "Saved Count",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "default": "running",
+            "title": "Status",
+            "type": "string"
+          },
+          "target_count": {
+            "default": 0,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "total_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Duration Ms"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RunSummary",
         "type": "object"
       },
       "SpanOut": {
@@ -658,6 +1172,17 @@
           "trace_id": {
             "title": "Trace Id",
             "type": "string"
+          },
+          "trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Url"
           }
         },
         "required": [
@@ -799,15 +1324,142 @@
     }
   },
   "info": {
-    "description": "LangGraph 파이프라인으로 원본 문제로부터 변형을 생성하고 같은 SQLite DB에 저장하는 출제 엔진. 백엔드와 동일한 `JCQ_DB_URL`을 공유한다.",
+    "description": "LangGraph 파이프라인으로 원본 문제로부터 변형을 생성하는 출제 엔진. DB·sandbox는 backend·judge_engine에 위임 — 내부 HTTP API로 통신. /api/health를 제외한 라우트는 Bearer admin 토큰을 요구한다.",
     "title": "JCodeQuest Authoring Engine",
-    "version": "0.1.0"
+    "version": "0.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/originals/{original_id}/comparison": {
+      "get": {
+        "description": "지정한 원본 문제의 모든 자식 변형을 끌어와 3축 평균/최소/최대를 계산하고, 개별 엔트리도 함께 반환한다. compare 노드가 돌지 않은 변형은 집계에서 제외(count 감소)되지만 variants 목록에는 점수=null로 포함된다.",
+        "operationId": "get_original_comparison_aggregate_api_admin_originals__original_id__comparison_get",
+        "parameters": [
+          {
+            "description": "원본 문제 ID",
+            "in": "path",
+            "name": "original_id",
+            "required": true,
+            "schema": {
+              "description": "원본 문제 ID",
+              "title": "Original Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonAggregateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "원본 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "한 원본의 모든 변형에 대한 비교 점수 집계",
+        "tags": [
+          "admin-comparison"
+        ]
+      }
+    },
+    "/api/admin/problems/{problem_id}/comparison": {
+      "get": {
+        "description": "compare_to_original 노드가 돌지 않은 변형(예: 수동 등록 원본, solver_passed 이전 단계에서 멈춘 후보)은 점수 필드가 모두 null로 채워진다.",
+        "operationId": "get_problem_comparison_api_admin_problems__problem_id__comparison_get",
+        "parameters": [
+          {
+            "description": "문제 ID",
+            "in": "path",
+            "name": "problem_id",
+            "required": true,
+            "schema": {
+              "description": "문제 ID",
+              "title": "Problem Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemComparisonOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "문제 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "단일 변형의 compare_to_original 점수",
+        "tags": [
+          "admin-comparison"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
-        "description": "서버가 떠 있는지 확인하는 단순 핑.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {
@@ -831,9 +1483,265 @@
         ]
       }
     },
+    "/api/notices": {
+      "get": {
+        "operationId": "list_notices_api_notices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Notices Api Notices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "공지 목록",
+        "tags": [
+          "notices"
+        ]
+      },
+      "post": {
+        "operationId": "create_notice_api_notices_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Notice Api Notices Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "공지 등록",
+        "tags": [
+          "notices"
+        ]
+      }
+    },
+    "/api/notices/{notice_id}": {
+      "delete": {
+        "operationId": "delete_notice_api_notices__notice_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_id",
+            "required": true,
+            "schema": {
+              "title": "Notice Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Notice Api Notices  Notice Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "공지 삭제",
+        "tags": [
+          "notices"
+        ]
+      },
+      "patch": {
+        "operationId": "update_notice_api_notices__notice_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_id",
+            "required": true,
+            "schema": {
+              "title": "Notice Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Notice Api Notices  Notice Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "공지 수정",
+        "tags": [
+          "notices"
+        ]
+      }
+    },
     "/api/problems": {
       "get": {
-        "description": "기본값은 원본(parent_id IS NULL)만. 각 원본에 대해 변형 수와 평균 judge_score를 포함한다.",
         "operationId": "list_problems_api_problems_get",
         "parameters": [
           {
@@ -846,6 +1754,22 @@
               "description": "false면 변형까지 모두 포함",
               "title": "Originals Only",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -881,8 +1805,26 @@
         ]
       },
       "post": {
-        "description": "운영자/시드 용도. `expected_stdout`이 비어 있으면 reference_code를 sandbox에서 실행해 자동으로 채운다. 채움 실패(non-zero/TLE/RE) 시 그 케이스 인덱스를 422에 포함.",
+        "description": "운영자/시드 용도. `expected_stdout`이 비어 있으면 judge_engine 샌드박스에서 reference_code를 실행해 자동으로 채운다. 그 후 backend에 POST해 저장한다.",
         "operationId": "create_original_api_problems_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -918,8 +1860,81 @@
       }
     },
     "/api/problems/{problem_id}": {
+      "delete": {
+        "description": "backend `/internal/problems/{id}` DELETE 로 위임. 자식 변형까지 함께 삭제하려면 `cascade_children=true` (기본). false면 자식이 있을 때 FK violation으로 실패.",
+        "operationId": "delete_original_api_problems__problem_id__delete",
+        "parameters": [
+          {
+            "description": "삭제할 문제 ID",
+            "in": "path",
+            "name": "problem_id",
+            "required": true,
+            "schema": {
+              "description": "삭제할 문제 ID",
+              "title": "Problem Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "변형(자식)까지 같이 삭제",
+            "in": "query",
+            "name": "cascade_children",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "변형(자식)까지 같이 삭제",
+              "title": "Cascade Children",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "문제 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "문제 + 변형/제출/튜터 하드 cascade 삭제",
+        "tags": [
+          "problems"
+        ]
+      },
       "get": {
-        "description": "reference_code, intent_rubric, authoring_meta, 모든 test_cases를 포함한다. 백엔드의 `/problems/{id}`(학생 시야)와 달리 hidden 정보까지 전부 노출.",
         "operationId": "get_problem_detail_api_problems__problem_id__get",
         "parameters": [
           {
@@ -931,6 +1946,22 @@
               "description": "문제 ID",
               "title": "Problem Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -967,7 +1998,6 @@
     },
     "/api/problems/{problem_id}/children": {
       "get": {
-        "description": "parent_id == problem_id 인 변형들의 상세를 모두 반환.",
         "operationId": "list_problem_children_api_problems__problem_id__children_get",
         "parameters": [
           {
@@ -979,6 +2009,22 @@
               "description": "원본 문제 ID",
               "title": "Problem Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1014,10 +2060,427 @@
         ]
       }
     },
+    "/api/reports": {
+      "get": {
+        "operationId": "list_reports_api_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Reports Api Reports Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "버그 제보 목록",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/reports/{report_id}": {
+      "delete": {
+        "operationId": "delete_report_api_reports__report_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Report Api Reports  Report Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "버그 제보 삭제",
+        "tags": [
+          "reports"
+        ]
+      },
+      "get": {
+        "operationId": "get_report_api_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Report Api Reports  Report Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "버그 제보 상세",
+        "tags": [
+          "reports"
+        ]
+      },
+      "patch": {
+        "operationId": "update_report_api_reports__report_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Report Api Reports  Report Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "버그 제보 상태/메모 수정",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
     "/api/runs": {
+      "get": {
+        "operationId": "list_runs_api_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "problem_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Problem Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunSummary"
+                  },
+                  "title": "Response List Runs Api Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "파이프라인 run 목록 (영속화된 과거 + 진행 중)",
+        "tags": [
+          "runs"
+        ]
+      },
       "post": {
-        "description": "LangGraph DAG `fetch_problem → generate_variants → verify_candidates → judge_candidates → solve_candidates → persist_approved`를 백그라운드 스레드로 실행. 즉시 `run_id`/`trace_id`를 반환하고, 진행 상황은 `/api/runs/{run_id}/events`로 추적.",
         "operationId": "create_run_api_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1056,40 +2519,50 @@
         ]
       }
     },
-    "/api/runs/{run_id}/events": {
-      "get": {
-        "description": "Server-Sent Events. payload 형식:\n- `{type: 'update', data: <langgraph chunk>}`\n- `{type: 'done', trace_id: '...'}`\n- `{type: 'error', message: '...'}`\n\ntype이 done/error면 스트림 종료 + 서버측에서 run_id 해제.",
-        "operationId": "stream_events_api_runs__run_id__events_get",
+    "/api/runs/delete": {
+      "post": {
+        "description": "body의 ids에 해당하는 run을 삭제. 진행 중 run이면 인메모리 SSE 큐도 정리.",
+        "operationId": "bulk_delete_runs_api_runs_delete_post",
         "parameters": [
           {
-            "description": "POST /api/runs가 반환한 run_id",
-            "in": "path",
-            "name": "run_id",
-            "required": true,
+            "in": "header",
+            "name": "authorization",
+            "required": false,
             "schema": {
-              "description": "POST /api/runs가 반환한 run_id",
-              "title": "Run Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunBulkDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
-              },
-              "text/event-stream": {
                 "schema": {
-                  "format": "binary",
-                  "type": "string"
+                  "additionalProperties": true,
+                  "title": "Response Bulk Delete Runs Api Runs Delete Post",
+                  "type": "object"
                 }
               }
             },
-            "description": "SSE 스트림 (text/event-stream)"
-          },
-          "404": {
-            "description": "run_id 없음 (이미 종료됐거나 존재하지 않음)"
+            "description": "Successful Response"
           },
           "422": {
             "content": {
@@ -1102,7 +2575,272 @@
             "description": "Validation Error"
           }
         },
-        "summary": "파이프라인 진행 SSE 스트림",
+        "summary": "선택한 run 일괄 삭제",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}": {
+      "delete": {
+        "operationId": "delete_run_api_runs__run_id__delete",
+        "parameters": [
+          {
+            "description": "삭제할 run_id",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "삭제할 run_id",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Run Api Runs  Run Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "run 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "run 삭제",
+        "tags": [
+          "runs"
+        ]
+      },
+      "get": {
+        "operationId": "get_run_api_runs__run_id__get",
+        "parameters": [
+          {
+            "description": "run_id",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "run_id",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "run 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "파이프라인 run 상세 — node_states 포함 (LangSmith 토큰 lazy 보강)",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}/events": {
+      "get": {
+        "operationId": "stream_events_api_runs__run_id__events_get",
+        "parameters": [
+          {
+            "description": "POST /api/runs가 반환한 run_id",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "POST /api/runs가 반환한 run_id",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "파이프라인 진행 SSE 스트림 (라이브 run 한정)",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{run_id}/retry": {
+      "post": {
+        "description": "원본 run의 problem_id·target_count를 그대로 새 run으로 재실행한다. from_node 부분 재실행은 LangGraph 체크포인트가 필요해 현재는 전체 재실행으로 폴백.",
+        "operationId": "retry_run_api_runs__run_id__retry_post",
+        "parameters": [
+          {
+            "description": "재실행할 원본 run_id",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "재실행할 원본 run_id",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RetryRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "원본 run 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "run 재실행 (새 run_id로 전체 재실행)",
         "tags": [
           "runs"
         ]
@@ -1110,7 +2848,6 @@
     },
     "/api/spans/{trace_id}": {
       "get": {
-        "description": "trace_id에 묶인 모든 LangSmith run을 가져와 prompts/IO/tokens/latency/cost를 정리. `LANGSMITH_API_KEY`가 설정되어 있어야 한다.",
         "operationId": "get_spans_api_spans__trace_id__get",
         "parameters": [
           {
@@ -1122,6 +2859,22 @@
               "description": "LangSmith 트레이스 UUID",
               "title": "Trace Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1168,20 +2921,32 @@
   },
   "tags": [
     {
-      "description": "liveness probe",
+      "description": "liveness probe (인증 없음)",
       "name": "health"
     },
     {
-      "description": "출제 파이프라인 실행 + SSE 진행 스트림",
+      "description": "출제 파이프라인 실행 + SSE 진행 스트림 (admin)",
       "name": "runs"
     },
     {
-      "description": "원본/변형 문제 조회와 원본 직접 등록",
+      "description": "원본/변형 문제 조회·등록·삭제 (admin)",
       "name": "problems"
     },
     {
-      "description": "LangSmith 트레이스 조회",
+      "description": "공지 등록/수정/삭제 (admin)",
+      "name": "notices"
+    },
+    {
+      "description": "버그 제보 조회/상태 관리/삭제 (admin)",
+      "name": "reports"
+    },
+    {
+      "description": "LangSmith 트레이스 조회 (admin)",
       "name": "spans"
+    },
+    {
+      "description": "compare_to_original 3축 점수 — admin dashboard용 (admin)",
+      "name": "admin-comparison"
     }
   ]
 }

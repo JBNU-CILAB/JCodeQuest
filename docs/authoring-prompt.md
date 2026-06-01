@@ -9,7 +9,7 @@ LangGraph 출제 그래프(`history.md` §5)의 두 노드에 각각 대응하�
 | `draft_problem` (§2) | seeds, category, level | `title`, `statement`, `intent_rubric` |
 | `author_solution` (§3) | draft 결과 + category | `reference_code`, 각 케이스의 `stdin` 리스트 |
 
-`expected_stdout`은 LLM이 만들지 않는다. `verify_executes` 노드가 `reference_code`를 sandbox에 실행해 산출 — 이게 환각 차단의 핵심.
+`expected_stdout`은 LLM이 만들지 않는다. `verify_candidates` 노드가 `reference_code`를 sandbox에 실행해 산출 — 이게 환각 차단의 핵심.
 
 운용 시점의 모델 라인업: `qwen2.5-coder:14b-instruct-q5_K_M` (생성 품질 우선, 출제 시점은 시간 압박 적음).
 
@@ -108,7 +108,7 @@ JSON으로만 응답.
 | `must_handle` | ≥ 1개 |
 | `forbidden_patterns` | ≥ 1개, 각 항목이 추상어("하드코딩", "트릭") 단독으로 끝나지 않음 |
 
-검증 실패 시 → `judge_quality`가 `status="draft"`로 보류 후 사람 검수 큐.
+검증 실패 시 → `judge_candidates`가 `status="draft"`로 보류 후 사람 검수 큐.
 
 ---
 
@@ -189,20 +189,20 @@ JSON으로만 응답.
 | `reference_code` | 비어있지 않음, ≤ 4KB |
 | `test_inputs` | 4 ~ 8개, ordinal이 1부터 연속, sample 1 ~ 2개 |
 
-검증 실패 시 → `verify_executes` 노드의 자기루프 (max 2회 재시도) 트리거.
+검증 실패 시 → `verify_candidates` 노드의 자기루프 (max 2회 재시도) 트리거.
 
 ---
 
 ## 4. 후속 단계
 
-§3의 출력이 들어오면 LangGraph가 다음을 순서대로 처리한다(`verify_executes`만 LLM 미관여,
+§3의 출력이 들어오면 LangGraph가 다음을 순서대로 처리한다(`verify_candidates`만 LLM 미관여,
 나머지는 모두 LLM 호출). 게이트 임계·동작 상세는 CLAUDE.md "Conventions" 참조.
 
-1. `verify_executes` (LLM 미관여): `reference_code`를 각 `stdin`에 대해 sandbox 실행
+1. `verify_candidates` (LLM 미관여): `reference_code`를 각 `stdin`에 대해 sandbox 실행
    - 모두 `status="OK"`이고 `elapsed_ms ≤ time_limit_ms × JCQ_AUTHOR_PERF_RATIO`(기본 0.8) → 진행
    - 실패 시 → `author_solution`로 자기루프 (max 2회). 그래도 실패 시 `status="draft"`로 보류
    - 각 케이스의 `stdout`을 `expected_stdout`으로 박음
-2. `judge_quality`: 3-judge ensemble이 problem 전체를 4축 기준으로 품질 투표 — 점수 **중앙값**이
+2. `judge_candidates`: 3-judge ensemble이 problem 전체를 4축 기준으로 품질 투표 — 점수 **중앙값**이
    threshold 이상 + 2/3 pass면 통과 (별도 프롬프트, 본 문서 범위 밖)
 3. `solve_candidates`: 3-LLM이 직접 문제를 풀어 sandbox로 풀이 가능성 검증 (≥1 AC면 통과)
 4. `attack_candidates`: 결함을 심은 공격 풀이로 테스트 **변별력**을 검사 — 테스트가 결함을
@@ -216,5 +216,5 @@ JSON으로만 응답.
 
 - **`format="json"`이라도 LLM이 마크다운 펜스를 끼울 때가 있다** — 파싱 전에 `str.strip()` + 양 끝의 ```` ``` ```` 제거 후처리 필수.
 - **stdin 끝의 개행** — 학생 코드의 `input()`이 EOF에서 깨지지 않도록 `\n`으로 끝나야 안전. 프롬프트에 명시했지만 후처리에서도 강제하는 게 좋다.
-- **must_handle ↔ test_inputs 매칭** — 검증 단계에서 항목이 케이스로 커버됐는지 자동 확인이 어렵다. 1차로 LLM에 맡기되, `judge_quality` 프롬프트에서 "must_handle의 각 항목이 어느 stdin에서 검증되는가"를 묻는 후속 점검을 권장.
+- **must_handle ↔ test_inputs 매칭** — 검증 단계에서 항목이 케이스로 커버됐는지 자동 확인이 어렵다. 1차로 LLM에 맡기되, `judge_candidates` 프롬프트에서 "must_handle의 각 항목이 어느 stdin에서 검증되는가"를 묻는 후속 점검을 권장.
 - **카테고리별 시드 부족** — 첫 부트스트랩 시 seeds가 2개 이하면 다양성 시그널이 약하다. `scripts/seed_demo.py`로 카테고리당 최소 3문제는 손으로 박고 시작.

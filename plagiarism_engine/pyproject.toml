@@ -1,0 +1,24 @@
+[project]
+name = "jcq-plagiarism"
+version = "0.1.0"
+description = "JCodeQuest 표절 검토 엔진 — Dolos(구조 유사도) + (Phase 2) 멀티에이전트 판정"
+requires-python = ">=3.10"
+dependencies = [
+    "jcq-shared @ file:../shared",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "langgraph>=0.2",
+    # Phase 2 멀티에이전트 판정 (LLM). Ollama 기본, OpenAI 스위치.
+    "langchain-core>=0.3",
+    "langchain-ollama>=0.2",
+    "langchain-openai>=0.2",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["plagiarism"]

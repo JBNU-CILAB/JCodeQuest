@@ -222,7 +222,58 @@ export interface PublicProfile {
   stats?: PublicProfileStats | null
 }
 
+// ───────────────── Code Battle ─────────────────
+export type BattlePhase = 'scheduled' | 'lobby' | 'active' | 'finished'
+
+export interface ScoreboardEntry {
+  rank: number
+  user_id: number
+  display_name: string
+  avatar_url: string | null
+  tests_passed: number
+  total_tests: number
+  is_ac: boolean
+  attempts: number
+  solved_seconds: number | null
+}
+
+export interface BattleStatusResponse {
+  battle_id: number | null
+  battle_date: string | null
+  status: BattlePhase | null
+  server_time: string
+  lobby_at: string | null
+  start_at: string | null
+  end_at: string | null
+  next_start_at: string | null
+  always_open?: boolean
+  problem: ProblemDetail | null
+  joined: boolean
+  participant_count: number
+  scoreboard: ScoreboardEntry[]
+  my_rank: number | null
+}
+
+export interface BattleSubmitResponse {
+  submission_id: number
+  status: SubmissionStatus
+}
+
+export interface BattleJoinResponse {
+  battle_id: number
+  joined: boolean
+  participant_count: number
+}
+
 // ───────────────── Mock 카드 타입 (Phase 6에서 일부 교체) ─────────────────
+
+export interface RankUser {
+  rank: number
+  name: string
+  solved: number
+  streak: number
+  score: number
+}
 
 export interface WeeklyProblem {
   label: string

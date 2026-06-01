@@ -45,6 +45,13 @@ services:
       JCQ_AUTH_ALLOW_DEV_STUB: "${JCQ_AUTH_ALLOW_DEV_STUB:-}"
       JCQ_COOKIE_INSECURE: "${JCQ_COOKIE_INSECURE:-}"
       JCQ_SUBMIT_COOLDOWN_S: "${JCQ_SUBMIT_COOLDOWN_S:-10}"
+      # Code Battle 스케줄 (배틀 스케줄러가 backend lifespan에서 동작) — 기본 매일 20시 KST.
+      # lobby_at = START_HOUR:00, start_at = +LOBBY_MIN(문제 공개), end_at = +SOLVE_MIN(순위 확정).
+      # JCQ_BATTLE_ALWAYS_OPEN=1 이면 시간표 무시하고 항상 active(개발용).
+      JCQ_BATTLE_START_HOUR: "${JCQ_BATTLE_START_HOUR:-20}"
+      JCQ_BATTLE_LOBBY_MIN: "${JCQ_BATTLE_LOBBY_MIN:-5}"
+      JCQ_BATTLE_SOLVE_MIN: "${JCQ_BATTLE_SOLVE_MIN:-20}"
+      JCQ_BATTLE_ALWAYS_OPEN: "${JCQ_BATTLE_ALWAYS_OPEN:-}"
       # CORS — 외부 origin은 쉼표 구분으로 JCQ_CORS_ORIGINS, IP 대역은 regex.
       # 로컬 개발 origin(5173/5500/8001)은 코드에 기본값으로 박혀 있어 추가 설정 불필요.
       JCQ_CORS_ORIGINS: "${JCQ_CORS_ORIGINS:-}"
@@ -156,6 +163,41 @@ services:
     depends_on:
       - backend
       - judge
+    networks: [jcq]
+
+  plagiarism:
+    build:
+      context: .
+      dockerfile: plagiarism_engine/Dockerfile
+    container_name: jcq-plagiarism
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      # DB는 backend /internal/* 위임 — JCQ_DB_URL 직접 참조 없음.
+      JCQ_BACKEND_URL: "http://backend:8000"
+      JCQ_INTERNAL_SECRET: "${JCQ_INTERNAL_SECRET}"
+      JCQ_ADMIN_TOKEN: "${JCQ_ADMIN_TOKEN}"
+      JCQ_DASHBOARD_ORIGIN: "${JCQ_DASHBOARD_ORIGIN:-http://localhost:6010}"
+      # 유사도 엔진 — 이미지에 Node 20 + Dolos npm 의존성이 포함돼 있어 기본 auto:
+      # Dolos(라인 단위 fragments까지 정밀) 시도 → 실패 시 winnow(순수 Python)로 폴백.
+      # dolos로 강제하면 Dolos 실패 시 run을 failed로 마감(폴백 차단).
+      JCQ_PLAGIARISM_ENGINE: "${JCQ_PLAGIARISM_ENGINE:-auto}"
+      JCQ_PLAGIARISM_SIMILARITY_THRESHOLD: "${JCQ_PLAGIARISM_SIMILARITY_THRESHOLD:-0.7}"
+      JCQ_PLAGIARISM_TOP_K: "${JCQ_PLAGIARISM_TOP_K:-50}"
+      JCQ_PLAGIARISM_MIN_FRAGMENT: "${JCQ_PLAGIARISM_MIN_FRAGMENT:-10}"
+      JCQ_PLAGIARISM_INCLUDE_VERDICT: "${JCQ_PLAGIARISM_INCLUDE_VERDICT:-AC}"
+      # Phase 2 멀티에이전트 판정 (Ollama/OpenAI) — 기본 off
+      JCQ_PLAGIARISM_ENSEMBLE_ENABLED: "${JCQ_PLAGIARISM_ENSEMBLE_ENABLED:-0}"
+      JCQ_LLM_PROVIDER: "${JCQ_LLM_PROVIDER:-ollama}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      JCQ_OPENAI_API_KEY: "${JCQ_OPENAI_API_KEY:-}"
+      JCQ_OPENAI_MODEL: "${JCQ_OPENAI_MODEL:-gpt-4o-mini}"
+      JCQ_OPENAI_BASE_URL: "${JCQ_OPENAI_BASE_URL:-}"
+      JCQ_PLAGIARISM_ENSEMBLE_MODEL: "${JCQ_PLAGIARISM_ENSEMBLE_MODEL:-qwen2.5-coder:14b-instruct-q5_K_M}"
+    ports:
+      - "8003:8003"
+    depends_on:
+      - backend
     networks: [jcq]
 
   frontend:

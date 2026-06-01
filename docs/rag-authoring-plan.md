@@ -1,5 +1,7 @@
 # 출제 엔진 RAG 구현 계획
 
+> **상태(2026-05): 구현 완료.** `retrieve_exemplars` 노드(`pipeline/nodes/retrieve.py`)·`mmr_select`(`embeddings.py`)·`DRAFT_USER` 주입·`JCQ_RAG_*` 튜닝 변수가 모두 들어갔다. 남은 건 §8.5의 A/B 측정과 λ 튜닝. 본 문서는 설계 근거 기록으로 유지한다.
+>
 > 기존 문제 DB를 retrieval 소스로 활용해, 출제 엔진(`authoring_engine`)의 변형 생성 품질을
 > 작은(≤10B) 로컬 모델 환경에서 끌어올리기 위한 설계 문서.
 
@@ -104,7 +106,7 @@ fetch_problem ──┬─→ (기존) 원본 + sibling embeddings
 generate_variants ──→ DRAFT_USER 에 exemplar 블록 주입
                       (기존 "3 seed" 자리를 retrieval 결과로 교체)
                       ↓ novelty check (그대로 유지)
-verify → judge → solve → compare → persist
+verify → judge → solve → attack → compare → persist
 ```
 
 > 생성 흐름은 그대로 두고 **"어떤 예시를 보여줄지"만 똑똑하게** 바꾼다.

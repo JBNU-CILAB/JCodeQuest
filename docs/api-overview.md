@@ -76,4 +76,4 @@ openapi-generator-cli generate -i docs/openapi-backend.json -g python -o ./gen/p
 
 ## 인증 시 Swagger UI에서의 호출
 
-`/docs`는 브라우저 쿠키를 그대로 사용하므로, **같은 origin/도메인에서 `/auth/login` → 콜백 완료 후 `/docs`를 열면** 인증 필요 엔드포인트도 그대로 호출됩니다. 로컬 개발에서는 `JCQ_AUTH_ALLOW_DEV_STUB=1` 후 `POST /auth/dev-login`을 한 번 호출하면 같은 쿠키 컨텍스트로 보호된 API를 시연할 수 있습니다(프로덕션 금지).
+운영에서는 인증 필요 엔드포인트를 `Authorization: Bearer <Supabase access_token>`으로 호출합니다(프런트의 Supabase 세션에서 토큰을 꺼내 씀). backend에는 OAuth 리다이렉트 라우트(`/auth/login`·`/auth/callback`)가 없습니다 — Google 로그인은 프런트의 `supabase.auth.signInWithOAuth`가 전담. 로컬 개발에서는 `JCQ_AUTH_ALLOW_DEV_STUB=1` 후 `POST /auth/dev-login`을 한 번 호출하면 `jcq_session` 쿠키 컨텍스트로 보호된 API를 시연할 수 있습니다(프로덕션 금지).

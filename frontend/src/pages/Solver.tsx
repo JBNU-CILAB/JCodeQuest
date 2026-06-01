@@ -140,21 +140,21 @@ export function Solver() {
 
   if (loading) {
     return (
-      <main className="max-w-[1180px] mx-auto px-8 py-16 text-center text-gray-400 text-sm">
+      <main className="max-w-none w-full px-8 py-16 text-center text-gray-400 text-sm">
         문제를 불러오는 중...
       </main>
     )
   }
   if (loadError || !problem) {
     return (
-      <main className="max-w-[1180px] mx-auto px-8 py-16 text-center text-red-500 text-sm">
+      <main className="max-w-none w-full px-8 py-16 text-center text-red-500 text-sm">
         {loadError ?? '문제 로드 실패'}
       </main>
     )
   }
 
   return (
-    <main className="max-w-[1380px] mx-auto w-full px-6 pt-6 pb-12 flex flex-col lg:flex-row gap-6 items-start">
+    <main className="max-w-none w-full px-8 pt-6 pb-12 flex flex-col lg:flex-row gap-6 items-start">
       {/* 좌측: 문제 설명 */}
       <aside className="w-full lg:w-1/2 flex flex-col gap-4">
         <div className="bg-white border border-gray-200 rounded-2xl px-6 py-5 shadow-[0_1px_2px_rgba(31,41,55,0.03)]">

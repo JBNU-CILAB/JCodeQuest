@@ -1,8 +1,8 @@
 # 프론트엔드–백엔드 연동 작업 계획
 
-> 백엔드 API 10개를 React 프론트엔드(`frontend/`)와 연결하는 작업 계획.
-> 인증은 이미 Supabase JWT로 마이그레이션 완료된 상태에서 출발.
-> 필요하다면 api-reference.md를 참고해서 진행.
+> **상태(2026-05): 이 계획은 대부분 구현 완료.** 프런트는 `react-router-dom`(7.x) 기반 다중 페이지 SPA로, 아래 Phase 1~6의 실데이터 연동(`/me`, `/problems`, `/grade`, SSE, `/tutor`, `/me/submissions`, `/leaderboard`, `/notices`)을 실제로 호출한다(`src/lib/api.ts`, `src/pages/*`). `src/data.ts` mock은 잔존하나 페이지에서 import하지 않는다. 본 문서는 당시 계획의 기록 — 현재 API 목록은 `api-backend.md`가 정답.
+>
+> 인증은 Supabase JWT로 마이그레이션 완료된 상태에서 출발.
 ---
 
 ## 1. 현황
@@ -22,17 +22,16 @@
 | POST | `/auth/logout` | 없음 | dev-login 쿠키 세션 무효화 |
 | POST | `/auth/dev-login` | 없음 | **dev only** — `JCQ_AUTH_ALLOW_DEV_STUB=1`일 때만 등록 |
 
-### 1.2 프론트엔드 현재 상태
+### 1.2 프론트엔드 현재 상태 *(계획 작성 시점)*
 
-- Vite + React + Tailwind, 단일 페이지 (라우팅 없음)
-- 모든 데이터는 `src/data.ts`의 mock
+- Vite + React + Tailwind, 단일 페이지 (라우팅 없음) — *현재는 `react-router-dom` 다중 페이지(`/`, `/problems`, `/problems/:id`, `/submissions/:id`, `/notices`, `/mypage`, …)로 전환됨*
+- 모든 데이터는 `src/data.ts`의 mock — *현재는 실 API 호출*
 - Supabase Auth 연동 완료 (`signInWithOAuth` / `signOut`)
-- 컴포넌트: `Header`, `Hero`, `Dashboard`, `RankingCard`, `RecentSubmissionsCard`, `WeeklyProblemsCard`
 
-### 1.3 백엔드에 없는 API (mock 유지 또는 추후 추가)
+### 1.3 계획 작성 당시 "백엔드에 없던" API → **현재 모두 구현됨**
 
-- 유저별 제출 목록 (`GET /me/submissions`) — `RecentSubmissionsCard`용
-- 랭킹 리스트 (`GET /ranking`) — `RankingCard`용
+- 유저별 제출 목록 → `GET /me/submissions` (구현 완료)
+- 랭킹 리스트 → `GET /leaderboard` (`period=all|week`) + `GET /leaderboard/by-grade` (구현 완료, `/ranking`이 아님)
 
 ### 1.4 DB 마이그레이션
 
@@ -235,17 +234,9 @@ export interface TutorHistoryResponse {
 - `WeeklyProblemsCard` → `GET /problems` 데이터로 대체 (또는 별도 카드로 재구성)
 - `Header`의 EXP 배지 → `/me` 데이터
 
-### 7.2 백엔드 추가 필요 (당장은 mock 유지)
-- `RecentSubmissionsCard`:
-  - **필요 API**: `GET /me/submissions?limit=10`
-  - **반환**: `Submission`의 일부 필드 + `Problem.title` join
-  - **구현 위치**: `backend/src/api/me.py`에 추가 라우트
-- `RankingCard`:
-  - **필요 API**: `GET /ranking?limit=20`
-  - **반환**: `[{rank, display_name, tier, exp}]`, `user`를 `exp DESC`로 정렬
-  - **구현 위치**: 새 `backend/src/api/ranking.py`
-
-이 두 API는 스키마 변경 없이 추가 가능 — Phase 6에서 백엔드 작업으로 분리해서 처리.
+### 7.2 백엔드 추가 — **현재 구현 완료**
+- `RecentSubmissionsCard`: `GET /me/submissions`(본인) / `GET /submissions/recent`(전체) — `backend/src/api/me.py`, `submissions.py`
+- `RankingCard`: `GET /leaderboard`(`period=all|week`) + `GET /leaderboard/by-grade` — `backend/src/api/leaderboard.py` (`/ranking`이 아니라 `/leaderboard`로 구현됨)
 
 ---
 

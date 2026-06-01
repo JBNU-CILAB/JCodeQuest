@@ -1,5 +1,5 @@
 /* RunsView 노드 정의 + 포맷 헬퍼.
- * NODE_DEFS는 authoring graph.py의 9개 노드(= node_stats.NODE_ORDER)와 1:1.
+ * NODE_DEFS는 authoring graph.py의 10개 노드(= node_stats.NODE_ORDER)와 1:1.
  * kind: llm(LLM 호출) · sandbox(코드 실행) · db(DB·임베딩 I/O). side: 게이트성 부가 단계. */
 
 export interface EnsembleMember {
@@ -14,6 +14,8 @@ export interface NodeDef {
   side?: boolean;
   note: string;
   ensemble?: EnsembleMember[];   // 3-LLM 앙상블 노드면 멤버 목록 — 그래프에서 서브노드로 펼침
+  /** 이 노드가 어느 노드로 역방향 루프백하는지(시각화용 곡선 화살표 대상). */
+  loopback?: string;
 }
 
 export const NODE_DEFS: NodeDef[] = [
@@ -30,8 +32,10 @@ export const NODE_DEFS: NodeDef[] = [
       { id: "Casper", model: "llama3.1:8b" },
     ],
   },
+  { key: "revise_problem", label: "revise_problem", kind: "llm", side: true, loopback: "verify_candidates", note: "judge 실패 후보의 statement·rubric을 판사 issues로 표적 수정한 뒤 verify→judge로 루프백하는 보강 단계. ↻ retries로 반복 횟수가 표시됩니다." },
   { key: "solve_candidates", label: "solve_candidates", kind: "llm", note: "LLM이 후보 문제를 직접 풀어 풀이 가능성(solvable)을 확인합니다." },
-  { key: "attack_candidates", label: "attack_candidates", kind: "llm", side: true, note: "결함을 심은 공격 풀이가 테스트에 걸리는지(변별력) 검사하는 게이트." },
+  { key: "attack_candidates", label: "attack_candidates", kind: "llm", side: true, note: "결함을 심은 공격 풀이가 테스트에 표적 차원(naive→TLE/MLE, edge_skip→WA/RE)으로 걸리는지 검사하는 게이트." },
+  { key: "strengthen_tests", label: "strengthen_tests", kind: "llm", side: true, loopback: "attack_candidates", note: "변별력 미달 시 미검출 결함을 걸러내는 판별 테스트를 추가하고 attack을 재검증하는 루프." },
   { key: "compare_to_original", label: "compare_to_original", kind: "llm", side: true, note: "원본과 변형을 비교해 환각/의도/난이도 3축을 기록·게이트합니다." },
   { key: "persist_approved", label: "persist_approved", kind: "db", note: "3-게이트(solver·변별력·compare)를 통과한 변형을 DB에 저장합니다." },
 ];

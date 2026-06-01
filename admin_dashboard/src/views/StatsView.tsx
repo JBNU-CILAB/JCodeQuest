@@ -245,7 +245,9 @@ function ProblemDetail({ stat }: { stat: ProblemStat }) {
 }
 
 /* ──────────────────────────────────────────────────────────── */
-function ProblemStatsTab({ settings }: { settings: ConnSettings }) {
+// '문제 관리' 탭으로 합쳐지면서 ProblemsView가 직접 임포트하도록 노출.
+// (StatsView 자체는 더 이상 라우팅되지 않지만, default export는 호환성 차원에서 유지.)
+export function ProblemStatsTab({ settings }: { settings: ConnSettings }) {
   const [bucket, setBucket] = useState("day");
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
