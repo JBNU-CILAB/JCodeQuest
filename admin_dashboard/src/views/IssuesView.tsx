@@ -21,7 +21,10 @@ export default function IssuesView({ settings }: { settings: ConnSettings }) {
   const active = TABS.find((t) => t.id === tab) ?? TABS[0];
 
   return (
-    <div className="main">
+    // ⚠️ 반드시 `.main.issues` modifier를 함께 둬야 한다. 기본 `.main`은
+    // `display: grid; overflow: hidden`이라 안에 또 다른 `.main.reports`가
+    // 들어가면 grid-area 충돌로 레이아웃이 깨진다(빈 좌측 + 우측 우측 쏠림).
+    <div className="main issues">
       <div className="issues-tabs" role="tablist" aria-label="신고·검토 서브탭">
         {TABS.map((t) => (
           <button

@@ -9,6 +9,7 @@ import { Result } from './pages/Result'
 import { Notices } from './pages/Notices'
 import { NoticeDetail } from './pages/NoticeDetail'
 import { MyPage } from './pages/MyPage'
+import { Battle } from './pages/Battle'
 
 const INTRO_SEEN_KEY = 'intro_seen'
 
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/settings/api-key" element={<Landing />} />
             <Route path="/problems" element={<Problems />} />
             <Route path="/problems/:id" element={<Solver />} />
+            <Route path="/battle" element={<Battle />} />
             <Route path="/submissions/:id" element={<Result />} />
             <Route path="/notices" element={<Notices />} />
             <Route path="/notices/:id" element={<NoticeDetail />} />

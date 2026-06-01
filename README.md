@@ -85,6 +85,7 @@ docker compose --env-file .env.docker up --build -d   # 빌드 + 시작
 docker compose --env-file .env.docker ps              # 상태 확인
 docker compose --env-file .env.docker logs -f backend # 로그 보기
 docker compose --env-file .env.docker down            # 종료
+docker compose --env-file .env.docker down --rmi local
 ```
 
 ## API Docs — Swagger / OpenAPI

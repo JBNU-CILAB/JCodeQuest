@@ -36,7 +36,13 @@ const LEVEL_BADGE_STYLE: Record<ProblemLevel, string> = {
   gold: 'bg-yellow-100 text-yellow-800 border border-yellow-300',
 }
 
-interface ProblemCardProps {
+const LEVEL_STRIPE_COLOR: Record<ProblemLevel, string> = {
+  bronze: '#d97706',
+  silver: '#64748b',
+  gold: '#eab308',
+}
+
+interface ProblemRowProps {
   problem: ProblemSummary
   idx: number
   open: boolean
@@ -44,111 +50,64 @@ interface ProblemCardProps {
   onClick: () => void
 }
 
-function HoverProblemCard({
+function ProblemListRow({
   problem,
   idx,
   open,
   solved,
   onClick,
-}: ProblemCardProps) {
-  const [hover, setHover] = useState(false)
-  const hoverTimer = useRef<number | null>(null)
-
-  const enter = () => {
-    if (hoverTimer.current) window.clearTimeout(hoverTimer.current)
-    hoverTimer.current = window.setTimeout(() => setHover(true), 220)
-  }
-  const leave = () => {
-    if (hoverTimer.current) window.clearTimeout(hoverTimer.current)
-    setHover(false)
-  }
-
-  // Stagger only on initial open so re-renders (filter change) don't replay.
+}: ProblemRowProps) {
   const animation = open
-    ? `card-pop 0.42s ${idx * 60}ms var(--ease-out-cubic) both`
+    ? `list-slide 0.36s ${idx * 40}ms var(--ease-out-cubic) both`
     : undefined
 
   return (
     <button
       type="button"
       onClick={onClick}
-      onMouseEnter={enter}
-      onMouseLeave={leave}
-      onFocus={enter}
-      onBlur={leave}
-      className="relative flex flex-col gap-1.5 bg-white border border-line rounded-2xl px-5 py-4 text-left w-full cursor-pointer transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-[3px] hover:shadow-[0_10px_24px_-8px_rgba(31,41,55,0.12)] hover:border-brand/40"
-      style={{ animation, zIndex: hover ? 40 : undefined }}
+      className="relative w-full text-left border-l-4 px-6 py-3 bg-white hover:bg-gray-50 transition-colors duration-150 flex items-center gap-4 group"
+      style={{
+        animation,
+        borderLeftColor: LEVEL_STRIPE_COLOR[problem.level],
+        opacity: solved ? 1 : 0.9,
+      }}
     >
-      <div className="flex items-center gap-2 mb-1.5">
-        <span
-          className={`px-2 py-0.5 text-[11px] font-bold rounded-full ${LEVEL_BADGE_STYLE[problem.level]}`}
-        >
-          {LEVEL_LABEL[problem.level]}
-        </span>
-        <span className="text-[11px] text-gray-500 px-2 py-0.5 rounded-full bg-gray-100">
+      {/* ID */}
+      <div className="w-10 flex-shrink-0 text-[12px] font-bold text-gray-500 tabular-nums">
+        {String(problem.id).padStart(2, '0')}
+      </div>
+
+      {/* Title and Summary */}
+      <div className="flex-1 min-w-0">
+        <h3 className="text-[14px] font-bold text-gray-800">
+          {problem.title}
+        </h3>
+        <p className="text-[12px] text-gray-600 leading-relaxed line-clamp-1">
+          {problem.one_line_summary}
+        </p>
+      </div>
+
+      {/* Category Badge */}
+      <div className="flex-shrink-0">
+        <span className="text-[11px] text-gray-600 bg-gray-100 px-3 py-1.5 rounded">
           {problem.category}
         </span>
-        <span className="ml-auto text-[13px] font-bold text-brand tabular-nums">
+      </div>
+
+      {/* Points */}
+      <div className="flex-shrink-0 w-24 text-right">
+        <span className="text-[13px] font-bold text-brand tabular-nums">
           {problem.points} pt
         </span>
       </div>
 
-      <h3 className="text-[15px] font-bold text-gray-800 leading-snug">
-        {problem.title}
-      </h3>
-      <p className="text-[12.5px] text-gray-500 leading-relaxed line-clamp-2">
-        {problem.one_line_summary}
-      </p>
-
+      {/* Solved Indicator */}
       {solved && (
         <span
-          className="absolute top-3.5 right-3.5 w-2.5 h-2.5 rounded-full bg-brand"
+          className="absolute left-2 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-brand"
           style={{ boxShadow: '0 0 0 3px rgba(49, 130, 246, 0.18)' }}
           aria-label="해결됨"
         />
-      )}
-
-      {hover && (
-        <div
-          className="absolute left-0 right-0 z-30 bg-gray-800 text-gray-100 rounded-2xl px-5 py-4 pointer-events-none"
-          style={{
-            top: 'calc(100% + 10px)',
-            boxShadow: '0 18px 40px -10px rgba(0,0,0,0.4)',
-            animation:
-              'preview-pop-up 0.22s var(--ease-out-cubic)',
-          }}
-        >
-          <span
-            className="absolute w-3 h-3 bg-gray-800 rotate-45"
-            style={{ left: 30, top: -6 }}
-            aria-hidden
-          />
-          <h4
-            className="text-[12px] font-bold uppercase mb-1.5"
-            style={{ color: '#7aa9f7', letterSpacing: '0.08em' }}
-          >
-            preview
-          </h4>
-          <div className="text-white font-bold mb-1 leading-snug">
-            {problem.title}
-          </div>
-          <div className="text-gray-300 text-[12.5px] leading-relaxed mb-2 line-clamp-3">
-            {problem.one_line_summary}
-          </div>
-          <dl
-            className="grid gap-y-1 mt-1.5 text-gray-300 text-[12px]"
-            style={{ gridTemplateColumns: '72px 1fr', columnGap: 12 }}
-          >
-            <dt className="text-gray-400 text-[11px]">분류</dt>
-            <dd>{problem.category}</dd>
-            <dt className="text-gray-400 text-[11px]">난이도</dt>
-            <dd>{LEVEL_LABEL[problem.level]}</dd>
-            <dt className="text-gray-400 text-[11px]">배점</dt>
-            <dd className="tabular-nums">{problem.points} pt</dd>
-            <dt className="text-gray-400 text-[11px]">상태</dt>
-            <dd>{solved ? '✓ 해결' : '— 미해결'}</dd>
-          </dl>
-        </div>
       )}
     </button>
   )
@@ -258,9 +217,9 @@ function WeekSection({
           transition: 'height 0.4s var(--ease-out-cubic)',
         }}
       >
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 pt-3">
+        <div className="flex flex-col divide-y divide-gray-200 pt-2">
           {items.map((p, i) => (
-            <HoverProblemCard
+            <ProblemListRow
               key={p.id}
               problem={p}
               idx={i}
@@ -394,7 +353,7 @@ export function Problems() {
 
   return (
     <main
-      className="max-w-[1180px] mx-auto w-full px-8 pt-8 pb-20"
+      className="max-w-none w-full px-8 pt-8 pb-20"
       style={{ animation: 'view-fade 0.32s ease-out' }}
     >
       <div className="flex items-end justify-between mb-6">

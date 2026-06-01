@@ -20,6 +20,7 @@ function defaultSettings(): ConnSettings {
     baseToken: "",
     judgeUrl: "http://localhost:8002",
     judgeToken: "",
+    plagiarismUrl: "http://localhost:8003",
   };
 }
 
@@ -52,6 +53,16 @@ export function judgeFetch(
 ) {
   if (!settings.judgeUrl) throw new Error("judge URL 설정이 비어있음");
   return apiFetch(settings.judgeUrl + path, settings.judgeToken, init);
+}
+
+export function plagFetch(
+  path: string,
+  settings: ConnSettings,
+  init: RequestInit = {}
+) {
+  const url = settings.plagiarismUrl || "http://localhost:8003";
+  // admin 토큰은 서비스 간 공유(JCQ_ADMIN_TOKEN) — baseToken 재사용.
+  return apiFetch(url + path, settings.baseToken, init);
 }
 
 export function backendFetch(

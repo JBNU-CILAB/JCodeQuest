@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import type { ConnSettings, SubmissionRow, SubmissionDetail } from "../types";
 import { judgeFetch, fmtDate } from "../api";
 import VerdictBadge from "../components/VerdictBadge";
+import ProblemPicker from "../components/ProblemPicker";
 
 interface Props { settings: ConnSettings }
 
@@ -84,9 +85,14 @@ export default function SubmissionsView({ settings }: Props) {
             <label>User ID</label>
             <input type="number" value={filters.user_id} onChange={upd("user_id")} placeholder="전체" />
           </div>
-          <div className="field narrow">
-            <label>Problem ID</label>
-            <input type="number" value={filters.problem_id} onChange={upd("problem_id")} placeholder="전체" />
+          <div className="field">
+            <label>문제</label>
+            <ProblemPicker
+              settings={settings}
+              value={filters.problem_id}
+              onChange={(v) => setFilters((p) => ({ ...p, problem_id: v }))}
+              placeholder="전체"
+            />
           </div>
           <div className="field narrow">
             <label>Verdict</label>

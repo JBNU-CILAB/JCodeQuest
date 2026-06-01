@@ -33,7 +33,7 @@ def _backend_error(e: httpx.HTTPStatusError) -> HTTPException:
 )
 async def list_users(
     search: Annotated[str | None, Query(description="display_name/email/nickname 부분 일치")] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    limit: Annotated[int, Query(ge=1, le=2000)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[AdminUserSummary]:
     try:

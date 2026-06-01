@@ -96,7 +96,7 @@ export function RankingCard() {
                 )}
               </div>
               <div className="inline-flex items-center gap-1 bg-violet-50 text-violet-600 font-bold text-[13px] px-3 py-1 rounded-full tabular-nums">
-                💎 {u.points.toLocaleString()}
+                {u.points.toLocaleString()}
               </div>
             </div>
           ))}

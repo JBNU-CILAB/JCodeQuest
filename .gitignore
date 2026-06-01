@@ -11,6 +11,9 @@ env.sh
 # venv — 어느 위치에 있든 전부 제외
 .venv/
 
+# node 의존성 — 어느 위치에 있든 전부 제외 (plagiarism_engine/dolos_runner 등)
+node_modules/
+
 # Python 캐시 및 빌드 산출물
 __pycache__/
 *.egg-info/

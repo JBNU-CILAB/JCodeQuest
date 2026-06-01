@@ -90,6 +90,15 @@ from ..storage.problems import (
     list_category_embeddings,
     set_problem_embedding,
 )
+from ..storage.plagiarism import (
+    create_plagiarism_run,
+    get_plagiarism_pair,
+    insert_plagiarism_pairs,
+    list_plagiarism_pairs_admin,
+    list_plagiarism_runs,
+    update_plagiarism_pair_admin,
+    update_plagiarism_run,
+)
 from ..storage.runs import (
     create_run,
     delete_run,
@@ -98,6 +107,7 @@ from ..storage.runs import (
     list_runs,
     update_run,
 )
+from ..storage.submissions import list_problem_submissions
 from ..storage.users import clear_user_api_key, delete_user, list_users_admin
 
 log = logging.getLogger(__name__)
@@ -158,7 +168,18 @@ async def grade_events(
 ) -> dict[str, str]:
     _require_internal_auth(authorization)
     broker: SubmissionEventBroker = request.app.state.events
-    apply_grading_event(event, events=broker)
+    # 배틀 제출이면 apply_grading_event가 이 브로커로 배틀 SSE 구독자에게도 알린다.
+    battle_broker: SubmissionEventBroker | None = getattr(
+        request.app.state, "battle_events", None
+    )
+    first_ac_sid = apply_grading_event(event, events=broker, battle_events=battle_broker)
+    # 일반(비배틀) 첫 AC 면 plagiarism_engine 에 자동 검사 트리거. 실패해도 webhook 응답엔
+    # 영향 없게 helper 가 모든 예외를 흡수 + warning 로그. plagiarism_engine 측이 daemon
+    # thread 패턴이라 즉시 202 로 반환 — webhook latency 영향 미미.
+    if first_ac_sid is not None:
+        from ..plagiarism_client import notify_first_ac
+
+        await notify_first_ac(first_ac_sid)
     return {"status": "ok"}
 
 
@@ -485,7 +506,7 @@ def _user_to_summary(row: UserRow, submission_count: int) -> AdminUserSummary:
 def list_users(
     authorization: Annotated[str | None, Header()] = None,
     search: Annotated[str | None, Query(description="display_name/email/nickname 부분 일치")] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    limit: Annotated[int, Query(ge=1, le=2000)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[AdminUserSummary]:
     _require_internal_auth(authorization)
@@ -1146,3 +1167,205 @@ def delete_run_record(
         if not delete_run(session, run_id):
             raise HTTPException(404, f"run {run_id} not found")
         return {"id": run_id, "deleted": True}
+
+
+# ── 표절 검토 (plagiarism_engine ↔ admin) ─────────────────────────────────
+class _PlagRunCreate(BaseModel):
+    id: str
+    problem_id: int
+    problem_title: str | None = None
+    submission_count: int = 0
+    config: dict[str, Any] = {}
+
+
+class _PlagRunUpdate(BaseModel):
+    status: str | None = None
+    submission_count: int | None = None
+    pair_count: int | None = None
+    flagged_count: int | None = None
+    ended_at: str | None = None
+    total_duration_ms: int | None = None
+    errors: list[str] | None = None
+
+
+class _PlagPairsCreate(BaseModel):
+    pairs: list[dict[str, Any]]
+
+
+class _PlagPairUpdate(BaseModel):
+    status: str | None = None
+    admin_notes: str | None = None
+
+
+def _plag_pair_to_dict(
+    row, user_a: str | None = None, user_b: str | None = None, problem_title: str | None = None
+) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "run_id": row.run_id,
+        "problem_id": row.problem_id,
+        "problem_title": problem_title,
+        "submission_a_id": row.submission_a_id,
+        "submission_b_id": row.submission_b_id,
+        "user_a_id": row.user_a_id,
+        "user_b_id": row.user_b_id,
+        "user_a_name": user_a,
+        "user_b_name": user_b,
+        "similarity": row.similarity,
+        "longest_fragment": row.longest_fragment,
+        "total_overlap": row.total_overlap,
+        "fragments": row.fragments or [],
+        "agent_verdict": row.agent_verdict,
+        "agent_confidence": row.agent_confidence,
+        "agent_rationale": row.agent_rationale,
+        "agent_debate": row.agent_debate,
+        "status": row.status,
+        "admin_notes": row.admin_notes,
+        "created_at": _dt_iso(row.created_at),
+        "updated_at": _dt_iso(row.updated_at),
+    }
+
+
+@router.get(
+    "/problems/{problem_id}/submissions",
+    summary="문제별 제출 목록 (코드 포함, 표절 비교용 — 내부 전용)",
+)
+def list_problem_submissions_internal(
+    problem_id: Annotated[int, Path()],
+    authorization: Annotated[str | None, Header()] = None,
+    verdict: Annotated[str | None, Query(description="예: AC")] = None,
+) -> list[dict[str, Any]]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        rows = list_problem_submissions(session, problem_id, verdict=verdict)
+        return [
+            {
+                "submission_id": r.id,
+                "user_id": r.user_id,
+                "code": r.code,
+                "created_at": _dt_iso(r.created_at),
+            }
+            for r in rows
+        ]
+
+
+@router.post("/plagiarism/runs", summary="표절 run 생성 (멱등)")
+def create_plagiarism_run_record(
+    req: _PlagRunCreate, authorization: Annotated[str | None, Header()] = None
+) -> dict[str, Any]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = create_plagiarism_run(
+            session,
+            id=req.id,
+            problem_id=req.problem_id,
+            problem_title=req.problem_title,
+            submission_count=req.submission_count,
+            config=req.config,
+        )
+        return {"id": row.id, "status": row.status}
+
+
+@router.patch("/plagiarism/runs/{run_id}", summary="표절 run 갱신", responses={404: {"description": "run 없음"}})
+def update_plagiarism_run_record(
+    run_id: Annotated[str, Path()],
+    req: _PlagRunUpdate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = update_plagiarism_run(
+            session, run_id,
+            status=req.status, submission_count=req.submission_count,
+            pair_count=req.pair_count, flagged_count=req.flagged_count,
+            ended_at=req.ended_at, total_duration_ms=req.total_duration_ms, errors=req.errors,
+        )
+        if row is None:
+            raise HTTPException(404, f"plagiarism run {run_id} not found")
+        return {"id": row.id, "status": row.status, "flagged_count": row.flagged_count}
+
+
+@router.get("/plagiarism/runs", summary="표절 run 목록 (admin)")
+def list_plagiarism_runs_admin(
+    authorization: Annotated[str | None, Header()] = None,
+    problem_id: Annotated[int | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[dict[str, Any]]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        rows = list_plagiarism_runs(session, problem_id=problem_id, limit=limit, offset=offset)
+        return [
+            {
+                "id": r.id, "problem_id": r.problem_id, "problem_title": r.problem_title,
+                "status": r.status, "submission_count": r.submission_count,
+                "pair_count": r.pair_count, "flagged_count": r.flagged_count,
+                "started_at": _dt_iso(r.started_at), "ended_at": _dt_iso(r.ended_at),
+                "total_duration_ms": r.total_duration_ms, "errors": r.errors or [],
+            }
+            for r in rows
+        ]
+
+
+@router.post("/plagiarism/pairs", summary="의심 쌍 bulk insert")
+def create_plagiarism_pairs(
+    req: _PlagPairsCreate, authorization: Annotated[str | None, Header()] = None
+) -> dict[str, Any]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        ids = insert_plagiarism_pairs(session, req.pairs)
+        return {"inserted": len(ids), "ids": ids}
+
+
+@router.get("/plagiarism/pairs", summary="의심 쌍 목록 (admin 검토 큐)")
+def list_plagiarism_pairs(
+    authorization: Annotated[str | None, Header()] = None,
+    status: Annotated[str | None, Query(description="open|in_progress|confirmed|dismissed")] = None,
+    problem_id: Annotated[int | None, Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[dict[str, Any]]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        rows = list_plagiarism_pairs_admin(
+            session, status=status, problem_id=problem_id, run_id=run_id, limit=limit, offset=offset
+        )
+        return [_plag_pair_to_dict(r, ua, ub, pt) for (r, ua, ub, pt) in rows]
+
+
+@router.get("/plagiarism/pairs/{pair_id}", summary="의심 쌍 상세 (코드 포함)")
+def get_plagiarism_pair_detail(
+    pair_id: Annotated[int, Path()], authorization: Annotated[str | None, Header()] = None
+) -> dict[str, Any]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = get_plagiarism_pair(session, pair_id)
+        if row is None:
+            raise HTTPException(404, f"pair {pair_id} not found")
+        a = session.get(SubmissionRow, row.submission_a_id)
+        b = session.get(SubmissionRow, row.submission_b_id)
+        ua = session.get(UserRow, row.user_a_id)
+        ub = session.get(UserRow, row.user_b_id)
+        prob = session.get(ProblemRow, row.problem_id)
+        d = _plag_pair_to_dict(
+            row, ua.display_name if ua else None, ub.display_name if ub else None,
+            prob.title if prob else None,
+        )
+        d["code_a"] = a.code if a else None
+        d["code_b"] = b.code if b else None
+        return d
+
+
+@router.patch("/plagiarism/pairs/{pair_id}", summary="의심 쌍 검토 상태 갱신", responses={404: {"description": "쌍 없음"}})
+def update_plagiarism_pair(
+    pair_id: Annotated[int, Path()],
+    req: _PlagPairUpdate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    _require_internal_auth(authorization)
+    with get_session() as session:
+        row = update_plagiarism_pair_admin(session, pair_id, status=req.status, admin_notes=req.admin_notes)
+        if row is None:
+            raise HTTPException(404, f"pair {pair_id} not found")
+        return {"id": row.id, "status": row.status}

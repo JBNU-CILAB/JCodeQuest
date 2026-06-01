@@ -1,8 +1,10 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import type { ConnSettings, RunSummaryT, RunDetailT, RunNodeStateT, SpanT, SpansState } from "../types";
+import { Suspense, use, useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import type { ConnSettings, ProblemRow, RunSummaryT, RunDetailT, RunNodeStateT, SpanT, SpansState } from "../types";
 import { adminFetch } from "../api";
 import { Icon, NodeKindIcon } from "../components/Icons";
 import { NODE_DEFS, fmtDuration, fmtTokens, fmtRelTime } from "../runsConfig";
+import { unwrap, useResource } from "../lib/resource";
+import { invalidateProblemPickerCache } from "../components/ProblemPicker";
 
 interface Props { settings: ConnSettings }
 
@@ -1530,16 +1532,61 @@ function NodeDrawer({
 }
 
 /* ── New-run inline form ───────────────────────────────────────────────── */
-function NewRunForm({ onStart, onCancel }: { onStart: (pid: number, count: number) => void; onCancel: () => void }) {
+function NewRunForm({ settings, onStart, onCancel }: {
+  settings: ConnSettings;
+  onStart: (pid: number, count: number) => void;
+  onCancel: () => void;
+}) {
   const [pid, setPid] = useState("");
   const [count, setCount] = useState("3");
+  // 원본 문제만 변형 출제 가능 → originals_only=true. 폼이 열릴 때 1회 fetch.
+  const [problems, setProblems] = useState<ProblemRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await adminFetch("/api/problems?originals_only=true", settings);
+        if (cancelled) return;
+        if (!r.ok) { setError(`[${r.status}] 원본 문제 목록 로드 실패`); setProblems([]); return; }
+        const list: ProblemRow[] = await r.json();
+        list.sort((a, b) => b.id - a.id);  // 최신순(id desc)
+        setProblems(list);
+      } catch (e) {
+        if (!cancelled) { setError((e as Error).message); setProblems([]); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [settings]);
+
+  const loaded = problems !== null;
+  const ready = loaded && (problems?.length ?? 0) > 0;
+  const p = parseInt(pid, 10);
+  const c = parseInt(count, 10);
+  const canRun = ready && p > 0 && c > 0;
+
   return (
-    <div style={{ margin: "auto", maxWidth: 420, textAlign: "center" }}>
+    <div style={{ margin: "auto", maxWidth: 560, textAlign: "center" }}>
       <div className="section-title" style={{ textAlign: "left" }}>새 파이프라인 run</div>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: "center" }}>
-        <div style={{ textAlign: "left" }}>
-          <label style={{ fontSize: 11.5, color: "var(--muted)" }}>원본 문제 ID</label>
-          <input className="search-wide" type="number" min={1} value={pid} onChange={(e) => setPid(e.target.value)} placeholder="1" style={{ width: 110, display: "block" }} />
+        <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
+          <label style={{ fontSize: 11.5, color: "var(--muted)" }}>원본 문제</label>
+          <select
+            className="search-wide"
+            value={pid}
+            onChange={(e) => setPid(e.target.value)}
+            disabled={!ready}
+            style={{ display: "block", width: "100%" }}
+          >
+            <option value="">
+              {!loaded ? "원본 문제 불러오는 중…" : ready ? "— 원본 문제 선택 —" : "원본 문제가 없습니다"}
+            </option>
+            {problems?.map((pr) => (
+              <option key={pr.id} value={String(pr.id)}>
+                #{pr.id} · {pr.title}
+              </option>
+            ))}
+          </select>
         </div>
         <div style={{ textAlign: "left" }}>
           <label style={{ fontSize: 11.5, color: "var(--muted)" }}>생성 수</label>
@@ -1547,17 +1594,51 @@ function NewRunForm({ onStart, onCancel }: { onStart: (pid: number, count: numbe
         </div>
         <button
           className="btn btn-primary"
-          onClick={() => { const p = parseInt(pid, 10); const c = parseInt(count, 10); if (p > 0 && c > 0) onStart(p, c); }}
+          disabled={!canRun}
+          onClick={() => { if (canRun) onStart(p, c); }}
         >▶ 실행</button>
         <button className="btn btn-ghost" onClick={onCancel}>취소</button>
       </div>
+      {error && (
+        <div className="output-panel err" style={{ marginTop: 8, textAlign: "left" }}>{error}</div>
+      )}
     </div>
+  );
+}
+
+/**
+ * Suspense 안에서 use(promise) 로 runs 를 읽어 RunsSidebar 에 전달.
+ * 부모가 refresh() 하면 새 Promise 가 들어와 사이드바만 재렌더된다.
+ * 초기 한 번 onInitial(runs) 를 호출해 첫 항목 자동 선택 / 빈 상태이면 신규 패널 열기.
+ */
+type SidebarBoundProps = {
+  promise: Promise<RunSummaryT[]>;
+  onInitial: (runs: RunSummaryT[]) => void;
+} & Omit<React.ComponentProps<typeof RunsSidebar>, "runs">;
+
+function RunsSidebarBound({ promise, onInitial, ...rest }: SidebarBoundProps) {
+  const runs = use(promise);
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    onInitial(runs);
+  }, [runs, onInitial]);
+  return <RunsSidebar runs={runs} {...rest} />;
+}
+
+function SidebarFallback() {
+  return (
+    <aside className="runs-sidebar">
+      <div className="runs-sidebar-head">
+        <h3>Recent runs <span className="count"><span className="spinner" style={{ width: 10, height: 10 }} /></span></h3>
+      </div>
+    </aside>
   );
 }
 
 /* ── Runs View (top-level) ─────────────────────────────────────────────── */
 export default function RunsView({ settings }: Props) {
-  const [runs, setRuns] = useState<RunSummaryT[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetailT | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -1595,17 +1676,12 @@ export default function RunsView({ settings }: Props) {
     }
   }, [settings]);
 
-  const loadRuns = useCallback(async () => {
-    try {
-      const r = await adminFetch("/api/runs?limit=100", settings);
-      if (!r.ok) { setError(`[${r.status}] runs 목록 로드 실패`); return; }
-      const data: RunSummaryT[] = await r.json();
-      setRuns(data);
-      return data;
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  // runs 목록 — useResource 의 Promise 를 RunsSidebarBound 가 use() 로 읽는다.
+  // mutation 후 refresh() 만 호출하면 사이드바가 알아서 새 데이터로 다시 그려진다.
+  const fetchRuns = useCallback(async (): Promise<RunSummaryT[]> => {
+    return unwrap<RunSummaryT[]>(await adminFetch("/api/runs?limit=100", settings));
   }, [settings]);
+  const { promise: runsPromise, refresh: refreshRuns } = useResource(fetchRuns, [settings]);
 
   const loadDetail = useCallback(async (id: string) => {
     try {
@@ -1619,19 +1695,19 @@ export default function RunsView({ settings }: Props) {
     }
   }, [settings]);
 
-  // 초기 로드
-  useEffect(() => {
-    (async () => {
-      const data = await loadRuns();
-      if (data && data.length > 0) {
-        setSelectedId(data[0].id);
-        loadDetail(data[0].id);
-      } else {
-        setShowNew(true);
-      }
-    })();
-    return () => streamRef.current?.abort();
-  }, [loadRuns, loadDetail]);
+  // 초기 자동 선택은 RunsSidebarBound 의 onInitial 콜백에서 처리 (Promise 가 settle 된 시점).
+  // 여기서는 SSE 스트림 cleanup 만 등록.
+  useEffect(() => () => streamRef.current?.abort(), []);
+
+  // 첫 runs 로드 콜백 — 첫 항목 자동 선택 / 없으면 신규 패널 열기.
+  const onInitialRuns = useCallback((data: RunSummaryT[]) => {
+    if (data.length > 0) {
+      setSelectedId(data[0].id);
+      loadDetail(data[0].id);
+    } else {
+      setShowNew(true);
+    }
+  }, [loadDetail]);
 
   function selectRun(id: string) {
     streamRef.current?.abort();
@@ -1670,7 +1746,8 @@ export default function RunsView({ settings }: Props) {
                   : prev);
               } else if (p.type === "done" || p.type === "error") {
                 await loadDetail(runId);
-                loadRuns();
+                refreshRuns();
+                if (p.type === "done") invalidateProblemPickerCache();
                 return;
               }
             } catch { /* ignore */ }
@@ -1680,7 +1757,7 @@ export default function RunsView({ settings }: Props) {
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError((e as Error).message);
     }
-  }, [settings, loadDetail, loadRuns]);
+  }, [settings, loadDetail, refreshRuns]);
 
   async function beginRun(problemId: number, count: number) {
     setShowNew(false);
@@ -1696,7 +1773,8 @@ export default function RunsView({ settings }: Props) {
         id: run_id, problem_id: problemId, problem_title: null, target_count: count,
         status: "running", started_at: new Date().toISOString(), saved_count: 0,
       };
-      setRuns((prev) => [optimistic, ...prev]);
+      // 사이드바는 use(promise) 가 source-of-truth — 새 run 이 곧 목록에 나타나도록 refresh.
+      refreshRuns();
       setSelectedId(run_id);
       setDetail({ ...optimistic, node_states: { ...EMPTY_STATES }, saved_problem_ids: [], errors: [] });
       setSelectedNode(null);
@@ -1719,7 +1797,7 @@ export default function RunsView({ settings }: Props) {
         target_count: base?.target_count ?? 1, status: "running",
         started_at: new Date().toISOString(), saved_count: 0,
       };
-      setRuns((prev) => [optimistic, ...prev]);
+      refreshRuns();
       setSelectedId(run_id);
       setDetail({ ...optimistic, node_states: { ...EMPTY_STATES }, saved_problem_ids: [], errors: [] });
       setSelectedNode(null);
@@ -1766,8 +1844,8 @@ export default function RunsView({ settings }: Props) {
         const id = pendingDel.id;
         const r = await adminFetch(`/api/runs/${id}`, settings, { method: "DELETE" });
         if (!r.ok && r.status !== 404) { setError(`[${r.status}] ${(await r.text()).slice(0, 200)}`); return; }
-        setRuns((prev) => prev.filter((x) => x.id !== id));
         clearSelectionIfGone((sid) => sid !== id);
+        refreshRuns();
       } else {
         const ids = pendingDel.ids;
         const r = await adminFetch(`/api/runs/delete`, settings, {
@@ -1776,9 +1854,9 @@ export default function RunsView({ settings }: Props) {
         });
         if (!r.ok) { setError(`[${r.status}] ${(await r.text()).slice(0, 200)}`); return; }
         const del = new Set(ids);
-        setRuns((prev) => prev.filter((x) => !del.has(x.id)));
         clearSelectionIfGone((sid) => !del.has(sid));
         exitSelect();
+        refreshRuns();
       }
     } catch (e) {
       setError((e as Error).message);
@@ -1792,20 +1870,23 @@ export default function RunsView({ settings }: Props) {
 
   return (
     <div className={`main runs${drawerOpen ? " drawer-open" : ""}${drawerOpen && drawerWide ? " drawer-wide" : ""}`}>
-      <RunsSidebar
-        runs={runs}
-        selectedId={selectedId}
-        onSelect={selectRun}
-        onNew={() => { setShowNew(true); setSelectedNode(null); }}
-        onRequestDelete={(r) => setPendingDel({ kind: "one", id: r.id, title: `#${r.problem_id ?? "?"} ${r.problem_title ?? r.id.slice(0, 12)}` })}
-        selectMode={selectMode}
-        selectedIds={selectedIds}
-        onEnterSelect={() => { setSelectMode(true); setSelectedIds(new Set()); }}
-        onExitSelect={exitSelect}
-        onToggleSelect={toggleSelect}
-        onSetSelection={(ids) => setSelectedIds(new Set(ids))}
-        onDeleteSelected={() => { if (selectedIds.size > 0) setPendingDel({ kind: "many", ids: [...selectedIds] }); }}
-      />
+      <Suspense fallback={<SidebarFallback />}>
+        <RunsSidebarBound
+          promise={runsPromise}
+          onInitial={onInitialRuns}
+          selectedId={selectedId}
+          onSelect={selectRun}
+          onNew={() => { setShowNew(true); setSelectedNode(null); }}
+          onRequestDelete={(r) => setPendingDel({ kind: "one", id: r.id, title: `#${r.problem_id ?? "?"} ${r.problem_title ?? r.id.slice(0, 12)}` })}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onEnterSelect={() => { setSelectMode(true); setSelectedIds(new Set()); }}
+          onExitSelect={exitSelect}
+          onToggleSelect={toggleSelect}
+          onSetSelection={(ids) => setSelectedIds(new Set(ids))}
+          onDeleteSelected={() => { if (selectedIds.size > 0) setPendingDel({ kind: "many", ids: [...selectedIds] }); }}
+        />
+      </Suspense>
 
       <div className="graph-wrap">
         <div className="graph-toolbar">
@@ -1848,7 +1929,7 @@ export default function RunsView({ settings }: Props) {
         <div className="graph-canvas">
           {showNew || !detail ? (
             <div style={{ display: "flex", height: "100%", padding: 40 }}>
-              <NewRunForm onStart={beginRun} onCancel={() => { setShowNew(false); if (selectedId) loadDetail(selectedId); }} />
+              <NewRunForm settings={settings} onStart={beginRun} onCancel={() => { setShowNew(false); if (selectedId) loadDetail(selectedId); }} />
             </div>
           ) : (
             <PipelineGraph

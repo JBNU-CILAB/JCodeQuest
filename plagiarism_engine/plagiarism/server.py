@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from . import backend_client, config
 from .admin_auth import require_admin
-from .pipeline import run_plagiarism
+from .pipeline import run_plagiarism, run_plagiarism_for_submission
 
 app = FastAPI(
     title="JCodeQuest Plagiarism Engine",
@@ -40,6 +40,10 @@ if _origins:
 
 class RunRequest(BaseModel):
     problem_id: int
+
+
+class SubmissionCheckRequest(BaseModel):
+    submission_id: int
 
 
 class PairUpdate(BaseModel):
@@ -66,6 +70,29 @@ def trigger_run(req: RunRequest) -> dict:
 
     threading.Thread(target=_job, name=f"plag-{req.problem_id}", daemon=True).start()
     return {"accepted": True, "problem_id": req.problem_id, "ticket": run_id}
+
+
+@app.post(
+    "/api/plagiarism/check-submission",
+    dependencies=[Depends(require_admin)],
+    summary="단일 제출(첫 AC 자동) 기준 검사 — backend webhook 진입점",
+)
+def trigger_submission_check(req: SubmissionCheckRequest) -> dict:
+    """backend 의 first-AC 훅이 호출. daemon thread 로 즉시 분리 후 202 반환 —
+    backend webhook 응답이 plagiarism 작업 완료를 기다리지 않게."""
+    if not config.ENABLED:
+        raise HTTPException(503, "plagiarism engine disabled (JCQ_PLAGIARISM_ENABLED=0)")
+
+    def _job() -> None:
+        try:
+            run_plagiarism_for_submission(req.submission_id)
+        except Exception:  # noqa: BLE001 — pipeline 내부에서 run 을 failed 로 마감
+            pass
+
+    threading.Thread(
+        target=_job, name=f"plag-sub-{req.submission_id}", daemon=True,
+    ).start()
+    return {"accepted": True, "submission_id": req.submission_id}
 
 
 @app.get("/api/plagiarism/runs", dependencies=[Depends(require_admin)], summary="표절 run 목록")

@@ -6,7 +6,7 @@ pytest가 있으면 `pytest tests/test_judge_gates.py`, 없으면
 """
 from types import SimpleNamespace
 
-from authoring.pipeline.nodes import attack, compare, judge, persist
+from authoring.pipeline.nodes import attack, compare, judge, persist, strengthen
 
 
 # ── 헬퍼 ────────────────────────────────────────────────────────────────────
@@ -75,12 +75,42 @@ def _patch_sandbox(monkey_target, *, match_expected):
 
 
 def test_attack_rejects_weak_when_tests_catch():
-    # 테스트가 결함 풀이를 걸러냄(WA) → discrimination_passed True
+    # 모든 공격이 WA로 탈락. edge_skip은 WA가 표적(on-target)이라 카운트되지만, naive는
+    # WA가 표적(TLE/MLE)이 아니라 카운트 안 됨 → 표적 차원 탈락 1/2 = score 0.5.
+    # MIN_REJECT=1이라 passed True. (둘 다 WA지만 '느린 게 아니라 버그'인 naive는 성능
+    # 변별력으로 치지 않는 게 핵심.)
     _patch_sandbox(attack, match_expected=False)
     out = attack._discriminate_one(_candidate(), _FakeLLM())
     assert out["discrimination_passed"] is True
-    assert out["discrimination_score"] == 1.0
-    assert all(r["rejected"] for r in out["attack_results"])
+    assert out["discrimination_score"] == 0.5
+    assert all(r["rejected"] for r in out["attack_results"])  # 둘 다 non-AC
+    by_strategy = {r["strategy"]: r for r in out["attack_results"]}
+    assert by_strategy["edge_skip"]["rejected_on_target"] is True
+    assert by_strategy["naive"]["rejected_on_target"] is False  # WA는 naive 표적 아님
+
+
+def test_attack_naive_only_on_target_for_tle_mle():
+    # _attack_one 직접 검사: naive는 TLE/MLE만 표적(on-target), WA는 아님.
+    def tle(code, stdin, *, time_limit_ms, memory_limit_mb):
+        return SimpleNamespace(status="TLE", stdout="", stderr="", elapsed_ms=9999)
+    attack.sandbox_run = tle
+    r = attack._attack_one(_candidate(), "naive", _FakeLLM())
+    assert r["verdict"] == "TLE" and r["rejected"] is True and r["rejected_on_target"] is True
+
+    def wa(code, stdin, *, time_limit_ms, memory_limit_mb):
+        return SimpleNamespace(status="OK", stdout="WRONG", stderr="", elapsed_ms=1)
+    attack.sandbox_run = wa
+    r = attack._attack_one(_candidate(), "naive", _FakeLLM())
+    assert r["verdict"] == "WA" and r["rejected"] is True and r["rejected_on_target"] is False
+
+
+def test_attack_edge_skip_on_target_for_wa():
+    # edge_skip은 WA/RE가 표적(on-target).
+    def wa(code, stdin, *, time_limit_ms, memory_limit_mb):
+        return SimpleNamespace(status="OK", stdout="WRONG", stderr="", elapsed_ms=1)
+    attack.sandbox_run = wa
+    r = attack._attack_one(_candidate(), "edge_skip", _FakeLLM())
+    assert r["rejected_on_target"] is True
 
 
 def test_attack_fails_when_tests_too_weak():
@@ -109,6 +139,66 @@ def test_attack_node_skips_unsolved():
     state = {"candidates": [_candidate(solver_passed=False)]}
     out = attack.attack_candidates(state)
     assert "discrimination_passed" not in out["candidates"][0]
+
+
+# ── strengthen(변별력 보강 루프) ─────────────────────────────────────────────
+def _patch_strengthen_sandbox(ref_out_fn):
+    """reference 코드는 ref_out_fn(stdin)을 출력, 그 외(공격) 코드는 항상 'X' 출력."""
+    def fake(code, stdin, *, time_limit_ms, memory_limit_mb):
+        out = ref_out_fn(stdin) if code == "REF" else "X"
+        return SimpleNamespace(status="OK", stdout=out, stderr="", elapsed_ms=1)
+    strengthen.sandbox_run = fake
+
+
+def test_strengthen_adds_discriminating_tests():
+    # reference는 입력 그대로 출력(정답), 공격은 항상 'X'(오답) → 생성 입력 전부 판별 성공.
+    _patch_strengthen_sandbox(lambda s: s.strip())
+    llm = _FakeLLM(content='{"inputs": ["5", "6"]}')
+    c = _candidate(
+        reference_code="REF",
+        discrimination_passed=False,
+        attack_results=[
+            {"strategy": "edge_skip", "verdict": "AC", "rejected": False,
+             "rejected_on_target": False, "code": "ATK", "rationale": ""},
+        ],
+    )
+    out = strengthen._strengthen_one(c, llm)
+    assert out["strengthen_added"] == 2
+    assert out["strengthen_attempts"] == 1
+    assert len(out["test_cases"]) == 4  # 기존 2 + 신규 2 (ordinal 3,4 / hidden)
+    assert all(tc["is_sample"] is False for tc in out["test_cases"][2:])
+
+
+def test_strengthen_skips_non_discriminating_inputs():
+    # reference와 공격이 같은 출력을 내면(둘 다 'X') 판별 불가 → 아무것도 추가 안 됨.
+    _patch_strengthen_sandbox(lambda s: "X")  # ref도 'X' → 공격('X')과 동일
+    llm = _FakeLLM(content='{"inputs": ["5", "6"]}')
+    c = _candidate(
+        reference_code="REF",
+        discrimination_passed=False,
+        attack_results=[
+            {"strategy": "edge_skip", "verdict": "AC", "rejected": False,
+             "rejected_on_target": False, "code": "ATK", "rationale": ""},
+        ],
+    )
+    out = strengthen._strengthen_one(c, llm)
+    assert out["strengthen_added"] == 0
+    assert out["strengthen_attempts"] == 1  # 추가 0이어도 시도 수는 올라 루프가 끝난다
+
+
+def test_strengthen_node_only_targets_failing():
+    # solver_passed + 변별력 미달 + 시도 여유 있는 후보만 보강. 통과 후보는 건드리지 않음.
+    _patch_strengthen_sandbox(lambda s: s.strip())
+    strengthen.make_chat_model = lambda *a, **k: _FakeLLM(content='{"inputs": ["9"]}')
+    state = {"candidates": [
+        _candidate(reference_code="REF", solver_passed=True, discrimination_passed=False,
+                   attack_results=[{"strategy": "edge_skip", "verdict": "AC", "rejected": False,
+                                    "rejected_on_target": False, "code": "ATK"}]),
+        _candidate(reference_code="REF", solver_passed=True, discrimination_passed=True),
+    ]}
+    out = strengthen.strengthen_tests(state)
+    assert out["candidates"][0].get("strengthen_added") == 1
+    assert "strengthen_added" not in out["candidates"][1]  # 통과 후보는 보강 안 함
 
 
 # ── judge 중앙값 집계 + 게이트 ──────────────────────────────────────────────

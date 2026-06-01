@@ -569,3 +569,83 @@ class BugReportUpdateRequest(BaseModel):
 
     status: BugReportStatus | None = None
     admin_notes: str | None = Field(default=None, max_length=10_000)
+
+
+# ── Code Battle ────────────────────────────────────────────────────────────
+BattlePhase = Literal["scheduled", "lobby", "active", "finished"]
+
+
+class ScoreboardEntry(BaseModel):
+    """실시간 스코어보드 한 행. 코드는 비공개 — 통과수/AC/시도/순위만 노출.
+
+    정렬은 storage.battles.compute_scoreboard가 (AC 먼저 → 통과수 → 빠른 시각)으로 끝낸
+    뒤 1부터 rank를 매긴다. display_name은 익명 사용자면 nickname('익명' fallback)으로 마스킹."""
+
+    rank: int = Field(description="1부터 시작하는 현재 순위")
+    user_id: int = Field(examples=[1])
+    display_name: str = Field(examples=["김민석"])
+    avatar_url: str | None = None
+    tests_passed: int = Field(description="베스트 제출의 통과 테스트 수", examples=[3])
+    total_tests: int = Field(description="전체 테스트 수", examples=[5])
+    is_ac: bool = Field(description="전체 통과(AC) 여부")
+    attempts: int = Field(description="제출 횟수", examples=[2])
+    solved_seconds: float | None = Field(
+        default=None,
+        description="베스트 결과까지 걸린 시간(초, start_at 기준). 미제출이면 null.",
+    )
+
+
+class BattleStatusResponse(BaseModel):
+    """GET /battles/current·/battles/{id}·SSE 공통 스냅샷.
+
+    SSE는 인증 헤더를 못 실으므로(EventSource 한계) joined/my_rank는 인증된 REST
+    응답에서만 채워지고, SSE 스트림에선 기본값으로 비워둔다 — 프론트는 scoreboard의
+    user_id를 자기 프로필 id와 매칭해 직접 파생한다."""
+
+    battle_id: int | None = Field(default=None, description="진행/예정 배틀 ID. 없으면 null")
+    battle_date: str | None = Field(default=None, description="배틀 날짜 (KST, YYYY-MM-DD)")
+    status: BattlePhase | None = Field(
+        default=None, description="배틀 단계. 오늘 배틀이 아직 없으면 null"
+    )
+    server_time: datetime = Field(description="서버 현재 시각 — 클라 카운트다운 동기화 기준")
+    lobby_at: datetime | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    next_start_at: datetime | None = Field(
+        default=None, description="진행 중 배틀이 없을 때 다음 시작 예정 시각"
+    )
+    always_open: bool = Field(
+        default=False,
+        description="개발용 상시 개방 모드 여부. true면 클라이언트가 카운트다운 대신 '상시 개방' 표시.",
+    )
+    problem: ProblemDetail | None = Field(
+        default=None, description="active/finished 단계에서만 — 그 전엔 비공개(null)"
+    )
+    joined: bool = Field(default=False, description="요청자 참가 여부(인증 REST에서만 채움)")
+    participant_count: int = Field(default=0, description="참가자 수")
+    scoreboard: list[ScoreboardEntry] = Field(default_factory=list)
+    my_rank: int | None = Field(
+        default=None, description="요청자 현재 순위(인증 REST에서만 채움)"
+    )
+
+
+class BattleSubmitRequest(BaseModel):
+    """POST /battles/{id}/submit — 배틀 진행 중 코드 제출. 문제는 배틀에 고정돼 있어 body에 없음."""
+
+    code: str = Field(
+        min_length=1,
+        max_length=MAX_CODE_LENGTH,
+        description="제출할 Python 소스 — UTF-8, 최대 64 KiB",
+        examples=["n = int(input())\nprint(n * 2)\n"],
+    )
+
+
+class BattleSubmitResponse(BaseModel):
+    submission_id: int = Field(description="생성된 제출 ID — /grade/{id} 또는 배틀 SSE로 추적")
+    status: JobStatus = Field(default="queued")
+
+
+class BattleJoinResponse(BaseModel):
+    battle_id: int
+    joined: bool = Field(description="참가 등록 결과 — 항상 true(멱등)")
+    participant_count: int

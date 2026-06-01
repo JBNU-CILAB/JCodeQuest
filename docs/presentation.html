@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JCodeQuest 발표</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+  :root {
+    /* palette — toss-blue */
+    --page: #0d1117;
+    --surface: #ffffff;
+    --surface-2: #f4f6fa;
+    --fg1: #1f2937;
+    --fg2: #374151;
+    --muted: #6b7280;
+    --muted-soft: #9ca3af;
+    --line: #e5e7eb;
+    --brand: #3182F6;
+    --brand-dark: #1b64da;
+    --brand-tint: #7aa9f7;
+    --brand-soft: #e8f0fe;
+    --ac: #15803d;       --ac-bg: #dcfce7;
+    --sus: #b45309;      --sus-bg: #fef3c7;
+    --danger: #dc2626;   --danger-bg: #fee2e2;
+    --r-card: 22px;
+    --r-md: 14px;
+    --r-pill: 999px;
+    --shadow-card: 0 10px 30px -12px rgba(16,24,40,.14);
+    --font: 'Pretendard', system-ui, -apple-system, sans-serif;
+    --font-mono: 'Pretendard', ui-monospace, 'SF Mono', monospace;
+    /* canvas */
+    --W: 1280px;
+    --H: 720px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: var(--page);
+    font-family: var(--font);
+    color: var(--fg1);
+    overflow: hidden;
+  }
+
+  /* ── viewport-fit canvas ───────────────────────────── */
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #canvas {
+    width: var(--W); height: var(--H);
+    position: relative;
+    transform-origin: center center;
+    background: var(--surface);
+    overflow: hidden;
+    border-radius: 8px;
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,.6);
+  }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    padding: 64px 72px 60px;
+    background: var(--surface);
+    animation: fade .42s cubic-bezier(.16,1,.3,1);
+  }
+  .slide.dark { background: var(--surface-2); }
+  .slide.active { display: flex; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ── shared atoms ──────────────────────────────────── */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 15px; font-weight: 700;
+    letter-spacing: .18em; text-transform: uppercase;
+    color: var(--brand);
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 14px;
+  }
+  .eyebrow::before { content: ""; width: 30px; height: 3px; background: var(--brand); border-radius: 2px; }
+  .s-title { font-size: 42px; font-weight: 800; letter-spacing: -.02em; line-height: 1.12; color: var(--fg1); }
+  .s-title .hl { color: var(--brand); }
+  .head { margin-bottom: 34px; }
+  .muted { color: var(--muted); }
+  .mono { font-family: var(--font-mono); }
+  .pageno { position: absolute; bottom: 28px; right: 40px; font-family: var(--font-mono); font-size: 15px; color: var(--muted-soft); letter-spacing: .08em; }
+  .slug { position: absolute; bottom: 28px; left: 40px; font-family: var(--font-mono); font-size: 14px; letter-spacing: .1em; color: var(--muted-soft); text-transform: uppercase; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: var(--shadow-card); }
+  .grow { flex: 1; }
+
+  /* ── cover ─────────────────────────────────────────── */
+  .cover { justify-content: center; align-items: center; text-align: center; }
+  .wordmark { font-size: 92px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+  .wordmark .q { color: var(--brand); }
+  .cover .tagline { font-size: 26px; color: var(--fg2); margin-top: 28px; line-height: 1.5; max-width: 760px; }
+  .cover .team { margin-top: 38px; font-family: var(--font-mono); font-size: 20px; color: var(--muted); letter-spacing: .04em; }
+  .cover .event { margin-top: 8px; font-family: var(--font-mono); font-size: 16px; color: var(--muted-soft); letter-spacing: .06em; }
+  .pillchips { display: flex; gap: 12px; margin-top: 40px; flex-wrap: wrap; justify-content: center; }
+  .pillchip { display: inline-flex; align-items: center; gap: 8px; background: var(--brand-soft); color: var(--brand-dark); border-radius: var(--r-pill); padding: 11px 22px; font-family: var(--font-mono); font-size: 16px; font-weight: 700; }
+
+  /* ── card grids ────────────────────────────────────── */
+  .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 22px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 22px; }
+  .prob { padding: 34px 32px; display: flex; flex-direction: column; gap: 14px; }
+  .prob .n { font-family: var(--font-mono); font-size: 22px; font-weight: 800; color: var(--brand); letter-spacing: .06em; }
+  .prob h3 { font-size: 26px; font-weight: 800; line-height: 1.25; }
+  .prob p { font-size: 17px; line-height: 1.6; color: var(--muted); }
+
+  /* pillars */
+  .pillar { padding: 30px 30px; display: flex; flex-direction: column; gap: 12px; }
+  .pillar .k { font-family: var(--font-mono); font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-soft); }
+  .pillar .t { font-size: 25px; font-weight: 800; }
+  .pillar .t .em { color: var(--brand); }
+  .pillar .d { font-size: 16.5px; color: var(--muted); line-height: 1.55; }
+  .statement { font-size: 32px; font-weight: 800; line-height: 1.4; letter-spacing: -.01em; margin-bottom: 36px; }
+  .statement .hl { color: var(--brand); }
+
+  /* ── judges (slide 4) ──────────────────────────────── */
+  .flowline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 26px; font-family: var(--font-mono); }
+  .flowline .pill { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 11px 22px; font-size: 16px; font-weight: 600; color: var(--fg2); box-shadow: var(--shadow-card); }
+  .flowline .pill.key { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .flowline .arr { color: var(--brand-tint); font-size: 22px; }
+  .judge { padding: 26px 26px; display: flex; flex-direction: column; gap: 12px; }
+  .judge .nm { font-family: var(--font-mono); font-size: 24px; font-weight: 800; }
+  .judge .mdl { font-family: var(--font-mono); font-size: 14px; color: var(--brand-dark); background: var(--brand-soft); padding: 5px 12px; border-radius: var(--r-pill); align-self: flex-start; }
+  .judge .role { font-size: 16px; color: var(--muted); line-height: 1.5; }
+  .judge .vote { align-self: flex-start; margin-top: auto; border-radius: var(--r-pill); padding: 7px 18px; font-family: var(--font-mono); font-weight: 800; font-size: 17px; }
+  .judge .vote.ac { background: var(--ac-bg); color: var(--ac); }
+  .judge .vote.sus { background: var(--sus-bg); color: var(--sus); }
+  .ruleline { margin-top: 24px; font-size: 18px; color: var(--fg2); line-height: 1.6; }
+  .ruleline b { color: var(--brand); }
+  .ruleline .tag { display: inline-block; font-family: var(--font-mono); font-size: 15px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 2px 9px; margin: 0 2px; }
+
+  /* ── safeguards (slide 5) ──────────────────────────── */
+  .guard { padding: 28px 28px; display: flex; flex-direction: column; gap: 12px; }
+  .guard .ic { font-size: 30px; }
+  .guard h3 { font-size: 22px; font-weight: 800; }
+  .guard p { font-size: 16px; color: var(--muted); line-height: 1.55; }
+  .logbox { margin-top: 26px; background: #0f1b2d; border: 1px solid #1d2c44; border-radius: var(--r-md); padding: 22px 26px; color: #cfe0ff; font-family: var(--font-mono); font-size: 17px; line-height: 1.9; }
+  .logbox .lbl { color: #7d93b8; }
+  .logbox .ok { color: var(--brand-tint); font-weight: 700; }
+  .logbox .bad { color: #fb7185; font-weight: 700; }
+
+  /* ── pipeline (slide 6) ────────────────────────────── */
+  .pipe-pre { background: #0f1b2d; color: #cfe0ff; border-radius: var(--r-md); padding: 24px 28px; font-family: var(--font-mono); font-size: 16px; line-height: 1.85; white-space: pre; overflow-x: auto; margin-bottom: 26px; }
+  .pipe-pre .key { color: var(--brand-tint); font-weight: 700; }
+  .pipe-pre .loop { color: #fbbf24; }
+  .gate { padding: 24px 24px; display: flex; flex-direction: column; gap: 10px; border-top: 4px solid var(--brand); }
+  .gate .g-k { font-family: var(--font-mono); font-size: 14px; letter-spacing: .1em; text-transform: uppercase; color: var(--brand); font-weight: 700; }
+  .gate .g-t { font-size: 20px; font-weight: 800; }
+  .gate .g-d { font-size: 15.5px; color: var(--muted); line-height: 1.5; }
+
+  /* ── plagiarism (slide 7) ──────────────────────────── */
+  .stage-flow { background: #0f1b2d; color: #cfe0ff; border-radius: var(--r-md); padding: 24px 28px; font-family: var(--font-mono); font-size: 16px; line-height: 1.9; white-space: pre; margin-bottom: 24px; }
+  .stage-flow .key { color: var(--brand-tint); }
+  .stage-flow .loop { color: #fbbf24; }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .infobox { padding: 24px 26px; display: flex; flex-direction: column; gap: 10px; }
+  .infobox .t { font-size: 19px; font-weight: 800; }
+  .infobox .t .b { color: var(--brand); }
+  .infobox p { font-size: 15.5px; color: var(--muted); line-height: 1.55; }
+  .axis4 { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+  .axis4 span { font-family: var(--font-mono); font-size: 13.5px; padding: 5px 12px; border-radius: var(--r-pill); }
+  .axis4 .a1 { background: var(--sus-bg); color: var(--sus); }
+  .axis4 .a2 { background: var(--danger-bg); color: var(--danger); }
+  .axis4 .a3 { background: var(--ac-bg); color: var(--ac); }
+  .axis4 .a4 { background: #ede9fe; color: #7c3aed; }
+
+  /* ── architecture (slide 8) ────────────────────────── */
+  .arch-diagram { background: #0f1b2d; border-radius: var(--r-md); padding: 22px 26px 18px; display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .arch-fe { width: 100%; max-width: 760px; background: #16263f; border: 1px solid #2a3a55; border-radius: 12px; padding: 13px 18px; text-align: center; }
+  .arch-fe .nm { color: #cfe0ff; font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
+  .arch-fe .sub { color: #7d93b8; font-size: 13px; margin-top: 3px; }
+  .arch-conn { color: #45577a; font-family: var(--font-mono); font-size: 13px; padding: 5px 0; letter-spacing: .04em; }
+  .arch-svcs { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; width: 100%; }
+  .arch-svc { background: #16263f; border: 1px solid #2a3a55; border-radius: 11px; padding: 13px 12px; display: flex; flex-direction: column; gap: 4px; text-align: center; }
+  .arch-svc .b { color: var(--brand-tint); font-family: var(--font-mono); font-size: 15px; font-weight: 800; }
+  .arch-svc .port { color: #7d93b8; font-family: var(--font-mono); font-size: 12.5px; }
+  .arch-svc .role { color: #aebfd9; font-size: 12.5px; line-height: 1.45; margin-top: 4px; }
+  .arch-db { width: 100%; margin-top: 4px; text-align: center; background: #1d2c1a; border: 1px solid #3a4a2a; border-radius: 11px; padding: 11px; color: #fbbf24; font-family: var(--font-mono); font-size: 14.5px; font-weight: 700; }
+  .arch-notes { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px 30px; margin-top: 20px; }
+  .arch-notes .item { font-size: 15.5px; color: var(--fg2); line-height: 1.5; }
+  .arch-notes .item b { color: var(--brand); }
+
+  /* ── feature cards (slide 9) ───────────────────────── */
+  .feat { padding: 30px 30px; display: flex; flex-direction: column; gap: 14px; }
+  .feat .ic { font-size: 34px; }
+  .feat h3 { font-size: 23px; font-weight: 800; }
+  .feat p { font-size: 16px; color: var(--muted); line-height: 1.6; }
+
+  /* ── roadmap (slide 10) ────────────────────────────── */
+  .road { display: flex; flex-direction: column; gap: 0; }
+  .road-row { padding: 26px 4px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 230px 1fr; gap: 30px; align-items: start; }
+  .road-row:last-child { border-bottom: 1px solid var(--line); }
+  .road-row .phase { font-family: var(--font-mono); font-size: 18px; font-weight: 800; color: var(--brand); }
+  .road-row .phase small { display: block; color: var(--muted-soft); font-weight: 500; font-size: 15px; margin-top: 6px; }
+  .road-row .h { font-size: 23px; font-weight: 800; margin-bottom: 8px; }
+  .road-row .d { font-size: 17px; color: var(--muted); line-height: 1.55; }
+
+  /* ── closing (slide 11) ────────────────────────────── */
+  .close { justify-content: center; align-items: center; text-align: center; }
+  .close .wordmark { font-size: 78px; }
+  .close .line { font-size: 26px; color: var(--fg2); margin-top: 28px; line-height: 1.5; }
+  .close .line .hl { color: var(--brand); font-weight: 700; }
+  .close .pillars3 { display: flex; gap: 16px; margin-top: 36px; }
+  .close .pillars3 span { font-family: var(--font-mono); font-size: 19px; font-weight: 700; color: var(--ac); }
+  .close .team { margin-top: 40px; font-family: var(--font-mono); font-size: 17px; color: var(--muted); letter-spacing: .06em; }
+
+  /* ── nav UI ────────────────────────────────────────── */
+  #nav {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(20,28,42,.82); backdrop-filter: blur(8px);
+    border: 1px solid #2a3a55; border-radius: var(--r-pill);
+    padding: 9px 18px; z-index: 100;
+    font-family: var(--font-mono); color: #cfe0ff; font-size: 14px;
+    opacity: .35; transition: opacity .25s;
+  }
+  #nav:hover { opacity: 1; }
+  #nav button {
+    background: none; border: none; color: #cfe0ff; cursor: pointer;
+    font-size: 18px; padding: 2px 8px; border-radius: 8px; transition: background .15s;
+  }
+  #nav button:hover { background: rgba(255,255,255,.12); }
+  #counter { min-width: 56px; text-align: center; letter-spacing: .08em; }
+  #dots { display: flex; gap: 6px; }
+  #dots i { width: 7px; height: 7px; border-radius: 50%; background: #45577a; cursor: pointer; transition: background .2s, transform .2s; }
+  #dots i.on { background: var(--brand); transform: scale(1.35); }
+  .hint { position: fixed; top: 16px; right: 18px; z-index: 100; font-family: var(--font-mono); font-size: 12.5px; color: #5a6b87; opacity: .5; }
+
+  @media print {
+    html, body { overflow: visible; background: #fff; }
+    #nav, .hint { display: none !important; }
+    #stage { position: static; display: block; }
+    #canvas { box-shadow: none; border-radius: 0; }
+    .slide { display: flex !important; position: relative; page-break-after: always; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="hint">← → 또는 Space · F 전체화면 · P 인쇄(PDF)</div>
+<div id="stage">
+  <div id="canvas">
+
+    <!-- 1 · COVER -->
+    <section class="slide active cover">
+      <h1 class="wordmark">J<span class="q">CodeQuest</span></h1>
+      <p class="tagline">정답을 넘어, 풀이의 <b>의도까지 검증</b>하는<br>AI 출제·채점 알고리즘 학습 플랫폼</p>
+      <div class="pillchips">
+        <span class="pillchip">✓ Verify</span>
+        <span class="pillchip">✓ Trust</span>
+        <span class="pillchip">✓ Guide</span>
+      </div>
+      <div class="team">CodeQuest 팀</div>
+      <div class="event">전북대학교 AI SW경진대회</div>
+      <div class="pageno">01 / 11</div>
+    </section>
+
+    <!-- 2 · BACKGROUND -->
+    <section class="slide">
+      <div class="head">
+        <div class="eyebrow">Background</div>
+        <h2 class="s-title">왜 만들었나</h2>
+      </div>
+      <div class="grid3 grow">
+        <div class="card prob">
+          <div class="n">01</div>
+          <h3>채점의<br>사각지대</h3>
+          <p>테스트만 통과하면 끝. 의도에 맞는 풀이인지, 표절·하드코딩인지 알 수 없다.</p>
+        </div>
+        <div class="card prob">
+          <div class="n">02</div>
+          <h3>들쭉날쭉한<br>난이도 분포</h3>
+          <p>주차마다 난이도가 쏠리면 학습 곡선이 무너지고 따라가기 어려워진다.</p>
+        </div>
+        <div class="card prob">
+          <div class="n">03</div>
+          <h3>막혀도<br>튜터가 없다</h3>
+          <p>어디서 틀렸는지, 다음 한 걸음이 뭔지 짚어줄 사람이 없다.</p>
+        </div>
+      </div>
+      <div class="slug">JCodeQuest</div>
+      <div class="pageno">02 / 11</div>
+    </section>
+
+    <!-- 3 · SOLUTION -->
+    <section class="slide dark">
+      <div class="head">
+        <div class="eyebrow">Solution</div>
+      </div>
+      <p class="statement">정답을 넘어 풀이의 <span class="hl">의도까지 검증</span>하고,<br>난이도를 <span class="hl">고르게</span> 설계한 알고리즘 학습·채점 플랫폼</p>
+      <div class="grid3 grow">
+        <div class="card pillar">
+          <div class="k">Verify</div>
+          <div class="t">의도까지 <span class="em">검증</span></div>
+          <div class="d">샌드박스 채점에 더해 3-LLM 앙상블이 "의도대로 풀었는가"를 판정합니다.</div>
+        </div>
+        <div class="card pillar">
+          <div class="k">Trust</div>
+          <div class="t">안전한 <span class="em">채점</span></div>
+          <div class="d">표절 검사와 할루시네이션 점수 추적으로 판정의 신뢰도를 보장합니다.</div>
+        </div>
+        <div class="card pillar">
+          <div class="k">Guide</div>
+          <div class="t">막힘 없는 <span class="em">학습</span></div>
+          <div class="d">문제별 AI 튜터가 코드를 읽고 다음 한 걸음을 짚어줍니다.</div>
+        </div>
+      </div>
+      <div class="pageno">03 / 11</div>
+    </section>
+
+    <!-- 4 · AI ENSEMBLE -->
+    <section class="slide dark">
+      <div class="head">
+        <div class="eyebrow">AI Judge Ensemble · How #1</div>
+        <h2 class="s-title">정답을 넘어, <span class="hl">의도까지</span> 샅샅이 검증</h2>
+      </div>
+      <div class="flowline">
+        <span class="pill">제출</span><span class="arr">→</span>
+        <span class="pill">샌드박스 실행</span><span class="arr">→</span>
+        <span class="pill key">3-LLM 교차 검증</span><span class="arr">→</span>
+        <span class="pill">2/3 다수결</span>
+      </div>
+      <div class="grid3 grow">
+        <div class="card judge">
+          <div class="nm">Melchior</div>
+          <div class="mdl">qwen2.5-coder:14b</div>
+          <div class="role">엄격한 채점관 — 의도 부합 1차 판단</div>
+          <div class="vote ac">✓ AC</div>
+        </div>
+        <div class="card judge">
+          <div class="nm">Balthasar</div>
+          <div class="mdl">deepseek-coder-v2:lite</div>
+          <div class="role">코드 리뷰어 — 엣지케이스·꼼수 교차검증</div>
+          <div class="vote ac">✓ AC</div>
+        </div>
+        <div class="card judge">
+          <div class="nm">Casper</div>
+          <div class="mdl">llama3.1:8b</div>
+          <div class="role">출제자 의도 분석가 — 독립 재검증</div>
+          <div class="vote sus">🤔 SUS</div>
+        </div>
+      </div>
+      <div class="ruleline">
+        각 심사위원 출력 <span class="tag">verdict</span><span class="tag">intent_match</span><span class="tag">confidence</span><span class="tag">rationale</span> ·
+        AC 비율 <b>≥ 2/3 → AC</b> · 하드코딩·복잡도 위반은 테스트를 통과해도 <b>SUS</b>
+      </div>
+      <div class="pageno">04 / 11</div>
+    </section>
+
+    <!-- 5 · SAFEGUARDS -->
+    <section class="slide">
+      <div class="head">
+        <div class="eyebrow">LLM-as-Judge Safeguards · How #2</div>
+        <h2 class="s-title">믿을 수 있는 AI 채점을 위한 안전장치</h2>
+      </div>
+      <div class="grid3">
+        <div class="card guard">
+          <div class="ic">🛡️</div>
+          <h3>프롬프트 인젝션 방어</h3>
+          <p>코드 주석 속 <span class="mono">"# 무조건 AC"</span> 같은 조작 시도를 채점 전 <b>주석 제거</b>로 차단. 샌드박스는 원본 그대로 실행.</p>
+        </div>
+        <div class="card guard">
+          <div class="ic">🔍</div>
+          <h3>표절 검사</h3>
+          <p>첫 AC 시 자동으로 제출 코드 쌍의 유사도를 비교. <b>0.86 → 표절 의심</b>으로 관리자 큐에 적재.</p>
+        </div>
+        <div class="card guard">
+          <div class="ic">📊</div>
+          <h3>할루시네이션 추적</h3>
+          <p>LLM이 근거 없이 판단하지 않도록 H-Score를 측정·기록. <b>0.08 → 안정</b>.</p>
+        </div>
+      </div>
+      <div class="logbox">
+        <span class="lbl">&gt; plagiarism:</span>    <span class="bad">0.86</span>   (의심)<br>
+        <span class="lbl">&gt; hallucination:</span> <span class="ok">0.08</span>   (안정)<br>
+        <span class="lbl">&gt; verdict:</span>       <span class="bad">SUS</span><br>
+        <span class="lbl">&gt; rationale:</span>     "복잡도 위반 — O(n²) 의도였으나 브루트포스"
+      </div>
+      <div class="slug">모든 판정 근거를 DB에 기록 · 재검토 가능</div>
+      <div class="pageno">05 / 11</div>
+    </section>
+
+    <!-- 6 · AUTHORING ENGINE -->
+    <section class="slide dark">
+      <div class="head">
+        <div class="eyebrow">Authoring Engine · LangGraph · How #3</div>
+        <h2 class="s-title">스스로 만들고, 풀고, <span class="hl">공격을 막아낸</span> 문제만 출제</h2>
+      </div>
+      <div class="pipe-pre">적재 → 검색<span class="key">(RAG)</span> → 생성 ─┬→ 검증 → 심사 ─┬─<span class="loop">(품질 미달)→ 수정 ↺</span>
+                        │              └→ 풀이 → 공격 ─┬─<span class="loop">(변별력 부족)→ 강화 ↺</span>
+                        │                            └→ 비교 → <span class="key">승인</span>
+                        └─<span class="loop">(소설성 미달)→ 재생성 ↺</span></div>
+      <div class="grid3 grow">
+        <div class="card gate">
+          <div class="g-k">Generate · 소설성</div>
+          <div class="g-t">스스로 생성</div>
+          <div class="g-d">RAG로 모범사례 참고 후 생성 → 임베딩 유사도 0.88↑면 재생성.</div>
+        </div>
+        <div class="card gate">
+          <div class="g-k">Solve · 풀이 가능성</div>
+          <div class="g-t">자가 풀이</div>
+          <div class="g-d">3-LLM이 직접 풀어 ≥1개 AC 해야 통과. 못 풀면 폐기.</div>
+        </div>
+        <div class="card gate">
+          <div class="g-k">Attack · 변별력</div>
+          <div class="g-t">공격 방어</div>
+          <div class="g-d">결함 풀이(느림·경계누락)를 던져 테스트가 막아내야 통과.</div>
+        </div>
+      </div>
+      <div class="ruleline">3중 게이트 <b>AND</b> — <span class="tag">solver_passed</span> ∧ <span class="tag">discrimination_passed</span> ∧ <span class="tag">compare_passed</span> 모두 통과해야 DB 저장</div>
+      <div class="pageno">06 / 11</div>
+    </section>
+
+    <!-- 7 · PLAGIARISM -->
+    <section class="slide">
+      <div class="head">
+        <div class="eyebrow">Plagiarism Engine · Trust 심화</div>
+        <h2 class="s-title">첫 AC에 <span class="hl">자동으로</span> 작동하는 표절 검사</h2>
+      </div>
+      <div class="stage-flow">첫 AC 웹훅 → 표절 엔진 자동 트리거(fire-and-forget)
+   <span class="key">fetch</span> (AC 제출 수집) → <span class="key">Dolos</span> 비교 → 임계값 선별 (유사도 0.7↑)
+                          ↓ 실패 시
+                       <span class="key">winnow</span> 폴백   →  <span class="loop">[4-에이전트 토론]</span>  →  관리자 큐</div>
+      <div class="twocol grow">
+        <div class="card infobox">
+          <div class="t"><span class="b">1단계</span> · 유사도 (기본)</div>
+          <p>Dolos가 라인 단위 표절 구간까지 정밀 검출. 실패 시 의존성 없는 순수 Python <b>winnow</b>로 자동 폴백. 유사도 0.7↑ 상위 50쌍 flag.</p>
+        </div>
+        <div class="card infobox">
+          <div class="t"><span class="b">2단계</span> · 멀티에이전트 (선택)</div>
+          <p>구조분석가 → 의미검토자 → 변호인 → 판정관 4-에이전트 토론.</p>
+          <div class="axis4">
+            <span class="a1">구조 일치</span>
+            <span class="a2">의미 표절</span>
+            <span class="a3">독립성</span>
+            <span class="a4">종합 확신도</span>
+          </div>
+          <p style="margin-top:6px"><b>AI 판정은 참고용</b> — 최종 확정은 관리자가.</p>
+        </div>
+      </div>
+      <div class="pageno">07 / 11</div>
+    </section>
+
+    <!-- 8 · ARCHITECTURE -->
+    <section class="slide dark">
+      <div class="head">
+        <div class="eyebrow">System Architecture</div>
+        <h2 class="s-title">5개 서비스, 하나의 DB</h2>
+      </div>
+      <div class="arch-diagram">
+        <div class="arch-fe">
+          <div class="nm">Frontend · 학생 SPA</div>
+          <div class="sub">React 19 · Monaco :5173 — 문제 브라우징 · 솔버 · 결과/판정 · 마이페이지 · Code Battle</div>
+        </div>
+        <div class="arch-conn">│ REST + SSE</div>
+        <div class="arch-svcs">
+          <div class="arch-svc">
+            <div class="b">Backend</div><div class="port">:8000</div>
+            <div class="role">인증 · 문제<br>제출 · EXP</div>
+          </div>
+          <div class="arch-svc">
+            <div class="b">Judge</div><div class="port">:8002</div>
+            <div class="role">샌드박스 +<br>3-LLM 앙상블</div>
+          </div>
+          <div class="arch-svc">
+            <div class="b">Authoring</div><div class="port">:8001</div>
+            <div class="role">LangGraph<br>11노드</div>
+          </div>
+          <div class="arch-svc">
+            <div class="b">Plagiarism</div><div class="port">:8003</div>
+            <div class="role">Dolos + winnow<br>4-에이전트</div>
+          </div>
+          <div class="arch-svc">
+            <div class="b">Admin</div><div class="port">:6010</div>
+            <div class="role">포렌식<br>콘솔</div>
+          </div>
+        </div>
+        <div class="arch-conn">▲ webhook · /internal API ▲</div>
+        <div class="arch-db">Supabase PostgreSQL · 공유 DB</div>
+      </div>
+      <div class="arch-notes">
+        <div class="item"><b>마이크로서비스 · 단일 DB</b> — 채점·출제·표절을 독립 서비스로 분리해 장애 격리, 모두 같은 Postgres 참조</div>
+        <div class="item"><b>인증</b> — Supabase Google OAuth, 백엔드 JWT 검증, @jbnu.ac.kr 도메인만 허용</div>
+        <div class="item"><b>비동기 채점</b> — /grade → 큐잉 → 즉시 202 → SSE 진행 스트리밍, 웹훅 최대 4회 재시도</div>
+        <div class="item"><b>EXP 시스템</b> — 첫 AC 시 points × 효율 배수(0.5~1.0), 시간·메모리 적게 쓸수록 보너스</div>
+      </div>
+      <div class="pageno">08 / 11</div>
+    </section>
+
+    <!-- 9 · EXTRA FEATURES -->
+    <section class="slide">
+      <div class="head">
+        <div class="eyebrow">Platform Features</div>
+        <h2 class="s-title">운영 가능한 실제 플랫폼</h2>
+      </div>
+      <div class="grid3 grow">
+        <div class="card feat">
+          <div class="ic">⚔️</div>
+          <h3>Code Battle</h3>
+          <p>매일 20시 실시간 20분 대전. SSE 실시간 순위표, 1~3등 랭킹 보너스 EXP로 참여 유도.</p>
+        </div>
+        <div class="card feat">
+          <div class="ic">🔬</div>
+          <h3>Admin 포렌식 콘솔</h3>
+          <p>출제 11노드 파이프라인 감쇠 추적(RunsView), KPI 8종 + 차트, 표절 쌍 검토 큐.</p>
+        </div>
+        <div class="card feat">
+          <div class="ic">🎓</div>
+          <h3>AI 튜터</h3>
+          <p>코드·판정·테스트 결과를 읽고 다음 한 걸음 제시. 문제당 3회, 사용자 API 키 사용.</p>
+        </div>
+      </div>
+      <div class="pageno">09 / 11</div>
+    </section>
+
+    <!-- 10 · ROADMAP -->
+    <section class="slide dark">
+      <div class="head">
+        <div class="eyebrow">Roadmap</div>
+        <h2 class="s-title">향후 계획</h2>
+      </div>
+      <div class="road grow">
+        <div class="road-row">
+          <div class="phase">Phase 1<small>교내 정식 운영</small></div>
+          <div>
+            <div class="h">강의 연계 · 채점 정확도 튜닝</div>
+            <div class="d">주차별 문제를 실제 수업과 연동하고, 제출 데이터로 앙상블 파라미터를 다듬습니다.</div>
+          </div>
+        </div>
+        <div class="road-row">
+          <div class="phase">Phase 2<small>검사 고도화</small></div>
+          <div>
+            <div class="h">표절·할루시네이션 검사 강화</div>
+            <div class="d">유사도 모델과 근거 검증을 강화해 LLM-as-Judge의 신뢰도를 끌어올립니다.</div>
+          </div>
+        </div>
+        <div class="road-row">
+          <div class="phase">Phase 3<small>영역 확장</small></div>
+          <div>
+            <div class="h">타 학문으로 확장</div>
+            <div class="d">의도 기반 채점(IntentRubric)을 코딩 너머 수학·과학 등으로 일반화합니다.</div>
+          </div>
+        </div>
+      </div>
+      <div class="pageno">10 / 11</div>
+    </section>
+
+    <!-- 11 · CLOSING -->
+    <section class="slide close">
+      <h2 class="wordmark">J<span class="q">CodeQuest</span></h2>
+      <p class="line">정답을 넘어, <span class="hl">의도까지 검증</span>하는 AI 채점으로<br>막힘 없는 알고리즘 학습을</p>
+      <div class="pillars3">
+        <span>✓ Verify</span>
+        <span>✓ Trust</span>
+        <span>✓ Guide</span>
+      </div>
+      <div class="team">CodeQuest 팀 · 전북대학교 AI SW경진대회</div>
+      <div class="pageno">11 / 11</div>
+    </section>
+
+  </div>
+</div>
+
+<div id="nav">
+  <button id="prev" aria-label="이전">‹</button>
+  <span id="counter">01 / 11</span>
+  <button id="next" aria-label="다음">›</button>
+  <span id="dots"></span>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const N = slides.length;
+  let cur = 0;
+  const counter = document.getElementById('counter');
+  const dotsWrap = document.getElementById('dots');
+
+  // build dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('i');
+    d.addEventListener('click', () => go(i));
+    dotsWrap.appendChild(d);
+  });
+  const dots = Array.from(dotsWrap.children);
+
+  function go(i) {
+    cur = Math.max(0, Math.min(N - 1, i));
+    slides.forEach((s, k) => s.classList.toggle('active', k === cur));
+    dots.forEach((d, k) => d.classList.toggle('on', k === cur));
+    const label = String(cur + 1).padStart(2, '0') + ' / ' + String(N).padStart(2, '0');
+    counter.textContent = label;
+  }
+  const next = () => go(cur + 1);
+  const prev = () => go(cur - 1);
+
+  document.getElementById('next').addEventListener('click', next);
+  document.getElementById('prev').addEventListener('click', prev);
+
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', 'ArrowDown', ' ', 'PageDown'].includes(e.key)) { e.preventDefault(); next(); }
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); prev(); }
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(N - 1);
+    else if (e.key.toLowerCase() === 'f') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); }
+    else if (e.key.toLowerCase() === 'p') window.print();
+  });
+
+  // ── fit canvas to viewport (PPT-style scaling) ──
+  function fit() {
+    const W = 1280, H = 720;
+    const pad = 24;
+    const sx = (window.innerWidth - pad) / W;
+    const sy = (window.innerHeight - pad) / H;
+    const s = Math.min(sx, sy);
+    document.getElementById('canvas').style.transform = `scale(${s})`;
+  }
+  window.addEventListener('resize', fit);
+  fit();
+  go(0);
+</script>
+</body>
+</html>

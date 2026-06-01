@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import type { ConnSettings, ComparisonResponse } from "../types";
 import { adminFetch } from "../api";
+import ProblemPicker from "./ProblemPicker";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -18,7 +19,7 @@ export default function ComparisonTab({ settings, initialId }: Props) {
 
   const load = useCallback(async (id?: string) => {
     const idNum = parseInt(id ?? oid, 10);
-    if (!idNum || idNum < 1) { setOutput({ kind: "err", msg: "원본 problem_id를 입력하세요" }); return; }
+    if (!idNum || idNum < 1) { setOutput({ kind: "err", msg: "원본 문제를 선택하세요" }); return; }
     setLoading(true);
     setData(null);
     setOutput({ kind: "", msg: `GET /api/admin/originals/${idNum}/comparison ...` });
@@ -70,17 +71,18 @@ export default function ComparisonTab({ settings, initialId }: Props) {
           LangGraph 변형 파이프라인이 매긴 4축 점수(hallucination / intent / difficulty / judge)를 시각화합니다.
         </div>
         <div className="filter-row">
-          <div className="field narrow">
-            <label>원본 ID</label>
-            <input
-              type="number" value={oid} min={1}
-              onChange={(e) => setOid(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && load()}
-              placeholder="1"
+          <div className="field">
+            <label>원본 문제</label>
+            <ProblemPicker
+              settings={settings}
+              value={oid}
+              onChange={setOid}
+              originalsOnly
+              placeholder="— 원본 문제 선택 —"
             />
           </div>
           <div className="field" style={{ maxWidth: 100, marginTop: "auto" }}>
-            <button className="btn btn-primary" onClick={() => load()} disabled={loading}>
+            <button className="btn btn-primary" onClick={() => load()} disabled={loading || !oid}>
               {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "조회"}
             </button>
           </div>

@@ -352,6 +352,14 @@ body {
   border-bottom-color: var(--accent);
   font-weight: 500;
 }
+/* .tabs 안에서 관리·분석 두 그룹을 시각 분리하는 얇은 세로 라인. */
+.tab-sep {
+  display: inline-block;
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 10px;
+  background: var(--border);
+}
 
 /* ── Forms ──────────────────────────────────────────────────── */
 .form-grid {
@@ -728,7 +736,8 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .detail-panel {
   position: fixed;
   right: 0; top: 0; bottom: 0;
-  width: 540px;
+  /* 문제 statement·테스트 케이스·rubric을 한 화면에 보기 좋게 — 좁은 창에서는 92vw로 축소. */
+  width: min(880px, 92vw);
   background: var(--bg-card);
   border-left: 1px solid var(--border);
   z-index: 100;
@@ -1165,6 +1174,9 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 .main.runs.drawer-open.drawer-wide { grid-template-columns: 300px minmax(0, 1fr) min(62vw, 880px); }
 .main.home, .main.stats, .main.problems, .main.notices, .main.users,
 .main.submissions, .main.reports { display: block; padding: 28px 36px; overflow: auto; }
+/* IssuesView 래퍼 — 내부에 또 다른 .main.reports/.main.plagiarism이 자식으로 들어오므로
+ * padding은 0(내부 뷰 자체가 28x36 padding을 가짐). 기본 .main의 grid/overflow:hidden을 풀어준다. */
+.main.issues { display: block; padding: 0; overflow: auto; }
 /* 통합 현황 — 레퍼런스 대시보드 느낌의 점 배경 */
 .main.home {
   background-color: var(--bg-page);
@@ -1768,9 +1780,22 @@ details[open] summary { color: var(--text); margin-bottom: 6px; }
 }
 
 /* 표절 검토 — 코드 A/B 나란히 비교 */
-.plag-codes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.plag-codes .code-block { max-height: 360px; overflow: auto; font-size: 11.5px; }
-@media (max-width: 680px) { .plag-codes { grid-template-columns: 1fr; } }
+/* 코드 A · 코드 B를 세로 스택(위아래)으로 — 슬라이드오버 폭을 코드 한 줄이 전부 차지하므로
+ * 줄바꿈 없이 긴 라인도 가로 스크롤 없이 한눈에 읽힌다. 각 블록은 자체 스크롤. */
+.plag-codes { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.plag-codes .code-block { max-height: 420px; overflow: auto; font-size: 11.5px; }
+/* 표절 매칭 라인 형광펜 마킹 — code-block-marked는 라인 단위 <div>가 컨테이너 padding 없이
+ * 좌우 끝까지 배경색을 깔 수 있도록 inner padding을 0으로 풀어준다. */
+.code-block.code-block-marked { padding: 6px 0; }
+.code-line { display: flex; align-items: flex-start; padding: 0 12px; line-height: 1.55; }
+.code-line-num {
+  display: inline-block; min-width: 34px; padding-right: 10px;
+  text-align: right; color: var(--muted-x); user-select: none; flex-shrink: 0;
+}
+.code-line-text { white-space: pre; flex: 1; min-width: 0; }
+/* 매칭된 라인 — 형광 노랑. 거터 색은 살짝 톤다운된 호박색으로 라인 번호도 강조. */
+.code-line.match { background: #fef9c3; }
+.code-line.match .code-line-num { color: #854d0e; font-weight: 600; }
 
 /* search input (non-runs views) */
 .search-wide { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; background: var(--bg-panel); color: var(--ink); }

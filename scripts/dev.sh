@@ -10,6 +10,7 @@
 #   scripts/dev.sh up --no-authoring               # 출제 엔진 제외하고 기동
 #   scripts/dev.sh up --no-dashboard               # 관리 대시보드 제외
 #   scripts/dev.sh up --no-llm                     # Ollama 앙상블 스킵 (JCQ_SKIP_ENSEMBLE=1 주입)
+#   scripts/dev.sh up --battle-open                # Code Battle 상시 개방 (JCQ_BATTLE_ALWAYS_OPEN=1, 개발용)
 #   scripts/dev.sh up --no-authoring --no-llm      # 둘 다
 #   scripts/dev.sh down                            # 떠 있는 서버 종료
 #   scripts/dev.sh status                          # 현재 상태 (PID, 포트, /health 응답)
@@ -227,12 +228,13 @@ stop_one() {
 
 # ── 서브커맨드 ─────────────────────────────────────────────────────────────
 cmd_up() {
-    local skip_authoring=0 skip_dashboard=0 skip_llm=0
+    local skip_authoring=0 skip_dashboard=0 skip_llm=0 battle_open=0
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --no-authoring) skip_authoring=1; shift ;;
             --no-dashboard) skip_dashboard=1; shift ;;
             --no-llm)       skip_llm=1; shift ;;
+            --battle-open)  battle_open=1; shift ;;
             *) echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
         esac
     done
@@ -252,11 +254,18 @@ cmd_up() {
     else
         unset JCQ_SKIP_ENSEMBLE
     fi
+    # Code Battle 상시 개방(개발용) — 매일 20시 스케줄 대신 항상 active로 유지.
+    if [[ $battle_open = 1 ]]; then
+        export JCQ_BATTLE_ALWAYS_OPEN=1
+    else
+        unset JCQ_BATTLE_ALWAYS_OPEN
+    fi
 
     section "JCodeQuest dev — 기동"
     [[ $skip_authoring = 1 ]] && info "출제 엔진(authoring) 스킵"
     [[ $skip_dashboard = 1 ]] && info "관리 대시보드 스킵"
     [[ $skip_llm = 1 ]]       && info "LLM 앙상블 스킵 (JCQ_SKIP_ENSEMBLE=1)"
+    [[ $battle_open = 1 ]]    && info "Code Battle 상시 개방 (JCQ_BATTLE_ALWAYS_OPEN=1)"
     info "python: $PY"
     info "log dir: $LOG_DIR"
     run_migrations || exit 1

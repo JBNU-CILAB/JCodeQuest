@@ -1,36 +1,70 @@
-import { useState, useCallback, useEffect } from "react";
+import { Suspense, use, useCallback, useEffect, useState } from "react";
 import type { ConnSettings, NoticeRow } from "../types";
 import { adminFetch, fmtDate } from "../api";
+import { unwrap, useResource } from "../lib/resource";
 
 interface Props { settings: ConnSettings }
 
 const empty = { id: "", title: "", body: "", pinned: false };
 
+/**
+ * Suspense 안에서 use(promise) 로 공지 목록을 읽어 리스트만 렌더.
+ * 부모 mutation 후 refresh() 하면 이 컴포넌트만 재렌더된다.
+ */
+function NoticeList({
+  promise,
+  onEdit,
+  onDelete,
+  onCount,
+}: {
+  promise: Promise<NoticeRow[]>;
+  onEdit: (n: NoticeRow) => void;
+  onDelete: (nid: number, title: string) => void;
+  onCount: (n: number) => void;
+}) {
+  const notices = use(promise);
+  useEffect(() => { onCount(notices.length); }, [notices.length, onCount]);
+  if (notices.length === 0) {
+    return (
+      <div className="text-muted text-sm" style={{ padding: "24px 0", textAlign: "center" }}>
+        공지 없음
+      </div>
+    );
+  }
+  return (
+    <>
+      {notices.map((n) => (
+        <div key={n.id} className="notice-item">
+          <div className="notice-info">
+            <div className="notice-title-row">
+              {n.pinned && <span className="badge badge-amber">📌 고정</span>}
+              <span className="notice-name">{n.title}</span>
+            </div>
+            <div className="notice-meta">
+              #{n.id} · 등록 {fmtDate(n.created_at).slice(0, 10)}
+              {n.updated_at !== n.created_at && ` · 수정 ${fmtDate(n.updated_at).slice(0, 10)}`}
+            </div>
+          </div>
+          <div className="notice-actions">
+            <button className="btn btn-ghost btn-sm" onClick={() => onEdit(n)}>수정</button>
+            <button className="btn btn-danger btn-sm" onClick={() => onDelete(n.id, n.title)}>삭제</button>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function NoticesView({ settings }: Props) {
-  const [notices, setNotices] = useState<NoticeRow[]>([]);
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState(empty);
   const [submitting, setSubmitting] = useState(false);
   const [output, setOutput] = useState<{ kind: "ok" | "err" | ""; msg: string }>({ kind: "", msg: "" });
+  const [count, setCount] = useState(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await adminFetch("/api/notices?limit=200", settings);
-      if (!r.ok) {
-        const t = await r.text();
-        setOutput({ kind: "err", msg: `[${r.status}] ${t.slice(0, 200)}` });
-        return;
-      }
-      setNotices(await r.json());
-    } catch (err: unknown) {
-      setOutput({ kind: "err", msg: (err as Error).message });
-    } finally {
-      setLoading(false);
-    }
+  const fetchNotices = useCallback(async (): Promise<NoticeRow[]> => {
+    return unwrap<NoticeRow[]>(await adminFetch("/api/notices?limit=200", settings));
   }, [settings]);
-
-  useEffect(() => { load(); }, []);
+  const { promise, refresh, isPending } = useResource(fetchNotices, [settings]);
 
   function editNotice(n: NoticeRow) {
     setForm({ id: String(n.id), title: n.title, body: n.body, pinned: n.pinned });
@@ -51,7 +85,7 @@ export default function NoticesView({ settings }: Props) {
       if (r.ok) {
         setOutput({ kind: "ok", msg: `✓ 삭제 완료 — id=${nid}` });
         if (form.id === String(nid)) resetForm();
-        setNotices((p) => p.filter((n) => n.id !== nid));
+        refresh();
       } else {
         setOutput({ kind: "err", msg: `[${r.status}] ${JSON.stringify(body, null, 2)}` });
       }
@@ -78,7 +112,7 @@ export default function NoticesView({ settings }: Props) {
       let pretty = body;
       try { pretty = JSON.stringify(JSON.parse(body), null, 2); } catch {}
       setOutput({ kind: r.ok ? "ok" : "err", msg: `[${r.status}] ${r.ok ? "성공" : "실패"}\n\n${pretty}` });
-      if (r.ok) { resetForm(); load(); }
+      if (r.ok) { resetForm(); refresh(); }
     } catch (err: unknown) {
       setOutput({ kind: "err", msg: (err as Error).message });
     } finally {
@@ -92,44 +126,40 @@ export default function NoticesView({ settings }: Props) {
     <div className="main notices">
       <div className="page-head">
         <h1>공지사항</h1>
-        <span className="sub">{notices.length}개 · 유저에게 노출되는 공지</span>
+        <span className="sub">{count}개 · 유저에게 노출되는 공지</span>
         <div className="page-head-actions">
-          <button className="btn btn-outline btn-sm" onClick={load} disabled={loading}>↻ 새로고침</button>
+          <button className="btn btn-outline btn-sm" onClick={refresh} disabled={isPending}>
+            {isPending ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "↻"}&nbsp;새로고침
+          </button>
           <button className="btn btn-primary btn-sm" onClick={resetForm}>+ 새 공지</button>
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 16, alignItems: "start" }}>
         {/* 공지 목록 */}
-        <div className="card" style={{ padding: "16px 20px" }}>
+        <div className="card" style={{ padding: "16px 20px", position: "relative" }}>
           <div className="card-title" style={{ marginBottom: 0 }}>
             <span className="card-icon">◈</span> 공지 목록
             <span className="spacer" />
-            <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
-              {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "↻"}&nbsp;새로고침
+            <button className="btn btn-ghost btn-sm" onClick={refresh} disabled={isPending}>
+              {isPending ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "↻"}&nbsp;새로고침
             </button>
           </div>
           <div className="divider" style={{ margin: "12px 0" }} />
-          {notices.length === 0
-            ? <div className="text-muted text-sm" style={{ padding: "24px 0", textAlign: "center" }}>공지 없음</div>
-            : notices.map((n) => (
-              <div key={n.id} className="notice-item">
-                <div className="notice-info">
-                  <div className="notice-title-row">
-                    {n.pinned && <span className="badge badge-amber">📌 고정</span>}
-                    <span className="notice-name">{n.title}</span>
-                  </div>
-                  <div className="notice-meta">
-                    #{n.id} · 등록 {fmtDate(n.created_at).slice(0, 10)}
-                    {n.updated_at !== n.created_at && ` · 수정 ${fmtDate(n.updated_at).slice(0, 10)}`}
-                  </div>
-                </div>
-                <div className="notice-actions">
-                  <button className="btn btn-ghost btn-sm" onClick={() => editNotice(n)}>수정</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => deleteNotice(n.id, n.title)}>삭제</button>
-                </div>
+          <Suspense
+            fallback={
+              <div className="text-muted text-sm" style={{ padding: "24px 0", textAlign: "center" }}>
+                <span className="spinner" style={{ width: 12, height: 12 }} /> 불러오는 중…
               </div>
-          ))}
+            }
+          >
+            <NoticeList
+              promise={promise}
+              onEdit={editNotice}
+              onDelete={deleteNotice}
+              onCount={setCount}
+            />
+          </Suspense>
         </div>
 
         {/* 작성/수정 폼 */}

@@ -33,6 +33,27 @@ def list_ac_submissions(problem_id: int, verdict: str = "AC") -> list[dict[str, 
         return r.json()
 
 
+def list_problems(*, originals_only: bool = False) -> list[dict[str, Any]]:
+    """관리자용 문제 목록 — backfill 스크립트에서 모든 문제 ID 를 얻기 위해 사용."""
+    with _client() as c:
+        r = c.get(
+            f"{config.BACKEND_URL}/internal/problems",
+            params={"originals_only": str(originals_only).lower()},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+def fetch_submission(submission_id: int) -> dict[str, Any] | None:
+    """단일 제출 상세 — 첫-AC 자동 트리거에서 problem_id/user_id 를 얻기 위해 사용.
+    Backend 의 admin submission detail endpoint(/internal/submissions/{id})를 그대로 위임."""
+    with _client() as c:
+        r = c.get(f"{config.BACKEND_URL}/internal/submissions/{submission_id}")
+        if r.status_code != 200:
+            return None
+        return r.json()
+
+
 def fetch_problem(problem_id: int) -> dict[str, Any] | None:
     """문제 상세(intent_rubric 포함) — 의미 검토 에이전트의 '문제 의도' 컨텍스트용."""
     with _client() as c:

@@ -27,6 +27,17 @@ _ATTACK_MODEL = ENSEMBLE_MODELS[0]
 # 공격 전략 — rubric 표적. ATTACK_SYSTEM의 전략명과 일치해야 한다.
 _STRATEGIES = ["naive", "edge_skip"]
 
+# 전략별 '표적 실패 차원' — 테스트가 그 결함을 *제대로* 걸러내려면 이 차원으로 탈락해야 한다.
+#   naive    : 복잡도를 무시한 brute-force → 강한 stress 테스트가 있으면 TLE/MLE로 탈락해야 한다.
+#              WA로 탈락하면 '느린 게 아니라 그냥 버그'라 성능 변별력은 검증된 게 아니다.
+#   edge_skip: must_handle 엣지 미처리 → 해당 엣지 테스트가 있으면 WA/RE로 탈락해야 한다.
+# rejected_on_target은 이 집합 기준으로 판정하며, 변별력 게이트가 카운트하는 건 'rejected'가
+# 아니라 'rejected_on_target'이다(성능/정확성을 표적 차원에서 실제로 검증).
+_STRATEGY_TARGET: dict[str, frozenset[str]] = {
+    "naive": frozenset({"TLE", "MLE"}),
+    "edge_skip": frozenset({"WA", "RE"}),
+}
+
 
 def _extract_code(text: str) -> str:
     """마크다운 펜스를 제거하고 Python 코드만 추출 (solver와 동일 규칙)."""
@@ -108,6 +119,7 @@ def _attack_one(candidate: dict, strategy: str, llm: ChatOllama) -> dict:
             "strategy": strategy,
             "verdict": "ERROR",
             "rejected": None,
+            "rejected_on_target": None,
             "code": "",
             "rationale": str(exc),
         }
@@ -117,15 +129,19 @@ def _attack_one(candidate: dict, strategy: str, llm: ChatOllama) -> dict:
             "strategy": strategy,
             "verdict": "ERROR",
             "rejected": None,
+            "rejected_on_target": None,
             "code": "",
             "rationale": "공격 코드 생성 실패(빈 출력)",
         }
 
     verdict, rationale = _run_against_tests(code, candidate)
+    target = _STRATEGY_TARGET.get(strategy, frozenset())
     return {
         "strategy": strategy,
         "verdict": verdict,
-        "rejected": verdict != "AC",  # 테스트가 결함을 걸러냈으면 True
+        "rejected": verdict != "AC",  # 테스트가 어떤 식으로든 걸러냈으면 True (기록용)
+        # 전략의 표적 차원으로 걸러졌는가 — 변별력 게이트는 이 값으로 카운트한다.
+        "rejected_on_target": verdict in target,
         "code": code,
         "rationale": rationale,
     }
@@ -136,8 +152,10 @@ def _discriminate_one(candidate: dict, llm: ChatOllama) -> dict:
     strategies = [_STRATEGIES[i % len(_STRATEGIES)] for i in range(n)]
     results = [_attack_one(candidate, s, llm) for s in strategies]
 
-    valid = [r for r in results if r["rejected"] is not None]
-    rejected = sum(1 for r in valid if r["rejected"])
+    # 유효한 공격 = LLM이 코드를 생성한 공격(ERROR 제외). rejected_on_target은 ERROR일 때만 None.
+    valid = [r for r in results if r["rejected_on_target"] is not None]
+    # 표적 차원으로 걸러진 공격만 카운트 — naive의 WA 탈락은 성능 변별력으로 치지 않는다.
+    rejected = sum(1 for r in valid if r["rejected_on_target"])
 
     if not valid:
         # 모든 공격 LLM이 실패 → 변별력을 판단할 수 없으므로 통과시킨다(fail-open).
@@ -157,9 +175,12 @@ def _discriminate_one(candidate: dict, llm: ChatOllama) -> dict:
 def attack_candidates(state: AuthoringState) -> dict:
     """solver_passed된 후보에 결함 풀이를 던져 테스트 변별력을 검사한다.
 
-    테스트가 최소 DISCRIMINATION_MIN_REJECT개의 공격을 탈락(non-AC)시켜야 통과.
-    0개 탈락 = 어떤 결함도 못 걸러내는 약한 테스트셋 → 폐기.
+    테스트가 최소 DISCRIMINATION_MIN_REJECT개의 공격을 '표적 차원으로' 탈락시켜야 통과
+    (naive→TLE/MLE, edge_skip→WA/RE). 0개 탈락 = 어떤 결함도 못 걸러내는 약한 테스트셋.
     JCQ_DISCRIMINATION_ENABLED=0이면 노드를 no-op으로 건너뛴다(통과 처리).
+
+    strengthen_tests 루프로 재진입할 수 있으므로, 이미 변별력을 통과한 후보는 다시 공격하지
+    않는다(LLM 호출 절약) — 보강이 필요한, 아직 미통과인 후보만 (재)공격한다.
     """
     if not DISCRIMINATION_ENABLED:
         return {"candidates": list(state["candidates"])}
@@ -173,7 +194,7 @@ def attack_candidates(state: AuthoringState) -> dict:
     updated: list[dict] = []
     for c in state["candidates"]:
         c = dict(c)
-        if c.get("solver_passed"):
+        if c.get("solver_passed") and not c.get("discrimination_passed", False):
             c.update(_discriminate_one(c, llm))
         updated.append(c)
     return {"candidates": updated}

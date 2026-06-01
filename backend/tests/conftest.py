@@ -26,6 +26,11 @@ os.environ.setdefault("SUPABASE_JWT_SECRET", "test-supabase-jwt-secret-32chars!!
 # 이미 set된 env는 덮어쓰지 않음).
 os.environ["JCQ_SKIP_ENSEMBLE"] = ""
 
+# 1.7) Code Battle 스케줄러는 테스트에서 끈다 — 백그라운드 폴링 루프가 TestClient
+# lifespan 동안 DB를 건드리면(SQLite 락) 비결정적이다. 배틀 로직은 storage 함수를
+# 직접 호출해 결정적으로 검증한다.
+os.environ["JCQ_BATTLE_SCHEDULER_ENABLED"] = "0"
+
 # 2) backend/ 를 sys.path에 추가 — src.* 임포트용
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
@@ -161,9 +166,12 @@ def mock_engine(monkeypatch):
     async def _simulate_grading(submission_id, problem, code, app):
         # webhook이 도착하는 순서를 흉내내기 위해 running을 먼저 발행.
         broker = app.state.events
+        # Code Battle 제출이면 apply_grading_event가 이 브로커로 스코어보드 구독자에게도 알린다.
+        battle_broker = getattr(app.state, "battle_events", None)
         apply_grading_event(
             GradeEvent(submission_id=submission_id, event="running"),
             events=broker,
+            battle_events=battle_broker,
         )
 
         try:
@@ -187,6 +195,7 @@ def mock_engine(monkeypatch):
                     ensemble=ensemble,
                 ),
                 events=broker,
+                battle_events=battle_broker,
             )
         except Exception as e:  # noqa: BLE001
             apply_grading_event(
@@ -196,6 +205,7 @@ def mock_engine(monkeypatch):
                     error=f"{type(e).__name__}: {e}",
                 ),
                 events=broker,
+                battle_events=battle_broker,
             )
 
     async def _fake_submit(submission_id, problem, code):
@@ -208,6 +218,9 @@ def mock_engine(monkeypatch):
 
     import src.api.grading as grading_api
     monkeypatch.setattr(grading_api, "submit_to_engine", _fake_submit)
+    # Code Battle 제출도 같은 콜사이트 규칙 — 배틀 라우터가 import한 심볼을 패치.
+    import src.api.battles as battles_api
+    monkeypatch.setattr(battles_api, "submit_to_engine", _fake_submit)
 
     class _Handle:
         def set_vote(self, fn) -> None:

@@ -8,8 +8,10 @@ export interface ConnSettings {
 
 export type ConnStatus = "idle" | "ok" | "error" | "loading";
 
-// "reports" 라우트는 통합 뷰 — IssuesView가 '버그 제보'·'표절 검토'를 서브탭으로 묶는다.
-export type Route = "home" | "runs" | "problems" | "submissions" | "notices" | "reports" | "stats" | "users";
+// 통합 라우트:
+// - "problems": ProblemsView가 관리(원본 등록/변형 출제/원본 목록) + 분석(문제별 통계/원본-변형 비교)을 5탭으로 묶음.
+// - "reports":  IssuesView가 '버그 제보'·'표절 검토'를 서브탭으로 묶음.
+export type Route = "home" | "runs" | "problems" | "submissions" | "notices" | "reports" | "users";
 
 /* ── 표절 검토 (plagiarism_engine) ─────────────────────────────────────── */
 export type PlagiarismStatus = "open" | "in_progress" | "confirmed" | "dismissed";

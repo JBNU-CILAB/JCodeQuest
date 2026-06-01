@@ -8,7 +8,7 @@
   "scripts": { "start": "node run_pairs.mjs" },
   "dependencies": {
     "@dodona/dolos-lib": "^2.3.0",
-    "tree-sitter": "0.20.6",
-    "tree-sitter-python": "0.20.4"
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-python": "^0.21.0"
   }
 }

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type {
   ConnSettings, VerdictsResponse, JudgesResponse, ProblemRow, RunSummaryT, UserRow,
-  SubmissionRow, SubmissionDetail,
+  SubmissionRow, SubmissionDetail, PlagiarismPair,
 } from "../types";
-import { adminFetch, judgeFetch, fmtDate } from "../api";
+import { adminFetch, judgeFetch, plagFetch, fmtDate } from "../api";
 import {
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+  PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend,
   ResponsiveContainer, CartesianGrid,
 } from "recharts";
 
@@ -194,6 +194,7 @@ export default function HomeView({ settings }: Props) {
   const [problems, setProblems] = useState<ProblemRow[] | null>(null);
   const [runs, setRuns] = useState<RunSummaryT[] | null>(null);
   const [users, setUsers] = useState<UserRow[] | null>(null);
+  const [plag, setPlag] = useState<PlagiarismPair[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -202,14 +203,15 @@ export default function HomeView({ settings }: Props) {
       try { const r = await p; return r.ok ? (await r.json()) as T : null; }
       catch { return null; }
     };
-    const [v, j, p, r, u] = await Promise.all([
+    const [v, j, p, r, u, pl] = await Promise.all([
       okJson<VerdictsResponse>(judgeFetch(`/api/stats/verdicts?bucket=day&since=${encodeURIComponent(since)}`, settings)),
       okJson<JudgesResponse>(judgeFetch(`/api/stats/judges?bucket=day&since=${encodeURIComponent(since)}`, settings)),
       okJson<ProblemRow[]>(adminFetch("/api/problems?originals_only=false", settings)),
       okJson<RunSummaryT[]>(adminFetch("/api/runs?limit=100", settings)),
       okJson<UserRow[]>(judgeFetch("/api/users?limit=1000", settings)),
+      okJson<PlagiarismPair[]>(plagFetch("/api/plagiarism/pairs?limit=500", settings)),
     ]);
-    setVerdicts(v); setJudges(j); setProblems(p); setRuns(r); setUsers(u);
+    setVerdicts(v); setJudges(j); setProblems(p); setRuns(r); setUsers(u); setPlag(pl);
     setUpdatedAt(new Date());
     setLoading(false);
   }, [settings, days]);
@@ -263,14 +265,48 @@ export default function HomeView({ settings }: Props) {
       AC: b.ac + b.sus, 실패: b.failed, 대기: b.pending,
     }));
 
+    // ── 표절 — 학생 단위(최악 상태로 dedup) + 의심 쌍 상태 분포 ──────────
+    // 쌍은 유저 2명을 묶으므로 양쪽 모두 '연루'로 본다. 한 학생이 여러 쌍에
+    // 걸치면 가장 무거운 상태(확정 > 검토중/대기)로 집계한다.
+    const confirmedUsers = new Set<number>();
+    const reviewUsers = new Set<number>(); // open | in_progress
+    // 의심 쌍에 한 번이라도 등장한 모든 학생 — 상태(open/in_progress/confirmed/dismissed)
+    // 무관하게 집계. KPI '표절 의심율'의 분자 역할.
+    const allFlaggedUsers = new Set<number>();
+    const pairStatus = { open: 0, in_progress: 0, confirmed: 0, dismissed: 0 };
+    for (const pr of plag ?? []) {
+      pairStatus[pr.status]++;
+      const us = [pr.user_a_id, pr.user_b_id];
+      us.forEach((u) => allFlaggedUsers.add(u));   // 상태 무관 — 전부 포함
+      if (pr.status === "confirmed") us.forEach((u) => confirmedUsers.add(u));
+      else if (pr.status === "open" || pr.status === "in_progress") us.forEach((u) => reviewUsers.add(u));
+    }
+    for (const u of confirmedUsers) reviewUsers.delete(u); // 확정이 우선
+    // 분모 = 전체 등록 학생 수. 단 users 페치가 실패/422로 빈 배열이면
+    // (분자는 의심 쌍에서 뽑은 학생) 분모가 0이 되어 의심 학생이 있어도 0%로 표시되는
+    // 버그가 생긴다. 그래서 users가 비어 있을 땐 최소한 의심 쌍에 등장한 학생 수를
+    // 분모로 사용한다 — "최소 이 비율 이상은 의심" 의미라 KPI 의도와 일치.
+    const allFlagged = allFlaggedUsers.size;
+    const submitters = Math.max(users?.length ?? 0, allFlagged);
+    const confirmedStudents = confirmedUsers.size;
+    const reviewStudents = reviewUsers.size;
+    const cleanStudents = Math.max(0, submitters - confirmedStudents - reviewStudents);
+    const plagRate = submitters > 0 ? confirmedStudents / submitters : 0;
+    // 전 상태 포함 의심율 — KPI 카드의 헤드라인 지표.
+    const flaggedStudents = allFlagged;
+    const flaggedRate = submitters > 0 ? flaggedStudents / submitters : 0;
+    const pairTotal = (plag ?? []).length;
+
     return {
       vt, passed, acRate, jt, unanimousRate, perJudge, avgAgree,
       total: problems?.length ?? 0, variants, originals, categories,
       runStatus, runTotal: runs?.length ?? 0,
       userCount: users?.length ?? 0, withKey: (users ?? []).filter((u) => u.has_api_key).length,
       trend,
+      submitters, confirmedStudents, reviewStudents, cleanStudents, plagRate, pairStatus, pairTotal,
+      flaggedStudents, flaggedRate,
     };
-  }, [verdicts, judges, problems, runs, users]);
+  }, [verdicts, judges, problems, runs, users, plag]);
 
   const disconnected = !loading && !verdicts && !judges && !problems && !runs && !users;
 
@@ -282,6 +318,18 @@ export default function HomeView({ settings }: Props) {
     { label: "평균 모델 일치율", value: `${agg.avgAgree.toFixed(1)}%`, sub: `앙상블 투표 ${agg.jt.totalWithVotes.toLocaleString()}건`, color: "var(--brand-dark)" },
     { label: "만장일치율 (3:0)", value: `${(agg.unanimousRate * 100).toFixed(1)}%`, sub: `분기(2:1) ${agg.jt.split.toLocaleString()}건`, color: "var(--purple)" },
     { label: "파이프라인 run", value: agg.runTotal.toLocaleString(), sub: `완료 ${agg.runStatus.done} · 실패 ${agg.runStatus.failed} · 진행 ${agg.runStatus.running}`, color: "var(--sky)" },
+    {
+      // 분자에 '의심 쌍에 등장한 모든 학생'을 상태(대기/검토중/확정/무혐의) 무관하게 포함.
+      // 분모는 실제 제출 학생. sub-line에 4개 상태 모든 분포 노출 + 분자 학생 수도 명시.
+      label: "표절 의심율",
+      value: plag === null
+        ? "—"
+        : `${(agg.flaggedRate * 100).toFixed(1)}%`,
+      sub: plag === null
+        ? "표절 엔진(:8003) 미연결"
+        : `의심 학생 ${agg.flaggedStudents}/${agg.submitters} · 쌍 ${agg.pairTotal} (대기 ${agg.pairStatus.open} · 검토중 ${agg.pairStatus.in_progress} · 확정 ${agg.pairStatus.confirmed} · 무혐의 ${agg.pairStatus.dismissed})`,
+      color: "#ef4444",
+    },
     { label: "유저", value: agg.userCount.toLocaleString(), sub: `API 키 보유 ${agg.withKey}`, color: "var(--ink)" },
   ];
 
@@ -346,16 +394,16 @@ export default function HomeView({ settings }: Props) {
           </div>
           {agg.trend.length === 0 ? <EmptyChart msg="채점 기록 없음" /> : (
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={agg.trend} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+              <LineChart data={agg.trend} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eef0f4" vertical={false} />
                 <XAxis dataKey="bucket" tick={TICK} />
                 <YAxis tick={TICK} allowDecimals={false} />
                 <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="AC" stackId="a" fill={VERDICT_COLORS.ac} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="실패" stackId="a" fill={VERDICT_COLORS.failed} />
-                <Bar dataKey="대기" stackId="a" fill={VERDICT_COLORS.pending} radius={[3, 3, 0, 0]} />
-              </BarChart>
+                <Line type="monotone" dataKey="AC" stroke={VERDICT_COLORS.ac} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} isAnimationActive={false} />
+                <Line type="monotone" dataKey="실패" stroke={VERDICT_COLORS.failed} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} isAnimationActive={false} />
+                <Line type="monotone" dataKey="대기" stroke={VERDICT_COLORS.pending} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} isAnimationActive={false} />
+              </LineChart>
             </ResponsiveContainer>
           )}
         </div>
@@ -422,6 +470,42 @@ export default function HomeView({ settings }: Props) {
             { name: "진행", value: agg.runStatus.running, color: "#f59e0b" },
             { name: "기타", value: agg.runStatus.other, color: "#94a3b8" },
           ]} />
+        </div>
+      </div>
+
+      {/* ── 학생 표절 현황 + 의심 쌍 상태 ── */}
+      <div className="grid-2" style={{ marginTop: 16 }}>
+        <div className="chart-card" style={{ marginBottom: 0 }}>
+          <div className="chart-card-head"><h3>학생 표절 현황</h3>
+            <span className="text-muted text-sm" style={{ marginLeft: "auto" }}>
+              표절 확정률 {(agg.plagRate * 100).toFixed(1)}% · 제출 학생 {agg.submitters.toLocaleString()}명
+            </span>
+          </div>
+          {!loading && plag === null ? (
+            <EmptyChart msg="표절 엔진(:8003) 미연결 — ⚙ 설정의 plagiarism URL/토큰 확인" />
+          ) : (
+            <Donut total={agg.submitters} unit="제출 학생" data={[
+              { name: "표절 확정", value: agg.confirmedStudents, color: "#ef4444" },
+              { name: "검토 대기·중", value: agg.reviewStudents, color: "#d97706" },
+              { name: "정상", value: agg.cleanStudents, color: "#16a34a" },
+            ]} />
+          )}
+        </div>
+
+        <div className="chart-card" style={{ marginBottom: 0 }}>
+          <div className="chart-card-head"><h3>표절 의심 쌍 상태</h3>
+            <span className="text-muted text-sm" style={{ marginLeft: "auto" }}>전체 {agg.pairTotal.toLocaleString()}쌍</span>
+          </div>
+          {!loading && plag === null ? (
+            <EmptyChart msg="표절 엔진(:8003) 미연결" />
+          ) : (
+            <Donut total={agg.pairTotal} unit="의심 쌍" data={[
+              { name: "검토 대기", value: agg.pairStatus.open, color: "#d97706" },
+              { name: "검토 중", value: agg.pairStatus.in_progress, color: "#0ea5e9" },
+              { name: "표절 확정", value: agg.pairStatus.confirmed, color: "#ef4444" },
+              { name: "무혐의", value: agg.pairStatus.dismissed, color: "#16a34a" },
+            ]} />
+          )}
         </div>
       </div>
 

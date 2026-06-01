@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, use, useCallback, useEffect, useState } from "react";
 import type {
   BugReportCategory,
   BugReportRow,
@@ -6,6 +6,7 @@ import type {
   ConnSettings,
 } from "../types";
 import { adminFetch, fmtDate } from "../api";
+import { unwrap, useResource } from "../lib/resource";
 
 interface Props {
   settings: ConnSettings;
@@ -50,18 +51,83 @@ const STATUS_LABEL: Record<BugReportStatus, string> = {
   rejected: "반려",
 };
 
-export default function ReportsView({ settings }: Props) {
-  const [rows, setRows] = useState<BugReportRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [offset, setOffset] = useState(0);
-  const [limit] = useState(50);
-  const [pageInfo, setPageInfo] = useState("");
+type Filters = { status: "" | BugReportStatus; category: "" | BugReportCategory };
+type Query = Filters & { offset: number };
 
-  const [filters, setFilters] = useState<{
-    status: "" | BugReportStatus;
-    category: "" | BugReportCategory;
-  }>({ status: "", category: "" });
+/**
+ * Suspense 안에서 use(promise) 로 행 데이터를 읽는다.
+ * 부모가 mutation 후 refresh() 하면 이 컴포넌트만 새 데이터로 재렌더된다.
+ */
+function ReportRows({
+  promise,
+  onOpen,
+  onCount,
+}: {
+  promise: Promise<BugReportRow[]>;
+  onOpen: (row: BugReportRow) => void;
+  onCount: (n: number) => void;
+}) {
+  const rows = use(promise);
+  // commit 이후에 부모로 카운트 전파(페이지네이션 버튼 enable/disable 용).
+  useEffect(() => { onCount(rows.length); }, [rows.length, onCount]);
+  if (rows.length === 0) {
+    return (
+      <tr className="empty-row">
+        <td colSpan={8}>제보 없음</td>
+      </tr>
+    );
+  }
+  return (
+    <>
+      {rows.map((r) => (
+        <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => onOpen(r)}>
+          <td className="num">{r.id}</td>
+          <td>
+            {r.user_display_name ?? `#${r.user_id}`}
+            <span className="hint">#{r.user_id}</span>
+          </td>
+          <td>
+            {r.problem_id == null ? (
+              <span className="text-muted">—</span>
+            ) : (
+              <>
+                {r.problem_title ?? `#${r.problem_id}`}
+                <span className="hint">#{r.problem_id}</span>
+              </>
+            )}
+          </td>
+          <td>
+            <span className="badge badge-gray">{CATEGORY_LABEL[r.category]}</span>
+          </td>
+          <td>{r.title}</td>
+          <td>
+            <span className={`badge ${STATUS_BADGE[r.status]}`}>{STATUS_LABEL[r.status]}</span>
+          </td>
+          <td className="num">{r.code_snapshot ? `${r.code_snapshot.length}B` : "—"}</td>
+          <td className="text-sm text-muted">{fmtDate(r.created_at)}</td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function RowsFallback() {
+  return (
+    <tr className="empty-row">
+      <td colSpan={8}><span className="spinner" style={{ width: 12, height: 12 }} /> 불러오는 중…</td>
+    </tr>
+  );
+}
+
+export default function ReportsView({ settings }: Props) {
+  const [error, setError] = useState("");
+  const [limit] = useState(50);
+  const [rowCount, setRowCount] = useState(0);
+
+  // 입력 폼 상태 (필터 셀렉트). "검색" 누르기 전에는 query 에 반영되지 않는다.
+  const [filters, setFilters] = useState<Filters>({ status: "", category: "" });
+  // 실제로 GET 에 들어가는 쿼리 — 이 값이 바뀌어야 새 fetch 가 발생한다.
+  const [query, setQuery] = useState<Query>({ status: "", category: "", offset: 0 });
 
   // 상세 패널 — admin_notes / status는 백엔드 row와 별도로 편집 버퍼.
   const [detail, setDetail] = useState<BugReportRow | null>(null);
@@ -69,41 +135,21 @@ export default function ReportsView({ settings }: Props) {
   const [editNotes, setEditNotes] = useState("");
   const [savingDetail, setSavingDetail] = useState(false);
 
-  const load = useCallback(
-    async (newOffset = 0) => {
-      setLoading(true);
-      setError("");
-      const qs = new URLSearchParams({
-        limit: String(limit),
-        offset: String(newOffset),
-      });
-      if (filters.status) qs.set("status", filters.status);
-      if (filters.category) qs.set("category", filters.category);
-      try {
-        const r = await adminFetch(`/api/reports?${qs}`, settings);
-        if (!r.ok) {
-          const t = await r.text();
-          setError(`[${r.status}] ${t.slice(0, 200)}`);
-          return;
-        }
-        const data: BugReportRow[] = await r.json();
-        setRows(data);
-        setOffset(newOffset);
-        setPageInfo(`offset ${newOffset} · ${data.length}건`);
-      } catch (err: unknown) {
-        setError((err as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [filters, limit, settings],
-  );
+  const fetchReports = useCallback(async (): Promise<BugReportRow[]> => {
+    const qs = new URLSearchParams({ limit: String(limit), offset: String(query.offset) });
+    if (query.status) qs.set("status", query.status);
+    if (query.category) qs.set("category", query.category);
+    return unwrap<BugReportRow[]>(await adminFetch(`/api/reports?${qs}`, settings));
+  }, [settings, limit, query]);
+  const { promise: reportsPromise, refresh, isPending } = useResource(fetchReports, [settings, query]);
 
-  useEffect(() => {
-    load(0);
-    // 최초 1회만. 필터 변경은 "검색" 버튼으로 트리거.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  function runSearch() {
+    setError("");
+    setQuery({ ...filters, offset: 0 });
+  }
+  function gotoOffset(off: number) {
+    setQuery((q) => ({ ...q, offset: Math.max(0, off) }));
+  }
 
   function openDetail(row: BugReportRow) {
     setDetail(row);
@@ -122,10 +168,7 @@ export default function ReportsView({ settings }: Props) {
     try {
       const r = await adminFetch(`/api/reports/${detail.id}`, settings, {
         method: "PATCH",
-        body: JSON.stringify({
-          status: editStatus,
-          admin_notes: editNotes,
-        }),
+        body: JSON.stringify({ status: editStatus, admin_notes: editNotes }),
       });
       if (!r.ok) {
         const t = await r.text();
@@ -133,8 +176,8 @@ export default function ReportsView({ settings }: Props) {
         return;
       }
       const updated: BugReportRow = await r.json();
-      setRows((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
       setDetail(updated);
+      refresh(); // 목록은 use(promise) 가 새 데이터로 알아서 그린다
     } catch (err: unknown) {
       setError((err as Error).message);
     } finally {
@@ -145,16 +188,14 @@ export default function ReportsView({ settings }: Props) {
   async function deleteReport(rid: number) {
     if (!confirm(`제보 #${rid}를 삭제할까요? (되돌릴 수 없음)`)) return;
     try {
-      const r = await adminFetch(`/api/reports/${rid}`, settings, {
-        method: "DELETE",
-      });
+      const r = await adminFetch(`/api/reports/${rid}`, settings, { method: "DELETE" });
       if (!r.ok) {
         const t = await r.text();
         setError(`[${r.status}] ${t.slice(0, 200)}`);
         return;
       }
-      setRows((prev) => prev.filter((x) => x.id !== rid));
       if (detail?.id === rid) closeDetail();
+      refresh();
     } catch (err: unknown) {
       setError((err as Error).message);
     }
@@ -174,16 +215,11 @@ export default function ReportsView({ settings }: Props) {
             <select
               value={filters.status}
               onChange={(e) =>
-                setFilters((p) => ({
-                  ...p,
-                  status: e.target.value as "" | BugReportStatus,
-                }))
+                setFilters((p) => ({ ...p, status: e.target.value as "" | BugReportStatus }))
               }
             >
               {STATUSES.map((s) => (
-                <option key={s.v} value={s.v}>
-                  {s.label}
-                </option>
+                <option key={s.v} value={s.v}>{s.label}</option>
               ))}
             </select>
           </div>
@@ -192,115 +228,61 @@ export default function ReportsView({ settings }: Props) {
             <select
               value={filters.category}
               onChange={(e) =>
-                setFilters((p) => ({
-                  ...p,
-                  category: e.target.value as "" | BugReportCategory,
-                }))
+                setFilters((p) => ({ ...p, category: e.target.value as "" | BugReportCategory }))
               }
             >
               {CATEGORIES.map((c) => (
-                <option key={c.v} value={c.v}>
-                  {c.label}
-                </option>
+                <option key={c.v} value={c.v}>{c.label}</option>
               ))}
             </select>
           </div>
           <div className="field" style={{ maxWidth: 100, marginTop: "auto" }}>
-            <button
-              className="btn btn-primary"
-              onClick={() => load(0)}
-              disabled={loading}
-            >
-              {loading ? (
-                <span className="spinner" style={{ width: 12, height: 12 }} />
-              ) : (
-                "검색"
-              )}
+            <button className="btn btn-primary" onClick={runSearch} disabled={isPending}>
+              {isPending ? <span className="spinner" style={{ width: 12, height: 12 }} /> : "검색"}
             </button>
           </div>
         </div>
         {error && <div className="output-panel err">{error}</div>}
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card" style={{ padding: 0, position: "relative" }}>
+        {isPending && (
+          <span
+            className="text-xs text-muted"
+            style={{ position: "absolute", top: 8, right: 12, opacity: 0.7 }}
+          >
+            <span className="spinner" style={{ width: 10, height: 10 }} /> 갱신 중…
+          </span>
+        )}
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>유저</th>
-                <th>문제</th>
-                <th>분류</th>
-                <th>제목</th>
-                <th>상태</th>
-                <th>코드</th>
-                <th>제보 시각</th>
+                <th>ID</th><th>유저</th><th>문제</th><th>분류</th>
+                <th>제목</th><th>상태</th><th>코드</th><th>제보 시각</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
-                <tr className="empty-row">
-                  <td colSpan={8}>제보 없음</td>
-                </tr>
-              ) : (
-                rows.map((r) => (
-                  <tr
-                    key={r.id}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => openDetail(r)}
-                  >
-                    <td className="num">{r.id}</td>
-                    <td>
-                      {r.user_display_name ?? `#${r.user_id}`}
-                      <span className="hint">#{r.user_id}</span>
-                    </td>
-                    <td>
-                      {r.problem_id == null ? (
-                        <span className="text-muted">—</span>
-                      ) : (
-                        <>
-                          {r.problem_title ?? `#${r.problem_id}`}
-                          <span className="hint">#{r.problem_id}</span>
-                        </>
-                      )}
-                    </td>
-                    <td>
-                      <span className="badge badge-gray">
-                        {CATEGORY_LABEL[r.category]}
-                      </span>
-                    </td>
-                    <td>{r.title}</td>
-                    <td>
-                      <span className={`badge ${STATUS_BADGE[r.status]}`}>
-                        {STATUS_LABEL[r.status]}
-                      </span>
-                    </td>
-                    <td className="num">
-                      {r.code_snapshot ? `${r.code_snapshot.length}B` : "—"}
-                    </td>
-                    <td className="text-sm text-muted">
-                      {fmtDate(r.created_at)}
-                    </td>
-                  </tr>
-                ))
-              )}
+              <Suspense fallback={<RowsFallback />}>
+                <ReportRows promise={reportsPromise} onOpen={openDetail} onCount={setRowCount} />
+              </Suspense>
             </tbody>
           </table>
         </div>
-        {rows.length > 0 && (
+        {rowCount > 0 && (
           <div className="pagination" style={{ padding: "10px 16px" }}>
-            <span className="page-info">{pageInfo}</span>
+            <span className="page-info">offset {query.offset} · {rowCount}건</span>
             <button
               className="btn btn-ghost btn-sm"
-              disabled={offset === 0}
-              onClick={() => load(Math.max(0, offset - limit))}
+              disabled={query.offset === 0 || isPending}
+              onClick={() => gotoOffset(query.offset - limit)}
             >
               ← 이전
             </button>
             <button
               className="btn btn-ghost btn-sm"
-              disabled={rows.length < limit}
-              onClick={() => load(offset + limit)}
+              disabled={rowCount < limit || isPending}
+              onClick={() => gotoOffset(query.offset + limit)}
             >
               다음 →
             </button>
@@ -319,9 +301,7 @@ export default function ReportsView({ settings }: Props) {
                   {STATUS_LABEL[detail.status]}
                 </span>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={closeDetail}>
-                ✕
-              </button>
+              <button className="btn btn-ghost btn-sm" onClick={closeDetail}>✕</button>
             </div>
             <div className="detail-body">
               <div className="kv-grid">
@@ -342,17 +322,11 @@ export default function ReportsView({ settings }: Props) {
                   )}
                 </span>
                 <span className="kv-key">분류</span>
-                <span className="kv-val">
-                  {CATEGORY_LABEL[detail.category]}
-                </span>
+                <span className="kv-val">{CATEGORY_LABEL[detail.category]}</span>
                 <span className="kv-key">제보</span>
-                <span className="kv-val text-mono text-sm">
-                  {fmtDate(detail.created_at)}
-                </span>
+                <span className="kv-val text-mono text-sm">{fmtDate(detail.created_at)}</span>
                 <span className="kv-key">수정</span>
-                <span className="kv-val text-mono text-sm">
-                  {fmtDate(detail.updated_at)}
-                </span>
+                <span className="kv-val text-mono text-sm">{fmtDate(detail.updated_at)}</span>
               </div>
 
               <div className="divider" style={{ margin: "12px 0" }} />
@@ -364,19 +338,14 @@ export default function ReportsView({ settings }: Props) {
 
               <div className="field mb-12">
                 <label>본문</label>
-                <pre
-                  className="code-block"
-                  style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}
-                >
+                <pre className="code-block" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
                   {detail.body}
                 </pre>
               </div>
 
               {detail.code_snapshot && (
                 <details open>
-                  <summary>
-                    ▸ 첨부 코드 ({detail.code_snapshot.length} bytes)
-                  </summary>
+                  <summary>▸ 첨부 코드 ({detail.code_snapshot.length} bytes)</summary>
                   <pre className="code-block">{detail.code_snapshot}</pre>
                 </details>
               )}
@@ -387,14 +356,10 @@ export default function ReportsView({ settings }: Props) {
                 <label>상태 변경</label>
                 <select
                   value={editStatus}
-                  onChange={(e) =>
-                    setEditStatus(e.target.value as BugReportStatus)
-                  }
+                  onChange={(e) => setEditStatus(e.target.value as BugReportStatus)}
                 >
                   {STATUSES.filter((s) => s.v !== "").map((s) => (
-                    <option key={s.v} value={s.v}>
-                      {s.label}
-                    </option>
+                    <option key={s.v} value={s.v}>{s.label}</option>
                   ))}
                 </select>
               </div>
@@ -410,21 +375,14 @@ export default function ReportsView({ settings }: Props) {
               </div>
 
               <div className="row">
-                <button
-                  className="btn btn-primary"
-                  onClick={saveDetail}
-                  disabled={savingDetail}
-                >
+                <button className="btn btn-primary" onClick={saveDetail} disabled={savingDetail}>
                   {savingDetail ? (
                     <span className="spinner" style={{ width: 12, height: 12 }} />
                   ) : (
                     "저장"
                   )}
                 </button>
-                <button
-                  className="btn btn-danger"
-                  onClick={() => deleteReport(detail.id)}
-                >
+                <button className="btn btn-danger" onClick={() => deleteReport(detail.id)}>
                   삭제
                 </button>
               </div>

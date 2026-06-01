@@ -81,13 +81,29 @@ def run_dolos_node(state: PlagiarismState) -> dict:
 
 def screen_pairs(state: PlagiarismState) -> dict:
     """결정적 1차 정제: 임계 유사도 + 최소 fragment, 유사도 내림차순 top-K.
-    (유저당 1건이라 self-pair는 이미 배제됨.)"""
+    (유저당 1건이라 self-pair는 이미 배제됨.)
+
+    target_user_id 가 set 이면(첫-AC 자동 트리거), 해당 user 가 a/b 한쪽에 포함된 pair 만
+    통과 — 이미 적재된 기존 pair들을 다시 LLM/persist 단계에 태우지 않기 위함.
+    `a_id`/`b_id` 는 submission_id 라 user_id 로 환원해야 하므로 submissions 인덱스 활용.
+    """
     raw = state.get("dolos_pairs") or []
     kept = [
         p for p in raw
         if float(p.get("similarity", 0)) >= config.SIMILARITY_THRESHOLD
         and int(p.get("longest_fragment", 0)) >= config.MIN_FRAGMENT
     ]
+    target = int(state.get("target_user_id") or 0)
+    if target > 0:
+        sub_to_user = {
+            str(s["submission_id"]): int(s["user_id"])
+            for s in (state.get("submissions") or [])
+        }
+        kept = [
+            p for p in kept
+            if sub_to_user.get(str(p.get("a_id"))) == target
+            or sub_to_user.get(str(p.get("b_id"))) == target
+        ]
     kept.sort(key=lambda p: float(p.get("similarity", 0)), reverse=True)
     return {"suspect_pairs": kept[: config.TOP_K]}
 
@@ -150,8 +166,14 @@ def build_graph():
 
 
 # ── 실행 드라이버 (run 레코드 생성/마감까지) ──────────────────────────────
-def run_plagiarism(problem_id: int) -> dict:
-    """문제별 표절 검토 1회. run 레코드 생성 → 그래프 → run 마감. run 요약 dict 반환."""
+def run_plagiarism(problem_id: int, *, target_user_id: int | None = None) -> dict:
+    """문제별 표절 검토 1회. run 레코드 생성 → 그래프 → run 마감. run 요약 dict 반환.
+
+    target_user_id 가 주어지면(첫-AC 자동 트리거 모드) 해당 user 가 한쪽에 포함된 pair 만
+    LLM/persist 까지 흘려보낸다. Dolos 비교 자체는 모든 제출이 들어가야 정확하므로 그대로
+    O(N²) 토큰화 — 그러나 LLM 에이전트 호출과 DB upsert 는 target 관련 pair 로 한정돼
+    incremental cost 가 N건으로 떨어진다(전체 모드는 O(N²)).
+    """
     run_id = uuid.uuid4().hex
     backend_client.create_run({
         "id": run_id,
@@ -161,7 +183,10 @@ def run_plagiarism(problem_id: int) -> dict:
     })
     t0 = time.monotonic()
     try:
-        final = build_graph().invoke({"problem_id": problem_id, "run_id": run_id, "errors": []})
+        initial: PlagiarismState = {"problem_id": problem_id, "run_id": run_id, "errors": []}
+        if target_user_id:
+            initial["target_user_id"] = int(target_user_id)
+        final = build_graph().invoke(initial)
         subs = final.get("submissions") or []
         suspect = final.get("suspect_pairs") or []
         flagged = final.get("flagged_ids") or []
@@ -186,3 +211,23 @@ def run_plagiarism(problem_id: int) -> dict:
         except Exception:  # noqa: BLE001
             pass
         raise
+
+
+def run_plagiarism_for_submission(submission_id: int) -> dict | None:
+    """단일 submission 의 첫-AC 자동 트리거 진입점. backend 에서 submission 상세를 받아
+    problem_id 와 user_id 를 추출 → `run_plagiarism(target_user_id=...)` 위임.
+
+    submission 이 없거나 problem_id 가 빠진 비정상 케이스는 조용히 None 반환(webhook 의
+    fire-and-forget 특성상 예외를 던져도 backend 에 의미 있는 처리가 없음). 정상 실행이면
+    `run_plagiarism` 반환값(run_id/submissions/flagged) 그대로.
+    """
+    sub = backend_client.fetch_submission(submission_id)
+    if not sub:
+        log.warning("plagiarism: submission %d not found — skip", submission_id)
+        return None
+    pid = sub.get("problem_id")
+    uid = sub.get("user_id")
+    if pid is None or uid is None:
+        log.warning("plagiarism: submission %d missing problem_id/user_id — skip", submission_id)
+        return None
+    return run_plagiarism(int(pid), target_user_id=int(uid))

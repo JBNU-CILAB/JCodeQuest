@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 # src.* 임포트보다 반드시 먼저 실행되어야 한다.
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from typing import Any
@@ -16,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api.auth import router as auth_router
+from .api.battles import router as battles_router
 from .api.grading import router as grading_router
 from .api.internal import router as internal_router
 from .api.leaderboard import router as leaderboard_router
@@ -25,15 +27,32 @@ from .api.problems import router as problems_router
 from .api.reports import router as reports_router
 from .api.submissions import router as submissions_router
 from .api.tutor import router as tutor_router
+from .battle_scheduler import battle_scheduler_loop
 from .events import SubmissionEventBroker
 from .storage import init_db
+
+# Code Battle 자동 진행 스케줄러 on/off. 기본 on. 테스트(conftest)는 "0"으로 끈다.
+_BATTLE_SCHEDULER_ENABLED = os.getenv("JCQ_BATTLE_SCHEDULER_ENABLED", "1") == "1"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     app.state.events = SubmissionEventBroker()
-    yield
+    # 배틀 SSE 전용 브로커 — battle_id를 키로 한 배틀의 모든 구독자에게 fan-out.
+    app.state.battle_events = SubmissionEventBroker()
+    scheduler_task: asyncio.Task | None = None
+    if _BATTLE_SCHEDULER_ENABLED:
+        scheduler_task = asyncio.create_task(battle_scheduler_loop(app))
+    try:
+        yield
+    finally:
+        if scheduler_task is not None:
+            scheduler_task.cancel()
+            try:
+                await scheduler_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title="JCodeQuest Backend", lifespan=lifespan)
@@ -106,6 +125,7 @@ app.include_router(submissions_router)
 app.include_router(leaderboard_router)
 app.include_router(notices_router)
 app.include_router(reports_router)
+app.include_router(battles_router)
 app.include_router(internal_router)
 
 
