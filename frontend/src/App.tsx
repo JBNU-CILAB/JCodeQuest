@@ -21,7 +21,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       <Header />
       {children}
       <footer className="mt-auto p-6 text-center text-gray-400 text-xs">
-        © 2026 JCodeQuest · JBNU JCodeQuest Team with ❤️.
+        © 2026 JCodeQuest · Made by Jeonbuk National University Compiler Intelligence Lab with ❤️.
       </footer>
     </div>
   )
